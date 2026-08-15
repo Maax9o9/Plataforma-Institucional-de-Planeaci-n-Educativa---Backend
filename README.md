@@ -7,6 +7,8 @@ Backend inicial basado en Python 3.12, FastAPI, Clean Architecture y Vertical Sl
 La Fase 0 ya tiene una implementacion ejecutable con fallback sin base de datos:
 
 - `core`: configuracion, JWT, Argon2, RBAC, errores, middleware y OpenAPI.
+- `core.app_factory`, `core.container` y `core.event_handlers`: composición de dependencias y eventos; `main.py` solo expone el entrypoint ASGI.
+- `api/router_registry.py`: registro único y ordenado de routers HTTP.
 - `shared`: entidades base, objetos de valor, paginacion y bus de eventos.
 - `identity_access`: login, refresh rotation, logout, usuario actual y alta de usuarios.
 - `institutional_catalogs`: areas e instrumentos con repositorio SQLAlchemy o memoria.
