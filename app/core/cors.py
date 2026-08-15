@@ -36,6 +36,18 @@ def _normalize_origin(origin: str) -> str:
 
 
 def build_cors_options(settings: Settings) -> dict:
+    if settings.cors_allow_all:
+        if settings.environment == "production":
+            raise RuntimeError("CORS_ALLOW_ALL no puede habilitarse en produccion.")
+        return {
+            "allow_origins": ["*"],
+            "allow_credentials": False,
+            "allow_methods": ["*"],
+            "allow_headers": ["*"],
+            "expose_headers": ["X-Request-ID"],
+            "max_age": 600,
+        }
+
     origins = settings.cors_origins
     if not origins:
         if settings.environment in {"development", "testing"}:

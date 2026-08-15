@@ -7,12 +7,18 @@ from app.core.config import Settings
 from app.main import create_app
 
 
-def make_settings(*, environment: str = "testing", origins: list[str] | None = None) -> Settings:
+def make_settings(
+    *,
+    environment: str = "testing",
+    origins: list[str] | None = None,
+    allow_all: bool = False,
+) -> Settings:
     return Settings(
         environment=environment,
         secret_key="test-secret-key-with-more-than-32-characters",
         database_url=None,
         email_provider="console",
+        cors_allow_all=allow_all,
         cors_origins=origins if origins is not None else ["http://localhost:5173"],
     )
 
@@ -73,3 +79,10 @@ def test_production_requires_explicit_cors_origins():
 def test_cors_rejects_wildcard_with_credentials():
     with pytest.raises(RuntimeError, match=r"\*"):
         create_app(make_settings(origins=["*"]))
+
+
+def test_cors_allow_all_is_available_only_for_non_production():
+    create_app(make_settings(allow_all=True))
+
+    with pytest.raises(RuntimeError, match="CORS_ALLOW_ALL"):
+        create_app(make_settings(environment="production", allow_all=True))
