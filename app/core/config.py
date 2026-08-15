@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:3000", "http://localhost:5173"]
     )
+    cors_allow_all: bool = False
     database_url: str | None = None
     bootstrap_admin_email: str | None = None
     bootstrap_admin_password: str | None = None
