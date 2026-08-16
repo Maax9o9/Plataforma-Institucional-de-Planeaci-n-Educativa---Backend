@@ -10,6 +10,18 @@ from ..domain.entities import User
 from ..domain.value_objects import Role
 
 
+class LoginRequest(BaseModel):
+    correo: EmailStr = Field(
+        description="Correo institucional.",
+        examples=["admin@upchiapas.edu.mx"],
+    )
+    contrasena: str = Field(
+        min_length=1,
+        description="Contrasena del usuario.",
+        examples=["Admin12345!"],
+    )
+
+
 class LoginResponse(BaseModel):
     access_token: str = Field(description="JWT de corta duracion para llamadas autenticadas.")
     refresh_token: str = Field(description="Token rotatorio para renovar la sesion.")

@@ -24,7 +24,7 @@ async def test_poa_planning_tracking_validation_and_reports(client, app):
     )
     login = await client.post(
         "/api/v1/auth/login",
-        data={"username": "poa-admin@upchiapas.edu.mx", "password": "password-seguro"},
+        json={"correo": "poa-admin@upchiapas.edu.mx", "contrasena": "password-seguro"},
     )
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     area = await client.post(

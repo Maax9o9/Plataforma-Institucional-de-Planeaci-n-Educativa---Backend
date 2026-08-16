@@ -28,7 +28,7 @@ async def test_indicator_capture_validation_scoring_and_report_flow(client, app)
     await seed_admin(app)
     login = await client.post(
         "/api/v1/auth/login",
-        data={"username": "planeacion@upchiapas.edu.mx", "password": "password-seguro"},
+        json={"correo": "planeacion@upchiapas.edu.mx", "contrasena": "password-seguro"},
     )
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
