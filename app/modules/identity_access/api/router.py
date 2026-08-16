@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request, Response, status
-from fastapi.security import OAuth2PasswordRequestForm
 
 from app.core.schemas import ErrorResponse
 from app.core.security import get_access_claims, get_current_user, require_roles
@@ -35,6 +34,7 @@ from .dependencies import (
 from .schemas import (
     ActualizarUsuarioRequest,
     ConfigurarContrasenaRequest,
+    LoginRequest,
     LoginResponse,
     LogoutRequest,
     RefreshRequest,
@@ -52,15 +52,15 @@ router = APIRouter()
     "/auth/login",
     response_model=LoginResponse,
     summary="Autenticar usuario institucional",
-    description="Recibe el correo en el campo OAuth2 'username' y devuelve access/refresh tokens.",
+    description="Recibe correo y contrasena, devuelve access/refresh tokens.",
     responses={401: {"model": ErrorResponse, "description": "Credenciales invalidas."}},
     tags=[TAG],
 )
 async def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
+    body: LoginRequest,
     use_case: AuthenticateUser = Depends(get_authenticate_user_use_case),
 ) -> LoginResponse:
-    result = await use_case.execute(email=form_data.username, password=form_data.password)
+    result = await use_case.execute(email=str(body.correo), password=body.contrasena)
     return LoginResponse(
         access_token=result.access_token,
         refresh_token=result.refresh_token,

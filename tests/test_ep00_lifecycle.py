@@ -35,9 +35,9 @@ async def test_user_creation_edit_deactivation_and_reactivation(client, app):
     )
     login = await client.post(
         "/api/v1/auth/login",
-        data={
-            "username": "admin-lifecycle@upchiapas.edu.mx",
-            "password": "password-seguro",
+        json={
+            "correo": "admin-lifecycle@upchiapas.edu.mx",
+            "contrasena": "password-seguro",
         },
     )
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
@@ -74,9 +74,9 @@ async def test_user_creation_edit_deactivation_and_reactivation(client, app):
     assert deactivated.status_code == 200
     blocked = await client.post(
         "/api/v1/auth/login",
-        data={
-            "username": "consulta-lifecycle@upchiapas.edu.mx",
-            "password": "password-consulta",
+        json={
+            "correo": "consulta-lifecycle@upchiapas.edu.mx",
+            "contrasena": "password-consulta",
         },
     )
     assert blocked.status_code == 401
@@ -87,9 +87,9 @@ async def test_user_creation_edit_deactivation_and_reactivation(client, app):
     assert reactivated.status_code == 200
     allowed = await client.post(
         "/api/v1/auth/login",
-        data={
-            "username": "consulta-lifecycle@upchiapas.edu.mx",
-            "password": "password-consulta",
+        json={
+            "correo": "consulta-lifecycle@upchiapas.edu.mx",
+            "contrasena": "password-consulta",
         },
     )
     assert allowed.status_code == 200

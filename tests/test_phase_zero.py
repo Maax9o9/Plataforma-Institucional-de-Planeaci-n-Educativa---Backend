@@ -29,7 +29,7 @@ async def test_authentication_refresh_rotation_and_logout(client, app):
 
     login = await client.post(
         "/api/v1/auth/login",
-        data={"username": "admin@upchiapas.edu.mx", "password": "password-seguro"},
+        json={"correo": "admin@upchiapas.edu.mx", "contrasena": "password-seguro"},
     )
     assert login.status_code == 200
     tokens = login.json()
@@ -64,7 +64,7 @@ async def test_authentication_refresh_rotation_and_logout(client, app):
 
     new_login = await client.post(
         "/api/v1/auth/login",
-        data={"username": "admin@upchiapas.edu.mx", "password": "password-seguro"},
+        json={"correo": "admin@upchiapas.edu.mx", "contrasena": "password-seguro"},
     )
     new_tokens = new_login.json()
     logout = await client.post(
@@ -86,7 +86,7 @@ async def test_catalog_period_and_audit_flow(client, app):
     await create_admin(app)
     login = await client.post(
         "/api/v1/auth/login",
-        data={"username": "admin@upchiapas.edu.mx", "password": "password-seguro"},
+        json={"correo": "admin@upchiapas.edu.mx", "contrasena": "password-seguro"},
     )
     access_token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {access_token}"}
@@ -143,7 +143,7 @@ async def test_reopen_requires_reason(client, app):
     await create_admin(app)
     login = await client.post(
         "/api/v1/auth/login",
-        data={"username": "admin@upchiapas.edu.mx", "password": "password-seguro"},
+        json={"correo": "admin@upchiapas.edu.mx", "contrasena": "password-seguro"},
     )
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     period = await client.post(
