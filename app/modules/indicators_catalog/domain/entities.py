@@ -30,6 +30,7 @@ class Indicator(BaseEntity):
     yellow_threshold: int | None = None
     is_active: bool = True
     instrument_ids: set[int] = field(default_factory=set)
+    criteria_ids: set[int] = field(default_factory=set)
 
     @classmethod
     def create(

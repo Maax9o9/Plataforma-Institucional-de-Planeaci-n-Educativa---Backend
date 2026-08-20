@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -48,3 +48,13 @@ class EvidenciaRespuesta(BaseModel):
             tipo=evidence.evidence_type,
             subida_por=evidence.uploaded_by,
         )
+
+
+class VersionEvidenciaRespuesta(BaseModel):
+    numero: int
+    ruta_o_url: str
+    mime_type: str | None
+    tamanio_bytes: int | None
+    checksum_sha256: str | None
+    fecha: datetime
+    usuario_id: int

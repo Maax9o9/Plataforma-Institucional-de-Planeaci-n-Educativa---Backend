@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from pydantic import BaseModel, Field, model_validator
@@ -45,5 +46,9 @@ class UmbralesPersonalizadosRequest(BaseModel):
 
 class TendenciaPuntoRespuesta(BaseModel):
     periodo_id: int
+    periodo_etiqueta: str
+    fecha_inicio: date
+    resultado: Decimal | None
+    meta: Decimal | None
     porcentaje_avance: Decimal | None
     semaforo: str | None

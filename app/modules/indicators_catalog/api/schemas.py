@@ -89,8 +89,10 @@ class IndicadorRespuesta(BaseModel):
     umbral_amarillo_min: int | None
     activo: bool
     instrumento_ids: list[int]
+    criterio_seaes_ids: list[int]
     creado_en: datetime
     actualizado_en: datetime
+    version: int = 1
 
     @classmethod
     def from_domain(cls, indicator: Indicator) -> IndicadorRespuesta:
@@ -113,9 +115,14 @@ class IndicadorRespuesta(BaseModel):
             umbral_amarillo_min=indicator.yellow_threshold,
             activo=indicator.is_active,
             instrumento_ids=sorted(indicator.instrument_ids),
+            criterio_seaes_ids=sorted(indicator.criteria_ids),
             creado_en=indicator.created_at,
             actualizado_en=indicator.updated_at,
         )
+
+
+class AsociarCriteriosRequest(BaseModel):
+    criterio_ids: set[int] = Field(default_factory=set)
 
 
 class LineaBaseRespuesta(BaseModel):
@@ -146,3 +153,30 @@ class MetaIndicadorRespuesta(BaseModel):
             periodo_id=goal.period_id,
             valor=goal.value,
         )
+
+
+class IndicadorDetalleRespuesta(IndicadorRespuesta):
+    linea_base: LineaBaseRespuesta | None
+    metas: list[MetaIndicadorRespuesta]
+
+
+class PaginaIndicadoresRespuesta(BaseModel):
+    items: list[IndicadorRespuesta]
+    total: int
+    offset: int
+    limit: int
+
+
+class CriterioCoberturaRespuesta(BaseModel):
+    id: int
+    clave: str
+    nombre: str
+    indicadores_asociados: int
+    cubierto: bool
+
+
+class CoberturaSeaesRespuesta(BaseModel):
+    total_criterios: int
+    criterios_cubiertos: int
+    porcentaje_cobertura: Decimal
+    criterios: list[CriterioCoberturaRespuesta]

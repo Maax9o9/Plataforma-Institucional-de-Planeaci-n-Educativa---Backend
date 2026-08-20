@@ -83,3 +83,10 @@ IndicatorInstrumentModel = Table(
     Column("indicador_id", Integer, primary_key=True),
     Column("instrumento_id", Integer, primary_key=True),
 )
+
+IndicatorCriteriaModel = Table(
+    "indicador_criterios_seaes",
+    Base.metadata,
+    Column("indicador_id", Integer, primary_key=True),
+    Column("criterio_seaes_id", Integer, primary_key=True),
+)

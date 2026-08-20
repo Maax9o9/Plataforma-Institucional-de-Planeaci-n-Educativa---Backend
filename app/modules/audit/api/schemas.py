@@ -33,3 +33,10 @@ class EntradaAuditoriaResponse(BaseModel):
             accion=entry.action,
             datos=entry.data,
         )
+
+
+class PaginaAuditoriaResponse(BaseModel):
+    items: list[EntradaAuditoriaResponse]
+    total: int
+    offset: int
+    limit: int

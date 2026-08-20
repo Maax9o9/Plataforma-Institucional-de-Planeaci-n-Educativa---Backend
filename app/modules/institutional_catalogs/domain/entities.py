@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from app.shared.domain.base_entity import BaseEntity
@@ -22,16 +23,36 @@ class Area(BaseEntity):
     code: str
     name: str
     parent_id: int | None = None
+    area_type: str = "administrativa"
+    color: str | None = None
     is_active: bool = True
 
     @classmethod
-    def create(cls, *, code: str, name: str, parent_id: int | None = None) -> Area:
+    def create(
+        cls,
+        *,
+        code: str,
+        name: str,
+        parent_id: int | None = None,
+        area_type: str = "administrativa",
+        color: str | None = None,
+    ) -> Area:
         normalized_code = _required(code, "El codigo del area", 30).upper()
+        cls._validate_presentation(area_type, color)
         return cls(
             code=normalized_code,
             name=_required(name, "El nombre del area", 150),
             parent_id=parent_id,
+            area_type=area_type,
+            color=color.upper() if color else None,
         )
+
+    @staticmethod
+    def _validate_presentation(area_type: str, color: str | None) -> None:
+        if area_type not in {"administrativa", "programa_educativo"}:
+            raise ValidationError("El tipo de area no es valido.")
+        if color is not None and re.fullmatch(r"#[0-9A-Fa-f]{6}", color) is None:
+            raise ValidationError("El color debe tener formato hexadecimal #RRGGBB.")
 
     def update_details(
         self,
@@ -39,6 +60,8 @@ class Area(BaseEntity):
         code: str | None = None,
         name: str | None = None,
         parent_id: int | None = None,
+        area_type: str | None = None,
+        color: str | None = None,
     ) -> None:
         if code is not None:
             self.code = _required(code, "El codigo del area", 30).upper()
@@ -46,6 +69,13 @@ class Area(BaseEntity):
             self.name = _required(name, "El nombre del area", 150)
         if parent_id is not None:
             self.parent_id = parent_id
+        resolved_type = area_type or self.area_type
+        resolved_color = color if color is not None else self.color
+        self._validate_presentation(resolved_type, resolved_color)
+        if area_type is not None:
+            self.area_type = area_type
+        if color is not None:
+            self.color = color.upper()
         self.touch()
 
     def deactivate(self) -> None:

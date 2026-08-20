@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..domain.entities import AuditEntry
@@ -57,7 +57,7 @@ class SqlAlchemyAuditRepository:
                 statement = statement.where(AuditModel.entidad_id == aggregate_id)
             models = (
                 await session.scalars(
-                    statement.order_by(AuditModel.fecha, AuditModel.id)
+                    statement.order_by(AuditModel.fecha.desc(), AuditModel.id.desc())
                     .offset(offset)
                     .limit(limit)
                 )
@@ -75,3 +75,29 @@ class SqlAlchemyAuditRepository:
                 )
                 for model in models
             ]
+
+    async def count(
+        self,
+        *,
+        actor_id: int | None = None,
+        action: str | None = None,
+        from_date=None,
+        to_date=None,
+        aggregate_type: str | None = None,
+        aggregate_id: int | None = None,
+    ) -> int:
+        async with self.session_factory() as session:
+            statement = select(func.count()).select_from(AuditModel)
+            if actor_id is not None:
+                statement = statement.where(AuditModel.usuario_id == actor_id)
+            if action is not None:
+                statement = statement.where(AuditModel.accion == action)
+            if from_date is not None:
+                statement = statement.where(AuditModel.fecha >= from_date)
+            if to_date is not None:
+                statement = statement.where(AuditModel.fecha <= to_date)
+            if aggregate_type is not None:
+                statement = statement.where(AuditModel.entidad == aggregate_type)
+            if aggregate_id is not None:
+                statement = statement.where(AuditModel.entidad_id == aggregate_id)
+            return int((await session.execute(statement)).scalar_one())

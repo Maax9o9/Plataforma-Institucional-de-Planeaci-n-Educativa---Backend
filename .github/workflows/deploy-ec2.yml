@@ -1,0 +1,122 @@
+name: Deploy Backend To EC2
+
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    name: Tests And Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Ruff
+        run: python -m ruff check app tests alembic
+
+      - name: Tests
+        run: python -m pytest -q
+
+  deploy:
+    name: Deploy To EC2
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_BRANCH: ${{ github.ref_name }}
+          DEPLOY_PATH: ${{ secrets.EC2_DEPLOY_PATH }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_START_TLS: ${{ secrets.SMTP_START_TLS }}
+          BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}
+          BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.BOOTSTRAP_ADMIN_PASSWORD }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          envs: DEPLOY_BRANCH,DEPLOY_PATH,SECRET_KEY,DATABASE_URL,CORS_ORIGINS,FRONTEND_URL,EMAIL_PROVIDER,EMAIL_SENDER,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASSWORD,SMTP_START_TLS,BOOTSTRAP_ADMIN_EMAIL,BOOTSTRAP_ADMIN_PASSWORD
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            DEPLOY_PATH="${DEPLOY_PATH:-/opt/planeacion-api}"
+            cd "$DEPLOY_PATH"
+
+            echo "==> Actualizando branch: $DEPLOY_BRANCH"
+            git fetch origin "$DEPLOY_BRANCH"
+            git reset --hard "origin/$DEPLOY_BRANCH"
+
+            echo "==> Generando .env desde GitHub Secrets"
+            umask 077
+            cat > .env <<EOF
+            ENVIRONMENT=development
+            SECRET_KEY=${SECRET_KEY}
+            DATABASE_URL=${DATABASE_URL}
+            DATABASE_ECHO=false
+            CORS_ORIGINS=${CORS_ORIGINS}
+            CORS_ALLOW_ALL=true
+            FRONTEND_URL=${FRONTEND_URL}
+            EMAIL_PROVIDER=${EMAIL_PROVIDER:-console}
+            EMAIL_SENDER=${EMAIL_SENDER}
+            SMTP_HOST=${SMTP_HOST}
+            SMTP_PORT=${SMTP_PORT:-587}
+            SMTP_USER=${SMTP_USER}
+            SMTP_PASSWORD=${SMTP_PASSWORD}
+            SMTP_START_TLS=${SMTP_START_TLS:-true}
+            BOOTSTRAP_ADMIN_EMAIL=${BOOTSTRAP_ADMIN_EMAIL}
+            BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD}
+            PASSWORD_SETUP_EXPIRE_HOURS=24
+            EOF
+            chmod 600 .env
+
+            echo "==> Construyendo imagen de la API"
+            docker compose -f docker-compose.prod.yml build api
+
+            echo "==> Ejecutando migraciones Alembic"
+            docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
+
+            echo "==> Levantando API y Nginx"
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+            echo "==> Esperando health check"
+            for i in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1/health > /dev/null; then
+                echo "OK - servicio respondiendo"
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "FAILED - la API no respondio. Logs recientes:"
+            docker compose -f docker-compose.prod.yml logs --tail 100 api nginx
+            exit 1

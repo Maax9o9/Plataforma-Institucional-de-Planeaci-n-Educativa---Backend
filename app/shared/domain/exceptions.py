@@ -48,7 +48,25 @@ class InvalidStateError(AppError):
     default_message = "El recurso no permite esta transicion de estado."
 
 
+class CaptureImmutableError(AppError):
+    code = "CAPTURE_IMMUTABLE"
+    status_code = 409
+    default_message = "La captura validada no admite modificaciones."
+
+
 class ValidationError(AppError):
     code = "BUSINESS_VALIDATION_ERROR"
     status_code = 422
     default_message = "Los datos no cumplen las reglas de negocio."
+
+
+class PayloadTooLargeError(AppError):
+    code = "FILE_TOO_LARGE"
+    status_code = 413
+    default_message = "El archivo supera el tamano maximo permitido."
+
+
+class UnsupportedMediaTypeError(AppError):
+    code = "FILE_TYPE_NOT_ALLOWED"
+    status_code = 415
+    default_message = "El tipo real del archivo no esta permitido."

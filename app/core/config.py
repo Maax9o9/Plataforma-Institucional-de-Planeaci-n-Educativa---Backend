@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     smtp_start_tls: bool = True
     frontend_url: str = "http://localhost:3000"
     password_setup_expire_hours: int = 24
+    upload_directory: str = "var/uploads"
+    upload_max_bytes: int = 10 * 1024 * 1024
 
 
 @lru_cache

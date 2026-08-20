@@ -127,3 +127,8 @@ class SqlAlchemyCaptureRepository:
             model.semaforo = semaphore
             model.actualizado_en = datetime.now(UTC)
             await session.commit()
+
+    async def list_all(self) -> list[Capture]:
+        async with self.session_factory() as session:
+            models = (await session.scalars(select(CaptureModel).order_by(CaptureModel.id))).all()
+            return [self._to_domain(model) for model in models]

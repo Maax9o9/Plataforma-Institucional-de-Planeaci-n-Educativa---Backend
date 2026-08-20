@@ -20,7 +20,13 @@ class UpdateArea:
         area = await self.repository.get_by_id(command.area_id)
         if area is None:
             raise ResourceNotFoundError("El area no existe.")
-        area.update_details(code=command.code, name=command.name, parent_id=command.parent_id)
+        area.update_details(
+            code=command.code,
+            name=command.name,
+            parent_id=command.parent_id,
+            area_type=command.area_type,
+            color=command.color,
+        )
         await self.repository.update(area)
         await self.event_bus.publish(
             AreaUpdated(

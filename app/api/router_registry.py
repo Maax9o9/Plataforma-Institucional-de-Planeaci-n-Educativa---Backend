@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI
 
+from app.api.uploads_router import router as uploads_router
 from app.modules.audit.api.router import router as audit_router
 from app.modules.dashboards.api.router import router as dashboards_router
 from app.modules.evidence_management.api.router import router as evidence_router
@@ -24,6 +25,7 @@ from app.modules.poa_validation.api.router import router as poa_validation_route
 
 API_ROUTERS = (
     identity_router,
+    uploads_router,
     catalogs_router,
     reference_catalogs_router,
     periods_router,

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from typing import Literal
+
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.core.schemas import ErrorResponse
 from app.core.security import get_access_claims, get_current_user, require_roles
@@ -37,6 +39,7 @@ from .schemas import (
     LoginRequest,
     LoginResponse,
     LogoutRequest,
+    PaginaUsuariosResponse,
     RefreshRequest,
     UsuarioCreateRequest,
     UsuarioResponse,
@@ -185,17 +188,50 @@ async def set_initial_password(
 
 @router.get(
     "/usuarios",
-    response_model=list[UsuarioResponse],
+    response_model=PaginaUsuariosResponse,
     summary="Consultar usuarios institucionales",
     responses={403: {"model": ErrorResponse, "description": "Rol insuficiente."}},
     tags=[TAG],
 )
 async def list_users(
     request: Request,
+    q: str | None = Query(default=None),
+    activo: bool | None = Query(default=None),
+    rol: Role | None = Query(default=None),
+    area_id: int | None = Query(default=None),
+    sort: Literal["nombre", "correo", "id"] = Query(default="nombre"),
+    order: Literal["asc", "desc"] = Query(default="asc"),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=100),
     _current_user=Depends(require_roles(Role.PLANEACION.value, Role.ADMIN_SISTEMA.value)),
-) -> list[UsuarioResponse]:
+) -> PaginaUsuariosResponse:
     users = await request.app.state.user_repository.list()
-    return [UsuarioResponse.from_domain(user) for user in users]
+    if q:
+        normalized = q.strip().casefold()
+        users = [
+            user
+            for user in users
+            if normalized in user.full_name.casefold() or normalized in user.email.value.casefold()
+        ]
+    if activo is not None:
+        users = [user for user in users if user.is_active is activo]
+    if rol is not None:
+        users = [user for user in users if rol in user.roles]
+    if area_id is not None:
+        users = [user for user in users if user.area_id == area_id]
+    key = {
+        "nombre": lambda user: user.full_name.casefold(),
+        "correo": lambda user: user.email.value,
+        "id": lambda user: user.id,
+    }[sort]
+    users = sorted(users, key=key, reverse=order == "desc")
+    total = len(users)
+    return PaginaUsuariosResponse(
+        items=[UsuarioResponse.from_domain(user) for user in users[offset : offset + limit]],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.patch(
