@@ -79,6 +79,27 @@ Los usuarios administrativos no necesitan capturar una contrasena en `POST /api/
 pytest
 ```
 
+## Contrato para integracion frontend
+
+- El prefijo estable es `/api/v1` y los campos HTTP usan `snake_case`.
+- El refresh token se entrega en JSON. Se rota en cada uso, se revoca en logout y la
+  reutilizacion invalida la sesion completa. El frontend no debe persistir el access token.
+- `GET /usuarios`, `GET /indicadores`, `GET /capturas` y `GET /bitacora` usan respuestas
+  paginadas con `items`, `total`, `offset` y `limit`.
+- `/auditoria` se conserva como alias legado no paginado; `/bitacora` es el contrato nuevo.
+- Los errores incluyen `code`, `message`, `details` y `request_id`; la respuesta también
+  expone el mismo identificador mediante `X-Request-ID`.
+- `POST /api/v1/archivos` acepta PDF, JPG y PNG, valida la firma real, calcula SHA-256 y
+  genera el nombre en servidor. El máximo predeterminado es 10 MiB y puede configurarse con
+  `UPLOAD_MAX_BYTES`; los archivos se almacenan fuera de directorios públicos.
+- Los campos oficiales de un área incluyen `codigo`, `nombre`, `area_padre_id`, `tipo`,
+  `color` y `activo`. La migración `0018_integracion_frontend` agrega los campos nuevos.
+- Los orígenes CORS de staging y producción deben declararse explícitamente en
+  `CORS_ORIGINS`; `CORS_ALLOW_ALL` no está permitido en producción.
+
+Las cuentas y contraseñas de prueba no se incluyen en el repositorio. Deben provisionarse
+en el ambiente correspondiente y compartirse por un canal privado.
+
 ## Proxima etapa
 
 La siguiente etapa es completar las vertical slices de indicadores, POA, evidencias, validaciones, notificaciones y reportes sobre los mismos puertos y migraciones.

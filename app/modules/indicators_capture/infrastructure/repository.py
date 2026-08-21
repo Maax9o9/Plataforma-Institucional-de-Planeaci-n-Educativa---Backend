@@ -58,3 +58,6 @@ class InMemoryCaptureRepository:
         capture.progress_percentage = progress_percentage
         capture.semaphore = semaphore
         capture.touch()
+
+    async def list_all(self) -> list[Capture]:
+        return sorted(self._items.values(), key=lambda item: item.id)

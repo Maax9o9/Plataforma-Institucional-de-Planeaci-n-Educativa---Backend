@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -103,3 +103,62 @@ class SqlAlchemyEvidenceRepository:
                 )
                 for model in models
             ]
+
+    async def list_for(self, entity: FlowEntity, entity_id: int) -> list[Evidence]:
+        async with self.session_factory() as session:
+            models = (
+                await session.scalars(
+                    select(EvidenceModel)
+                    .join(EvidenceLinkModel, EvidenceLinkModel.evidencia_id == EvidenceModel.id)
+                    .where(
+                        EvidenceLinkModel.entidad == entity.value,
+                        EvidenceLinkModel.entidad_id == entity_id,
+                    )
+                    .order_by(EvidenceModel.id)
+                )
+            ).all()
+            return [
+                Evidence(
+                    id=model.id,
+                    name=model.nombre,
+                    description=model.descripcion,
+                    evidence_date=model.fecha,
+                    evidence_type=EvidenceType(model.tipo),
+                    uploaded_by=model.subida_por,
+                )
+                for model in models
+            ]
+
+    async def list_versions(self, evidence_id: int) -> list[EvidenceVersion]:
+        async with self.session_factory() as session:
+            models = (
+                await session.scalars(
+                    select(EvidenceVersionModel)
+                    .where(EvidenceVersionModel.evidencia_id == evidence_id)
+                    .order_by(EvidenceVersionModel.fecha, EvidenceVersionModel.id)
+                )
+            ).all()
+            return [
+                EvidenceVersion(
+                    evidence_id=model.evidencia_id,
+                    path_or_url=model.ruta_o_url,
+                    mime_type=model.mime_type,
+                    size_bytes=model.tamanio_bytes,
+                    checksum_sha256=model.checksum_sha256,
+                    user_id=model.usuario_id,
+                    created_at=model.fecha,
+                )
+                for model in models
+            ]
+
+    async def unlink(self, evidence_id: int, entity: FlowEntity, entity_id: int) -> bool:
+        async with self.session_factory() as session:
+            result = await session.execute(
+                delete(EvidenceLinkModel).where(
+                    EvidenceLinkModel.evidencia_id == evidence_id,
+                    EvidenceLinkModel.entidad == entity.value,
+                    EvidenceLinkModel.entidad_id == entity_id,
+                )
+            )
+            await session.commit()
+            return bool(result.rowcount)

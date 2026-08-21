@@ -24,6 +24,8 @@ class SqlAlchemyAreaRepository:
                     activo=area.is_active,
                     codigo=area.code,
                     parent_id=area.parent_id,
+                    tipo=area.area_type,
+                    color=area.color,
                 )
                 session.add(model)
                 await session.commit()
@@ -44,6 +46,8 @@ class SqlAlchemyAreaRepository:
                     code=model.codigo or model.nombre,
                     name=model.nombre,
                     parent_id=model.parent_id,
+                    area_type=model.tipo,
+                    color=model.color,
                     is_active=model.activo,
                 )
                 for model in models
@@ -59,6 +63,8 @@ class SqlAlchemyAreaRepository:
                 code=model.codigo or model.nombre,
                 name=model.nombre,
                 parent_id=model.parent_id,
+                area_type=model.tipo,
+                color=model.color,
                 is_active=model.activo,
             )
 
@@ -71,6 +77,8 @@ class SqlAlchemyAreaRepository:
                 model.nombre = area.name
                 model.codigo = area.code
                 model.parent_id = area.parent_id
+                model.tipo = area.area_type
+                model.color = area.color
                 model.activo = area.is_active
                 await session.commit()
             except IntegrityError as exc:

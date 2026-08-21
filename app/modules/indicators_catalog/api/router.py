@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user, require_roles
+from app.shared.domain.exceptions import ResourceNotFoundError
 
 from ..application.dto import (
     ChangeIndicatorStatusCommand,
@@ -33,12 +36,17 @@ from .dependencies import (
 )
 from .schemas import (
     ActualizarIndicadorRequest,
+    AsociarCriteriosRequest,
     CambiarPeriodicidadRequest,
+    CoberturaSeaesRespuesta,
+    CriterioCoberturaRespuesta,
+    IndicadorDetalleRespuesta,
     IndicadorRespuesta,
     LineaBaseRequest,
     LineaBaseRespuesta,
     MetaIndicadorRequest,
     MetaIndicadorRespuesta,
+    PaginaIndicadoresRespuesta,
     RegistrarIndicadorRequest,
 )
 
@@ -49,19 +57,168 @@ MANAGE_ROLES = ("planeacion", "admin_sistema")
 
 @router.get(
     "",
-    response_model=list[IndicadorRespuesta],
+    response_model=PaginaIndicadoresRespuesta,
     summary="Consultar indicadores (F1.1)",
     responses={401: {"model": ErrorResponse, "description": "Autenticacion requerida."}},
 )
 async def list_indicators(
     request: Request,
     activos: bool = Query(default=True),
+    q: str | None = Query(default=None),
+    area_id: int | None = Query(default=None),
+    responsable_id: int | None = Query(default=None),
+    instrumento_id: int | None = Query(default=None),
+    criterio_seaes_id: int | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=100),
     _current_user=Depends(get_current_user),
-) -> list[IndicadorRespuesta]:
+) -> PaginaIndicadoresRespuesta:
     indicators = await request.app.state.indicator_repository.list(
         active_only=activos,
     )
-    return [IndicadorRespuesta.from_domain(item) for item in indicators]
+    if q:
+        normalized = q.strip().casefold()
+        indicators = [
+            item
+            for item in indicators
+            if normalized in item.key.casefold() or normalized in item.name.casefold()
+        ]
+    if area_id is not None:
+        indicators = [item for item in indicators if item.area_id == area_id]
+    if responsable_id is not None:
+        indicators = [item for item in indicators if item.responsible_id == responsable_id]
+    if instrumento_id is not None:
+        indicators = [item for item in indicators if instrumento_id in item.instrument_ids]
+    if criterio_seaes_id is not None:
+        indicators = [item for item in indicators if criterio_seaes_id in item.criteria_ids]
+    total = len(indicators)
+    return PaginaIndicadoresRespuesta(
+        items=[
+            IndicadorRespuesta.from_domain(item) for item in indicators[offset : offset + limit]
+        ],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/cobertura-seaes",
+    response_model=CoberturaSeaesRespuesta,
+    summary="Consultar cobertura de criterios SEAES",
+)
+async def seaes_coverage(
+    request: Request,
+    _current_user=Depends(get_current_user),
+) -> CoberturaSeaesRespuesta:
+    criteria = await request.app.state.criteria_repository.list()
+    indicators = await request.app.state.indicator_repository.list(active_only=True)
+    rows = []
+    for criterion in criteria:
+        count = sum(criterion.id in indicator.criteria_ids for indicator in indicators)
+        rows.append(
+            CriterioCoberturaRespuesta(
+                id=criterion.id,
+                clave=criterion.key,
+                nombre=criterion.name,
+                indicadores_asociados=count,
+                cubierto=count > 0,
+            )
+        )
+    covered = sum(row.cubierto for row in rows)
+    percentage = (
+        (Decimal(covered) * Decimal(100) / Decimal(len(rows))).quantize(Decimal("0.01"))
+        if rows
+        else Decimal("0.00")
+    )
+    return CoberturaSeaesRespuesta(
+        total_criterios=len(rows),
+        criterios_cubiertos=covered,
+        porcentaje_cobertura=percentage,
+        criterios=rows,
+    )
+
+
+@router.get(
+    "/{indicator_id}",
+    response_model=IndicadorDetalleRespuesta,
+    summary="Consultar detalle integral del indicador",
+)
+async def get_indicator(
+    indicator_id: int,
+    request: Request,
+    _current_user=Depends(get_current_user),
+) -> IndicadorDetalleRespuesta:
+    indicator = await request.app.state.indicator_repository.get_by_id(indicator_id)
+    if indicator is None:
+        raise ResourceNotFoundError("El indicador no existe.")
+    baseline = await request.app.state.indicator_repository.get_baseline(indicator_id)
+    goals = await request.app.state.indicator_repository.list_goals(indicator_id)
+    return IndicadorDetalleRespuesta(
+        **IndicadorRespuesta.from_domain(indicator).model_dump(),
+        linea_base=LineaBaseRespuesta.from_domain(baseline) if baseline else None,
+        metas=[MetaIndicadorRespuesta.from_domain(goal) for goal in goals],
+    )
+
+
+@router.get(
+    "/{indicator_id}/linea-base",
+    response_model=LineaBaseRespuesta,
+    summary="Consultar linea base del indicador",
+)
+async def get_baseline(indicator_id: int, request: Request, _user=Depends(get_current_user)):
+    baseline = await request.app.state.indicator_repository.get_baseline(indicator_id)
+    if baseline is None:
+        raise ResourceNotFoundError("El indicador no tiene linea base.")
+    return LineaBaseRespuesta.from_domain(baseline)
+
+
+@router.get(
+    "/{indicator_id}/metas",
+    response_model=list[MetaIndicadorRespuesta],
+    summary="Consultar metas del indicador",
+)
+async def get_goals(indicator_id: int, request: Request, _user=Depends(get_current_user)):
+    if await request.app.state.indicator_repository.get_by_id(indicator_id) is None:
+        raise ResourceNotFoundError("El indicador no existe.")
+    goals = await request.app.state.indicator_repository.list_goals(indicator_id)
+    return [MetaIndicadorRespuesta.from_domain(goal) for goal in goals]
+
+
+@router.get(
+    "/{indicator_id}/criterios-seaes",
+    response_model=list[int],
+    summary="Consultar criterios SEAES asociados",
+)
+async def get_indicator_criteria(
+    indicator_id: int, request: Request, _user=Depends(get_current_user)
+) -> list[int]:
+    indicator = await request.app.state.indicator_repository.get_by_id(indicator_id)
+    if indicator is None:
+        raise ResourceNotFoundError("El indicador no existe.")
+    return sorted(indicator.criteria_ids)
+
+
+@router.put(
+    "/{indicator_id}/criterios-seaes",
+    response_model=list[int],
+    summary="Reemplazar criterios SEAES asociados",
+)
+async def set_indicator_criteria(
+    indicator_id: int,
+    body: AsociarCriteriosRequest,
+    request: Request,
+    _current_user=Depends(require_roles(*MANAGE_ROLES)),
+) -> list[int]:
+    indicator = await request.app.state.indicator_repository.get_by_id(indicator_id)
+    if indicator is None:
+        raise ResourceNotFoundError("El indicador no existe.")
+    known = {item.id for item in await request.app.state.criteria_repository.list()}
+    missing = body.criterio_ids - known
+    if missing:
+        raise ResourceNotFoundError("Uno o mas criterios SEAES no existen.", sorted(missing))
+    await request.app.state.indicator_repository.set_criteria(indicator_id, body.criterio_ids)
+    return sorted(body.criterio_ids)
 
 
 @router.post(

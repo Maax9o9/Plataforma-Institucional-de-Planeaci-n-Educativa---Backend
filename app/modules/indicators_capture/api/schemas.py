@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, Field
@@ -51,6 +51,8 @@ class CapturaRespuesta(BaseModel):
     estado: CaptureStatus
     porcentaje_avance: Decimal | None
     semaforo: str | None
+    creado_en: datetime
+    actualizado_en: datetime
 
     @classmethod
     def from_domain(cls, capture: Capture) -> CapturaRespuesta:
@@ -66,4 +68,42 @@ class CapturaRespuesta(BaseModel):
             estado=capture.status,
             porcentaje_avance=capture.progress_percentage,
             semaforo=capture.semaphore,
+            creado_en=capture.created_at,
+            actualizado_en=capture.updated_at,
         )
+
+
+class PaginaCapturasRespuesta(BaseModel):
+    items: list[CapturaRespuesta]
+    total: int
+    offset: int
+    limit: int
+
+
+class IndicadorPendienteRespuesta(BaseModel):
+    id: int
+    clave: str
+    nombre: str
+    unidad_medida: str
+
+
+class PeriodoPendienteRespuesta(BaseModel):
+    id: int
+    etiqueta: str
+    fecha_limite: date
+    estado: str
+
+
+class CapturaPendienteRespuesta(BaseModel):
+    indicador: IndicadorPendienteRespuesta
+    periodo: PeriodoPendienteRespuesta
+    meta: Decimal | None
+    captura: CapturaRespuesta | None
+    evidencias_total: int
+
+
+class PaginaPendientesRespuesta(BaseModel):
+    items: list[CapturaPendienteRespuesta]
+    total: int
+    offset: int
+    limit: int

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, status
+from typing import Literal
+
+from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user, require_roles
@@ -32,10 +34,28 @@ MANAGE_ROLES = ("planeacion", "admin_sistema")
 )
 async def list_periods(
     request: Request,
+    tipo: str | None = Query(default=None),
+    estado: str | None = Query(default=None),
+    anio: int | None = Query(default=None),
+    periodicidad: str | None = Query(default=None),
+    order: Literal["asc", "desc"] = Query(default="desc"),
     user=Depends(get_current_user),
 ) -> list[PeriodoResponse]:
     del user
     periods = await request.app.state.period_repository.list()
+    if tipo is not None:
+        periods = [item for item in periods if item.period_type.value == tipo]
+    if estado is not None:
+        periods = [item for item in periods if item.status.value == estado]
+    if anio is not None:
+        periods = [item for item in periods if item.year == anio]
+    if periodicidad is not None:
+        periods = [
+            item
+            for item in periods
+            if item.periodicity is not None and item.periodicity.value == periodicidad
+        ]
+    periods = sorted(periods, key=lambda item: item.starts_on, reverse=order == "desc")
     return [PeriodoResponse.from_domain(period) for period in periods]
 
 

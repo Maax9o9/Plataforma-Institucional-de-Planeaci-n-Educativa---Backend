@@ -9,17 +9,12 @@ from fastapi import APIRouter, Depends, Query, Request
 from app.core.schemas import ErrorResponse
 from app.core.security import require_roles
 
-from ..api.schemas import EntradaAuditoriaResponse
+from ..api.schemas import EntradaAuditoriaResponse, PaginaAuditoriaResponse
 
 TAG = "Auditoria"
 router = APIRouter(tags=[TAG])
 
 
-@router.get(
-    "/bitacora",
-    response_model=list[EntradaAuditoriaResponse],
-    summary="Consultar bitacora filtrable",
-)
 @router.get(
     "/auditoria",
     response_model=list[EntradaAuditoriaResponse],
@@ -48,7 +43,50 @@ async def list_audit_entries(
     return [EntradaAuditoriaResponse.from_domain(entry) for entry in entries]
 
 
-@router.get("/indicadores/{indicator_id}/historial", summary="Consultar historial del indicador")
+@router.get(
+    "/bitacora",
+    response_model=PaginaAuditoriaResponse,
+    summary="Consultar bitacora paginada y filtrable",
+)
+async def list_log_entries(
+    request: Request,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=100),
+    usuario_id: int | None = Query(default=None),
+    accion: str | None = Query(default=None),
+    entidad: str | None = Query(default=None),
+    entidad_id: int | None = Query(default=None),
+    fecha_desde: datetime | None = Query(default=None),
+    fecha_hasta: datetime | None = Query(default=None),
+    _current_user=Depends(require_roles("planeacion", "admin_sistema")),
+) -> PaginaAuditoriaResponse:
+    filters = {
+        "actor_id": usuario_id,
+        "action": accion,
+        "from_date": fecha_desde,
+        "to_date": fecha_hasta,
+        "aggregate_type": entidad,
+        "aggregate_id": entidad_id,
+    }
+    entries = await request.app.state.audit_repository.list(
+        offset=offset,
+        limit=limit,
+        **filters,
+    )
+    total = await request.app.state.audit_repository.count(**filters)
+    return PaginaAuditoriaResponse(
+        items=[EntradaAuditoriaResponse.from_domain(entry) for entry in entries],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/indicadores/{indicator_id}/historial",
+    response_model=list[EntradaAuditoriaResponse],
+    summary="Consultar historial del indicador",
+)
 async def indicator_history(
     indicator_id: int,
     request: Request,

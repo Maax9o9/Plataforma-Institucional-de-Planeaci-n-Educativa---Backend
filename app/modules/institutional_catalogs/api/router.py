@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user, require_roles
@@ -47,10 +47,13 @@ router = APIRouter(prefix="/catalogos", tags=[TAG])
 )
 async def list_areas(
     request: Request,
+    activo: bool | None = Query(default=True),
     user=Depends(get_current_user),
 ) -> list[AreaRespuesta]:
     del user
-    areas = await request.app.state.area_repository.list()
+    areas = await request.app.state.area_repository.list(active_only=False)
+    if activo is not None:
+        areas = [area for area in areas if area.is_active is activo]
     return [AreaRespuesta.from_domain(area) for area in areas]
 
 
@@ -74,6 +77,8 @@ async def create_area(
             code=body.codigo,
             name=body.nombre,
             parent_id=body.area_padre_id,
+            area_type=body.tipo,
+            color=body.color,
             actor_id=current_user.id,
         )
     )
@@ -101,6 +106,8 @@ async def update_area(
             code=body.codigo,
             name=body.nombre,
             parent_id=body.area_padre_id,
+            area_type=body.tipo,
+            color=body.color,
             actor_id=current_user.id,
         )
     )
@@ -135,10 +142,13 @@ async def deactivate_area(
 )
 async def list_instruments(
     request: Request,
+    activo: bool | None = Query(default=True),
     user=Depends(get_current_user),
 ) -> list[InstrumentoRespuesta]:
     del user
-    instruments = await request.app.state.instrument_repository.list()
+    instruments = await request.app.state.instrument_repository.list(active_only=False)
+    if activo is not None:
+        instruments = [item for item in instruments if item.is_active is activo]
     return [InstrumentoRespuesta.from_domain(instrument) for instrument in instruments]
 
 

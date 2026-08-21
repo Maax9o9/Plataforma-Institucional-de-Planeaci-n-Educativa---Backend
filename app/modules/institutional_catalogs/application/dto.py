@@ -11,6 +11,8 @@ class CreateAreaCommand:
     name: str
     parent_id: int | None
     actor_id: int | None
+    area_type: str = "administrativa"
+    color: str | None = None
 
 
 @dataclass(frozen=True)
@@ -27,6 +29,8 @@ class UpdateAreaCommand:
     code: str | None
     name: str | None
     parent_id: int | None
+    area_type: str | None
+    color: str | None
     actor_id: int
 
 

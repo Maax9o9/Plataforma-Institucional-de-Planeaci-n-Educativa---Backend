@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from app.shared.domain.base_entity import BaseEntity
-from app.shared.domain.exceptions import InvalidStateError, ValidationError
+from app.shared.domain.exceptions import CaptureImmutableError, InvalidStateError, ValidationError
 
 from .value_objects import CaptureStatus
 
@@ -37,10 +37,8 @@ class Capture(BaseEntity):
         )
 
     def ensure_editable(self, period_is_open: bool) -> None:
-        if self.status is CaptureStatus.VALIDATED and not period_is_open:
-            raise InvalidStateError(
-                "Una captura validada no puede editarse con el periodo cerrado."
-            )
+        if self.status is CaptureStatus.VALIDATED:
+            raise CaptureImmutableError()
         if self.status is CaptureStatus.SENT:
             raise InvalidStateError("Una captura enviada no puede editarse.")
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, model_validator
 
 from ..domain.entities import Area, Instrument
@@ -11,6 +13,8 @@ class CrearAreaRequest(BaseModel):
     codigo: str = Field(min_length=1, max_length=30, examples=["DIP"])
     nombre: str = Field(min_length=2, max_length=150, examples=["Direccion de Planeacion"])
     area_padre_id: int | None = Field(default=None, description="Area superior opcional.")
+    tipo: Literal["administrativa", "programa_educativo"] = "administrativa"
+    color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
 
 
 class AreaRespuesta(BaseModel):
@@ -18,6 +22,8 @@ class AreaRespuesta(BaseModel):
     codigo: str
     nombre: str
     area_padre_id: int | None
+    tipo: Literal["administrativa", "programa_educativo"]
+    color: str | None
     activo: bool
 
     @classmethod
@@ -27,6 +33,8 @@ class AreaRespuesta(BaseModel):
             codigo=area.code,
             nombre=area.name,
             area_padre_id=area.parent_id,
+            tipo=area.area_type,
+            color=area.color,
             activo=area.is_active,
         )
 
@@ -35,10 +43,15 @@ class ActualizarAreaRequest(BaseModel):
     codigo: str | None = Field(default=None, min_length=1, max_length=30)
     nombre: str | None = Field(default=None, min_length=2, max_length=150)
     area_padre_id: int | None = None
+    tipo: Literal["administrativa", "programa_educativo"] | None = None
+    color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
 
     @model_validator(mode="after")
     def require_one_change(self) -> ActualizarAreaRequest:
-        if all(value is None for value in (self.codigo, self.nombre, self.area_padre_id)):
+        if all(
+            value is None
+            for value in (self.codigo, self.nombre, self.area_padre_id, self.tipo, self.color)
+        ):
             raise ValueError("Debe indicar al menos un campo para actualizar.")
         return self
 

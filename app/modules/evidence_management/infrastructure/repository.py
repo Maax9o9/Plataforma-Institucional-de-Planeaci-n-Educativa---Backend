@@ -42,3 +42,24 @@ class InMemoryEvidenceRepository:
 
     async def list_all(self) -> list[Evidence]:
         return list(self._evidences.values())
+
+    async def list_for(self, entity: FlowEntity, entity_id: int) -> list[Evidence]:
+        evidence_ids = {
+            evidence_id
+            for evidence_id, item_entity, item_id in self._links
+            if item_entity == entity and item_id == entity_id
+        }
+        return [self._evidences[item_id] for item_id in sorted(evidence_ids)]
+
+    async def list_versions(self, evidence_id: int) -> list[EvidenceVersion]:
+        return sorted(
+            [item for item in self._versions if item.evidence_id == evidence_id],
+            key=lambda item: item.created_at,
+        )
+
+    async def unlink(self, evidence_id: int, entity: FlowEntity, entity_id: int) -> bool:
+        key = (evidence_id, entity, entity_id)
+        if key not in self._links:
+            return False
+        self._links.remove(key)
+        return True

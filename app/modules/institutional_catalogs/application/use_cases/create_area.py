@@ -18,7 +18,13 @@ class CreateArea:
         existing_codes = {area.code for area in await self.repository.list(active_only=False)}
         if command.code.strip().upper() in existing_codes:
             raise ConflictError("Ya existe un area con ese codigo.")
-        area = Area.create(code=command.code, name=command.name, parent_id=command.parent_id)
+        area = Area.create(
+            code=command.code,
+            name=command.name,
+            parent_id=command.parent_id,
+            area_type=command.area_type,
+            color=command.color,
+        )
         await self.repository.add(area)
         await self.event_bus.publish(
             AreaCreated(

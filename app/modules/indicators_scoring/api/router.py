@@ -93,11 +93,23 @@ async def indicator_trend(
     _current_user=Depends(get_current_user),
 ) -> list[TendenciaPuntoRespuesta]:
     captures = await request.app.state.capture_repository.list_by_indicator(indicator_id)
-    return [
-        TendenciaPuntoRespuesta(
-            periodo_id=capture.period_id,
-            porcentaje_avance=capture.progress_percentage,
-            semaforo=capture.semaphore,
+    points = []
+    for capture in captures:
+        period = await request.app.state.period_repository.get_by_id(capture.period_id)
+        goal = await request.app.state.indicator_repository.get_goal(
+            indicator_id, capture.period_id
         )
-        for capture in captures
-    ]
+        if period is None:
+            continue
+        points.append(
+            TendenciaPuntoRespuesta(
+                periodo_id=capture.period_id,
+                periodo_etiqueta=period.name,
+                fecha_inicio=period.starts_on,
+                resultado=capture.result,
+                meta=goal.value if goal else None,
+                porcentaje_avance=capture.progress_percentage,
+                semaforo=capture.semaphore,
+            )
+        )
+    return points

@@ -18,6 +18,8 @@ class AreaModel(Base):
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     codigo: Mapped[str | None] = mapped_column(String(30), unique=True)
     parent_id: Mapped[int | None] = mapped_column(Integer)
+    tipo: Mapped[str] = mapped_column(String(30), nullable=False, default="administrativa")
+    color: Mapped[str | None] = mapped_column(String(7))
 
 
 class InstrumentModel(Base):

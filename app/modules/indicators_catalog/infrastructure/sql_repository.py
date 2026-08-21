@@ -15,6 +15,7 @@ from ..domain.value_objects import IndicatorPeriodicity
 from .models import (
     BaselineModel,
     GoalModel,
+    IndicatorCriteriaModel,
     IndicatorInstrumentModel,
     IndicatorModel,
 )
@@ -28,6 +29,14 @@ class SqlAlchemyIndicatorRepository:
         result = await session.execute(
             select(IndicatorInstrumentModel.c.instrumento_id).where(
                 IndicatorInstrumentModel.c.indicador_id == indicator_id
+            )
+        )
+        return set(result.scalars().all())
+
+    async def _criteria_for(self, session: AsyncSession, indicator_id: int) -> set[int]:
+        result = await session.execute(
+            select(IndicatorCriteriaModel.c.criterio_seaes_id).where(
+                IndicatorCriteriaModel.c.indicador_id == indicator_id
             )
         )
         return set(result.scalars().all())
@@ -52,6 +61,7 @@ class SqlAlchemyIndicatorRepository:
             yellow_threshold=model.umbral_amarillo_min,
             is_active=model.activo,
             instrument_ids=await self._instruments_for(session, model.id),
+            criteria_ids=await self._criteria_for(session, model.id),
             created_at=model.creado_en,
             updated_at=model.actualizado_en,
         )
@@ -200,3 +210,52 @@ class SqlAlchemyIndicatorRepository:
                 period_id=model.periodo_id,
                 value=model.valor,
             )
+
+    async def get_baseline(self, indicator_id: int) -> Baseline | None:
+        async with self.session_factory() as session:
+            model = (
+                await session.execute(
+                    select(BaselineModel).where(BaselineModel.indicador_id == indicator_id)
+                )
+            ).scalar_one_or_none()
+            if model is None:
+                return None
+            return Baseline(
+                indicator_id=model.indicador_id,
+                year=model.anio,
+                period=model.periodo,
+                value=model.valor,
+            )
+
+    async def list_goals(self, indicator_id: int) -> list[Goal]:
+        async with self.session_factory() as session:
+            models = (
+                await session.scalars(
+                    select(GoalModel)
+                    .where(GoalModel.indicador_id == indicator_id)
+                    .order_by(GoalModel.periodo_id)
+                )
+            ).all()
+            return [
+                Goal(indicator_id=model.indicador_id, period_id=model.periodo_id, value=model.valor)
+                for model in models
+            ]
+
+    async def set_criteria(self, indicator_id: int, criteria_ids: set[int]) -> None:
+        from sqlalchemy import delete
+
+        async with self.session_factory() as session:
+            await session.execute(
+                delete(IndicatorCriteriaModel).where(
+                    IndicatorCriteriaModel.c.indicador_id == indicator_id
+                )
+            )
+            if criteria_ids:
+                await session.execute(
+                    insert(IndicatorCriteriaModel),
+                    [
+                        {"indicador_id": indicator_id, "criterio_seaes_id": criterion_id}
+                        for criterion_id in sorted(criteria_ids)
+                    ],
+                )
+            await session.commit()

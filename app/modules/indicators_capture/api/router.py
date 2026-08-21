@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user
+from app.shared.domain.exceptions import ForbiddenError, ResourceNotFoundError
 
 from ...evidence_management.api.dependencies import get_attach_evidence_use_case
+from ...evidence_management.api.schemas import EvidenciaRespuesta
 from ...evidence_management.application.dto import AttachEvidenceCommand
 from ...evidence_management.application.use_cases.manage_evidence import AttachEvidence
 from ...evidence_management.domain.value_objects import FlowEntity
@@ -20,13 +22,58 @@ from .dependencies import (
 )
 from .schemas import (
     AdjuntarEvidenciaCapturaRequest,
+    CapturaPendienteRespuesta,
     CapturaRespuesta,
     EditarCapturaRequest,
+    IndicadorPendienteRespuesta,
+    PaginaCapturasRespuesta,
+    PaginaPendientesRespuesta,
+    PeriodoPendienteRespuesta,
     RegistrarCapturaRequest,
 )
 
 TAG = "Capturas de indicadores"
 router = APIRouter(prefix="/capturas", tags=[TAG])
+
+
+@router.get(
+    "",
+    response_model=PaginaCapturasRespuesta,
+    summary="Consultar bandeja paginada de capturas",
+)
+async def list_captures(
+    request: Request,
+    estado: str | None = Query(default=None),
+    area_id: int | None = Query(default=None),
+    indicador_id: int | None = Query(default=None),
+    periodo_id: int | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=100),
+    current_user=Depends(get_current_user),
+) -> PaginaCapturasRespuesta:
+    items = await request.app.state.capture_repository.list_all()
+    if not current_user.has_any_role({"planeacion", "admin_sistema"}):
+        items = [item for item in items if item.capturer_id == current_user.id]
+    if estado is not None:
+        items = [item for item in items if item.status.value == estado]
+    if indicador_id is not None:
+        items = [item for item in items if item.indicator_id == indicador_id]
+    if periodo_id is not None:
+        items = [item for item in items if item.period_id == periodo_id]
+    if area_id is not None:
+        filtered = []
+        for item in items:
+            indicator = await request.app.state.indicator_repository.get_by_id(item.indicator_id)
+            if indicator is not None and indicator.area_id == area_id:
+                filtered.append(item)
+        items = filtered
+    total = len(items)
+    return PaginaCapturasRespuesta(
+        items=[CapturaRespuesta.from_domain(item) for item in items[offset : offset + limit]],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.post(
@@ -60,19 +107,70 @@ async def create_capture(
 
 @router.get(
     "/mis-pendientes",
-    response_model=list[CapturaRespuesta],
+    response_model=PaginaPendientesRespuesta,
     summary="Consultar panel personal de capturas",
 )
 async def list_my_captures(
     request: Request,
     periodo_id: int | None = None,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=100),
     current_user=Depends(get_current_user),
-) -> list[CapturaRespuesta]:
-    captures = await request.app.state.capture_repository.list_by_capturer(
-        current_user.id,
-        periodo_id,
+) -> PaginaPendientesRespuesta:
+    indicators = [
+        item
+        for item in await request.app.state.indicator_repository.list(active_only=True)
+        if item.responsible_id == current_user.id
+    ]
+    periods = [
+        item
+        for item in await request.app.state.period_repository.list()
+        if item.period_type.value == "indicadores" and item.status.value == "abierto"
+    ]
+    if periodo_id is not None:
+        periods = [item for item in periods if item.id == periodo_id]
+    rows = []
+    for indicator in indicators:
+        for period in periods:
+            if (
+                period.periodicity is not None
+                and period.periodicity.value != indicator.periodicity.value
+            ):
+                continue
+            capture = await request.app.state.capture_repository.get_by_indicator_period(
+                indicator.id, period.id
+            )
+            goal = await request.app.state.indicator_repository.get_goal(indicator.id, period.id)
+            evidence_total = 0
+            if capture is not None:
+                evidence_total = len(
+                    await request.app.state.evidence_repository.list_for(
+                        FlowEntity.CAPTURE, capture.id
+                    )
+                )
+            rows.append(
+                CapturaPendienteRespuesta(
+                    indicador=IndicadorPendienteRespuesta(
+                        id=indicator.id,
+                        clave=indicator.key,
+                        nombre=indicator.name,
+                        unidad_medida=indicator.unit,
+                    ),
+                    periodo=PeriodoPendienteRespuesta(
+                        id=period.id,
+                        etiqueta=period.name,
+                        fecha_limite=period.ends_on,
+                        estado=period.status.value,
+                    ),
+                    meta=goal.value if goal else None,
+                    captura=CapturaRespuesta.from_domain(capture) if capture else None,
+                    evidencias_total=evidence_total,
+                )
+            )
+    total = len(rows)
+    return PaginaPendientesRespuesta(
+        items=rows[offset : offset + limit], total=total, offset=offset, limit=limit
     )
-    return [CapturaRespuesta.from_domain(capture) for capture in captures]
 
 
 @router.get(
@@ -170,6 +268,54 @@ async def attach_capture_evidence(
             checksum_sha256=body.checksum_sha256,
         )
     )
-    from ...evidence_management.api.schemas import EvidenciaRespuesta
-
     return EvidenciaRespuesta.from_domain(evidence)
+
+
+@router.get(
+    "/{capture_id}/evidencias",
+    response_model=list[EvidenciaRespuesta],
+    summary="Consultar evidencias vinculadas a una captura",
+)
+async def list_capture_evidence(
+    capture_id: int,
+    request: Request,
+    current_user=Depends(get_current_user),
+) -> list[EvidenciaRespuesta]:
+    capture = await request.app.state.capture_repository.get_by_id(capture_id)
+    if capture is None:
+        raise ResourceNotFoundError("La captura no existe.")
+    if capture.capturer_id != current_user.id and not current_user.has_any_role(
+        {"planeacion", "admin_sistema"}
+    ):
+        raise ForbiddenError()
+    evidences = await request.app.state.evidence_repository.list_for(
+        FlowEntity.CAPTURE, capture_id
+    )
+    return [EvidenciaRespuesta.from_domain(item) for item in evidences]
+
+
+@router.delete(
+    "/{capture_id}/evidencias/{evidence_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Desvincular evidencia de una captura",
+)
+async def unlink_capture_evidence(
+    capture_id: int,
+    evidence_id: int,
+    request: Request,
+    current_user=Depends(get_current_user),
+) -> Response:
+    capture = await request.app.state.capture_repository.get_by_id(capture_id)
+    if capture is None:
+        raise ResourceNotFoundError("La captura no existe.")
+    capture.ensure_editable(period_is_open=True)
+    if capture.capturer_id != current_user.id and not current_user.has_any_role(
+        {"planeacion", "admin_sistema"}
+    ):
+        raise ForbiddenError()
+    removed = await request.app.state.evidence_repository.unlink(
+        evidence_id, FlowEntity.CAPTURE, capture_id
+    )
+    if not removed:
+        raise ResourceNotFoundError("La evidencia no esta vinculada a la captura.")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

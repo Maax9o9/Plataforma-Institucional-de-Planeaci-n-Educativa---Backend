@@ -50,3 +50,16 @@ class InMemoryIndicatorRepository:
 
     async def get_goal(self, indicator_id: int, period_id: int) -> Goal | None:
         return self._goals.get((indicator_id, period_id))
+
+    async def get_baseline(self, indicator_id: int) -> Baseline | None:
+        return self._baselines.get(indicator_id)
+
+    async def list_goals(self, indicator_id: int) -> list[Goal]:
+        return sorted(
+            [item for (item_id, _), item in self._goals.items() if item_id == indicator_id],
+            key=lambda item: item.period_id,
+        )
+
+    async def set_criteria(self, indicator_id: int, criteria_ids: set[int]) -> None:
+        self._items[indicator_id].criteria_ids = set(criteria_ids)
+        self._items[indicator_id].touch()

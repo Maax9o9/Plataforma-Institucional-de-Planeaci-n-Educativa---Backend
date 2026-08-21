@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
@@ -92,6 +93,7 @@ class UsuarioResponse(BaseModel):
     area_id: int | None
     activo: bool
     requiere_configurar_contrasena: bool
+    creado_en: datetime
 
     @classmethod
     def from_domain(cls, user: User) -> UsuarioResponse:
@@ -103,7 +105,15 @@ class UsuarioResponse(BaseModel):
             area_id=user.area_id,
             activo=user.is_active,
             requiere_configurar_contrasena=user.password_setup_required,
+            creado_en=user.created_at,
         )
+
+
+class PaginaUsuariosResponse(BaseModel):
+    items: list[UsuarioResponse]
+    total: int
+    offset: int
+    limit: int
 
 
 class ConfigurarContrasenaRequest(BaseModel):

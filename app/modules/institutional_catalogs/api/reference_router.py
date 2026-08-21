@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from pydantic import BaseModel, Field
 
 from app.core.security import get_current_user, require_roles
@@ -29,8 +29,15 @@ class ReferenciaRespuesta(BaseModel):
         return cls(id=item.id, clave=item.key, nombre=item.name, activo=item.is_active)
 
 
-async def _list(request: Request, state_name: str, user) -> list[ReferenciaRespuesta]:
+async def _list(
+    request: Request,
+    state_name: str,
+    user,
+    activo: bool | None,
+) -> list[ReferenciaRespuesta]:
     items = await getattr(request.app.state, state_name).list()
+    if activo is not None:
+        items = [item for item in items if item.is_active is activo]
     return [ReferenciaRespuesta.from_domain(item) for item in items]
 
 
@@ -45,8 +52,12 @@ async def _create(request: Request, state_name: str, body: CrearReferenciaReques
     response_model=list[ReferenciaRespuesta],
     summary="Consultar criterios SEAES",
 )
-async def list_criteria(request: Request, _user=Depends(get_current_user)):
-    return await _list(request, "criteria_repository", _user)
+async def list_criteria(
+    request: Request,
+    activo: bool | None = Query(default=True),
+    _user=Depends(get_current_user),
+):
+    return await _list(request, "criteria_repository", _user, activo)
 
 
 @router.post(
@@ -103,8 +114,12 @@ async def deactivate_criteria(
     response_model=list[ReferenciaRespuesta],
     summary="Consultar tipos de indicador",
 )
-async def list_indicator_types(request: Request, _user=Depends(get_current_user)):
-    return await _list(request, "indicator_type_repository", _user)
+async def list_indicator_types(
+    request: Request,
+    activo: bool | None = Query(default=True),
+    _user=Depends(get_current_user),
+):
+    return await _list(request, "indicator_type_repository", _user, activo)
 
 
 @router.post(

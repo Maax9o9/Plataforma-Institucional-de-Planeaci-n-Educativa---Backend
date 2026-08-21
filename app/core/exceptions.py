@@ -11,30 +11,47 @@ from app.shared.domain.exceptions import AppError
 
 
 def register_exception_handlers(app: FastAPI) -> None:
+    def request_id(request: Request) -> str | None:
+        return getattr(request.state, "request_id", None)
+
     @app.exception_handler(AppError)
-    async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
+    async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
-            content={"code": exc.code, "message": exc.message, "details": exc.details},
+            content={
+                "code": exc.code,
+                "message": exc.message,
+                "details": exc.details,
+                "request_id": request_id(request),
+            },
             headers={"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None,
         )
 
     @app.exception_handler(RequestValidationError)
-    async def handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+    async def handle_validation_error(
+        request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
         return JSONResponse(
             status_code=422,
             content={
                 "code": "REQUEST_VALIDATION_ERROR",
                 "message": "La solicitud contiene datos invalidos.",
                 "details": exc.errors(),
+                "request_id": request_id(request),
             },
         )
 
     @app.exception_handler(StarletteHTTPException)
-    async def handle_http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+    async def handle_http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         detail = exc.detail if isinstance(exc.detail, str) else "La solicitud no pudo procesarse."
         return JSONResponse(
             status_code=exc.status_code,
-            content={"code": "HTTP_ERROR", "message": detail, "details": None},
+            content={
+                "code": "HTTP_ERROR",
+                "message": detail,
+                "details": None,
+                "request_id": request_id(request),
+            },
             headers=exc.headers,
         )
