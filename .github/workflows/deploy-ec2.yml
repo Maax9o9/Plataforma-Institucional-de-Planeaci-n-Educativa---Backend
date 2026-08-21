@@ -46,58 +46,36 @@ jobs:
         env:
           DEPLOY_BRANCH: ${{ github.ref_name }}
           DEPLOY_PATH: ${{ secrets.EC2_DEPLOY_PATH }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
-          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
-          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER }}
-          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          SMTP_START_TLS: ${{ secrets.SMTP_START_TLS }}
-          BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.BOOTSTRAP_ADMIN_EMAIL }}
-          BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.BOOTSTRAP_ADMIN_PASSWORD }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
-          envs: DEPLOY_BRANCH,DEPLOY_PATH,SECRET_KEY,DATABASE_URL,CORS_ORIGINS,FRONTEND_URL,EMAIL_PROVIDER,EMAIL_SENDER,SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASSWORD,SMTP_START_TLS,BOOTSTRAP_ADMIN_EMAIL,BOOTSTRAP_ADMIN_PASSWORD
+          envs: DEPLOY_BRANCH,DEPLOY_PATH
           script_stop: true
           script: |
             set -euo pipefail
 
             DEPLOY_PATH="${DEPLOY_PATH:-/opt/planeacion-api}"
+            if [ ! -d "$DEPLOY_PATH" ]; then
+              echo "ERROR: no existe el directorio de despliegue: $DEPLOY_PATH"
+              exit 1
+            fi
             cd "$DEPLOY_PATH"
 
             echo "==> Actualizando branch: $DEPLOY_BRANCH"
             git fetch origin "$DEPLOY_BRANCH"
             git reset --hard "origin/$DEPLOY_BRANCH"
 
-            echo "==> Generando .env desde GitHub Secrets"
-            umask 077
-            cat > .env <<EOF
-            ENVIRONMENT=development
-            SECRET_KEY=${SECRET_KEY}
-            DATABASE_URL=${DATABASE_URL}
-            DATABASE_ECHO=false
-            CORS_ORIGINS=${CORS_ORIGINS}
-            CORS_ALLOW_ALL=true
-            FRONTEND_URL=${FRONTEND_URL}
-            EMAIL_PROVIDER=${EMAIL_PROVIDER:-console}
-            EMAIL_SENDER=${EMAIL_SENDER}
-            SMTP_HOST=${SMTP_HOST}
-            SMTP_PORT=${SMTP_PORT:-587}
-            SMTP_USER=${SMTP_USER}
-            SMTP_PASSWORD=${SMTP_PASSWORD}
-            SMTP_START_TLS=${SMTP_START_TLS:-true}
-            BOOTSTRAP_ADMIN_EMAIL=${BOOTSTRAP_ADMIN_EMAIL}
-            BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD}
-            PASSWORD_SETUP_EXPIRE_HOURS=24
-            EOF
+            echo "==> Verificando .env existente en la VPS"
+            if [ ! -s .env ]; then
+              echo "ERROR: no existe $DEPLOY_PATH/.env o esta vacio"
+              exit 1
+            fi
             chmod 600 .env
+
+            echo "==> Validando configuracion de Docker Compose"
+            docker compose -f docker-compose.prod.yml config --quiet
 
             echo "==> Construyendo imagen de la API"
             docker compose -f docker-compose.prod.yml build api
