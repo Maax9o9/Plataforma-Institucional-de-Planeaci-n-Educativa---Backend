@@ -34,6 +34,13 @@ async def test_authentication_refresh_rotation_and_logout(client, app):
     assert login.status_code == 200
     tokens = login.json()
     assert tokens["token_type"] == "bearer"
+    assert "refresh_token" not in tokens
+    original_refresh = login.cookies.get("planeacion_refresh")
+    assert original_refresh
+    set_cookie = login.headers["set-cookie"]
+    assert "HttpOnly" in set_cookie
+    assert "SameSite=lax" in set_cookie
+    assert "Path=/api/v1/auth" in set_cookie
 
     me = await client.get(
         "/api/v1/auth/me",
@@ -44,22 +51,22 @@ async def test_authentication_refresh_rotation_and_logout(client, app):
 
     refresh = await client.post(
         "/api/v1/auth/refresh",
-        json={"refresh_token": tokens["refresh_token"]},
     )
     assert refresh.status_code == 200
     rotated = refresh.json()
-    assert rotated["refresh_token"] != tokens["refresh_token"]
+    rotated_refresh = refresh.cookies.get("planeacion_refresh")
+    assert rotated_refresh
+    assert rotated_refresh != original_refresh
+    assert "refresh_token" not in rotated
 
-    reused = await client.post(
-        "/api/v1/auth/refresh",
-        json={"refresh_token": tokens["refresh_token"]},
-    )
+    client.cookies.clear()
+    client.cookies.set("planeacion_refresh", original_refresh)
+    reused = await client.post("/api/v1/auth/refresh")
     assert reused.status_code == 401
 
-    session_revoked = await client.post(
-        "/api/v1/auth/refresh",
-        json={"refresh_token": rotated["refresh_token"]},
-    )
+    client.cookies.clear()
+    client.cookies.set("planeacion_refresh", rotated_refresh)
+    session_revoked = await client.post("/api/v1/auth/refresh")
     assert session_revoked.status_code == 401
 
     new_login = await client.post(
@@ -69,10 +76,10 @@ async def test_authentication_refresh_rotation_and_logout(client, app):
     new_tokens = new_login.json()
     logout = await client.post(
         "/api/v1/auth/logout",
-        json={"refresh_token": new_tokens["refresh_token"]},
         headers={"Authorization": f"Bearer {new_tokens['access_token']}"},
     )
     assert logout.status_code == 204
+    assert "Max-Age=0" in logout.headers["set-cookie"]
     assert (
         await client.get(
             "/api/v1/auth/me",

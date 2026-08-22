@@ -23,6 +23,7 @@ from ..application.use_cases.password_setup import InviteUser, SetInitialPasswor
 from ..application.use_cases.refresh_session import RefreshSession
 from ..application.use_cases.update_user import UpdateUser
 from ..domain.value_objects import Role
+from .cookies import clear_refresh_cookie, read_refresh_cookie, set_refresh_cookie
 from .dependencies import (
     get_authenticate_user_use_case,
     get_deactivate_user_use_case,
@@ -38,9 +39,7 @@ from .schemas import (
     ConfigurarContrasenaRequest,
     LoginRequest,
     LoginResponse,
-    LogoutRequest,
     PaginaUsuariosResponse,
-    RefreshRequest,
     UsuarioCreateRequest,
     UsuarioResponse,
     ValidarEnlaceContrasenaRequest,
@@ -55,18 +54,20 @@ router = APIRouter()
     "/auth/login",
     response_model=LoginResponse,
     summary="Autenticar usuario institucional",
-    description="Recibe correo y contrasena, devuelve access/refresh tokens.",
+    description="Devuelve el access token y guarda el refresh token en cookie HttpOnly.",
     responses={401: {"model": ErrorResponse, "description": "Credenciales invalidas."}},
     tags=[TAG],
 )
 async def login(
     body: LoginRequest,
+    request: Request,
+    response: Response,
     use_case: AuthenticateUser = Depends(get_authenticate_user_use_case),
 ) -> LoginResponse:
     result = await use_case.execute(email=str(body.correo), password=body.contrasena)
+    set_refresh_cookie(response, result.refresh_token, request.app.state.settings)
     return LoginResponse(
         access_token=result.access_token,
-        refresh_token=result.refresh_token,
         token_type="bearer",
         expires_in=result.expires_in,
     )
@@ -76,20 +77,23 @@ async def login(
     "/auth/refresh",
     response_model=LoginResponse,
     summary="Rotar refresh token",
-    description="Invalida el refresh token recibido y emite un par nuevo.",
+    description="Rota la cookie HttpOnly de sesion y devuelve un access token nuevo.",
     responses={
         401: {"model": ErrorResponse, "description": "Refresh token invalido o reutilizado."}
     },
     tags=[TAG],
 )
 async def refresh(
-    body: RefreshRequest,
+    request: Request,
+    response: Response,
     use_case: RefreshSession = Depends(get_refresh_session_use_case),
 ) -> LoginResponse:
-    result = await use_case.execute(RefreshCommand(refresh_token=body.refresh_token))
+    settings = request.app.state.settings
+    refresh_token = read_refresh_cookie(request, settings)
+    result = await use_case.execute(RefreshCommand(refresh_token=refresh_token))
+    set_refresh_cookie(response, result.refresh_token, settings)
     return LoginResponse(
         access_token=result.access_token,
-        refresh_token=result.refresh_token,
         token_type="bearer",
         expires_in=result.expires_in,
     )
@@ -104,19 +108,24 @@ async def refresh(
     tags=[TAG],
 )
 async def logout(
-    body: LogoutRequest,
+    request: Request,
+    response: Response,
     claims=Depends(get_access_claims),
     use_case: LogoutUser = Depends(get_logout_user_use_case),
 ) -> Response:
+    settings = request.app.state.settings
+    refresh_token = read_refresh_cookie(request, settings)
     await use_case.execute(
         LogoutCommand(
             access_subject=claims.subject,
             access_token_id=claims.token_id,
             access_expires_at=claims.expires_at,
-            refresh_token=body.refresh_token,
+            refresh_token=refresh_token,
         )
     )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    clear_refresh_cookie(response, settings)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
 
 
 @router.get(

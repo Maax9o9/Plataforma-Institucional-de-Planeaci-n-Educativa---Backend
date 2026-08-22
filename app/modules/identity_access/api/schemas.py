@@ -25,23 +25,8 @@ class LoginRequest(BaseModel):
 
 class LoginResponse(BaseModel):
     access_token: str = Field(description="JWT de corta duracion para llamadas autenticadas.")
-    refresh_token: str = Field(description="Token rotatorio para renovar la sesion.")
     token_type: Literal["bearer"] = Field(description="Esquema de autenticacion.")
     expires_in: int = Field(description="Segundos de vigencia del access token.", examples=[900])
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str = Field(
-        min_length=1,
-        description="Refresh token vigente emitido por el endpoint de login.",
-    )
-
-
-class LogoutRequest(BaseModel):
-    refresh_token: str = Field(
-        min_length=1,
-        description="Refresh token que se debe invalidar junto con el access token.",
-    )
 
 
 class UsuarioCreateRequest(BaseModel):
