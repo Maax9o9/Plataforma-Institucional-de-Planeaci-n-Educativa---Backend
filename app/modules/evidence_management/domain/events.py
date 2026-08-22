@@ -13,3 +13,13 @@ class EvidenceAttached(DomainEvent):
 @dataclass(frozen=True)
 class EvidenceReplaced(DomainEvent):
     pass
+
+
+@dataclass(frozen=True)
+class EvidenceLinked(DomainEvent):
+    pass
+
+
+@dataclass(frozen=True)
+class EvidenceUnlinked(DomainEvent):
+    pass

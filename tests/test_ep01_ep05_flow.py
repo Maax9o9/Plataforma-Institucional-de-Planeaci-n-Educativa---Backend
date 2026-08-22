@@ -61,7 +61,6 @@ async def test_indicator_capture_validation_scoring_and_report_flow(client, app)
         headers=headers,
     )
     period_id = period.json()["id"]
-    await client.post(f"/api/v1/periodos/{period_id}/abrir", headers=headers)
 
     indicator = await client.post(
         "/api/v1/indicadores",
@@ -85,6 +84,8 @@ async def test_indicator_capture_validation_scoring_and_report_flow(client, app)
         headers=headers,
     )
     assert goal.status_code == 201, goal.text
+    opened = await client.post(f"/api/v1/periodos/{period_id}/abrir", headers=headers)
+    assert opened.status_code == 200, opened.text
 
     capture = await client.post(
         "/api/v1/capturas",

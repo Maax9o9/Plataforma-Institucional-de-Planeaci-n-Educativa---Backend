@@ -6,8 +6,10 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Request
 
+from app.core.authorization import ensure_area_or_planning
 from app.core.schemas import ErrorResponse
 from app.core.security import require_roles
+from app.shared.domain.exceptions import ResourceNotFoundError
 
 from ..api.schemas import EntradaAuditoriaResponse, PaginaAuditoriaResponse
 
@@ -90,8 +92,12 @@ async def list_log_entries(
 async def indicator_history(
     indicator_id: int,
     request: Request,
-    _current_user=Depends(require_roles("planeacion", "responsable_area")),
+    current_user=Depends(require_roles("planeacion", "admin_sistema", "responsable_area")),
 ):
+    indicator = await request.app.state.indicator_repository.get_by_id(indicator_id)
+    if indicator is None:
+        raise ResourceNotFoundError("El indicador no existe.")
+    ensure_area_or_planning(current_user, indicator.area_id)
     entries = await request.app.state.audit_repository.list(
         aggregate_type="indicator",
         aggregate_id=indicator_id,
@@ -107,8 +113,22 @@ async def indicator_history(
 async def poa_activity_history(
     activity_id: int,
     request: Request,
-    _current_user=Depends(require_roles("planeacion", "responsable_area")),
+    current_user=Depends(require_roles("planeacion", "admin_sistema", "responsable_area")),
 ):
+    activity = await request.app.state.poa_repository.get_activity(activity_id)
+    objective = (
+        await request.app.state.poa_repository.get_objective(activity.objective_id)
+        if activity
+        else None
+    )
+    process = (
+        await request.app.state.poa_repository.get_process(objective.process_id)
+        if objective
+        else None
+    )
+    if process is None:
+        raise ResourceNotFoundError("La actividad POA no existe.")
+    ensure_area_or_planning(current_user, process.area_id)
     entries = await request.app.state.audit_repository.list(
         aggregate_type="poa_activity",
         aggregate_id=activity_id,

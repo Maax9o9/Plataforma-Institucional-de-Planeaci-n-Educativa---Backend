@@ -20,7 +20,6 @@ from app.core.lifecycle import lifespan
 from app.core.logging import configure_logging
 from app.core.middleware import RequestIdMiddleware, SecurityHeadersMiddleware
 from app.core.openapi import custom_openapi
-from app.modules.identity_access.infrastructure.revoked_token_store import InMemoryRevokedTokenStore
 from app.modules.identity_access.infrastructure.security import (
     Argon2PasswordHasher,
     JwtTokenService,
@@ -41,7 +40,6 @@ def _validate_security_settings(settings: Settings) -> None:
 def _bind_resources(app: FastAPI, resources: Resources) -> None:
     for resource in fields(resources):
         setattr(app.state, resource.name, getattr(resources, resource.name))
-    app.state.revoked_token_store = InMemoryRevokedTokenStore()
     app.state.password_hasher = Argon2PasswordHasher()
     app.state.token_service = JwtTokenService(app.state.settings)
     app.state.email_sender = create_email_sender(app.state.settings)
@@ -67,7 +65,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.event_bus = InMemoryEventBus()
     resources = create_resources(settings)
     _bind_resources(app, resources)
-    register_event_handlers(app.state.event_bus, resources, app.state.email_sender)
+    app.state.notification_service = register_event_handlers(
+        app.state.event_bus,
+        resources,
+        app.state.email_sender,
+    )
     app.add_middleware(RequestIdMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(CORSMiddleware, **build_cors_options(settings))

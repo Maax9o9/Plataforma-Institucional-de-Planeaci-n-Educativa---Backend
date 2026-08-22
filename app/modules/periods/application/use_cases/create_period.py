@@ -10,14 +10,27 @@ from ..dto import CreatePeriodCommand
 
 
 class CreatePeriod:
-    def __init__(self, repository: PeriodRepository, event_bus: EventBus) -> None:
+    def __init__(
+        self, repository: PeriodRepository, event_bus: EventBus, unit_of_work=None
+    ) -> None:
         self.repository = repository
         self.event_bus = event_bus
+        self.unit_of_work = unit_of_work
 
     async def execute(self, command: CreatePeriodCommand) -> Period:
+        if self.unit_of_work is None:
+            return await self._execute(command)
+        async with self.unit_of_work():
+            return await self._execute(command)
+
+    async def _execute(self, command: CreatePeriodCommand) -> Period:
         for existing in await self.repository.list():
             overlaps = command.starts_on < existing.ends_on and command.ends_on > existing.starts_on
-            if overlaps:
+            same_cycle = (
+                command.period_type == existing.period_type
+                and command.periodicity == existing.periodicity
+            )
+            if overlaps and same_cycle:
                 raise ConflictError("Las fechas se traslapan con otro periodo.")
 
         period = Period.create(

@@ -55,6 +55,7 @@ class IndicatorModel(Base):
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     actualizado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class BaselineModel(Base):

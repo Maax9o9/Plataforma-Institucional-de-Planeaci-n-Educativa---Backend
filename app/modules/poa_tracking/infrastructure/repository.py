@@ -52,8 +52,11 @@ class InMemoryPoaAdvanceRepository:
             for item in self._items.values()
         )
 
-    async def reset_validated_for_period(self, period_id: int, actor_id: int) -> None:
+    async def reset_validated_for_period(self, period_id: int, actor_id: int) -> list[int]:
+        reset_ids = []
         for item in self._items.values():
             if item.period_id == period_id and item.status.value == "validado":
+                reset_ids.append(item.id)
                 item.status = CaptureStatus.DRAFT
                 item.touch()
+        return reset_ids

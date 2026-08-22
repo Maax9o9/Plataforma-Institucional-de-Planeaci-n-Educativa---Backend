@@ -34,6 +34,7 @@ class UpdateIndicatorCommand:
     indicator_id: int
     actor_id: int
     changes: dict
+    expected_version: int | None = None
 
 
 @dataclass(frozen=True)

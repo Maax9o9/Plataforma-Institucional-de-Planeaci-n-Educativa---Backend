@@ -21,6 +21,10 @@ from app.modules.identity_access.infrastructure.password_setup_store import (
 )
 from app.modules.identity_access.infrastructure.refresh_store import InMemoryRefreshTokenStore
 from app.modules.identity_access.infrastructure.repository import InMemoryUserRepository
+from app.modules.identity_access.infrastructure.revoked_token_store import (
+    InMemoryRevokedTokenStore,
+    SqlAlchemyRevokedTokenStore,
+)
 from app.modules.identity_access.infrastructure.sql_repository import (
     SqlAlchemyRefreshTokenStore,
     SqlAlchemyUserRepository,
@@ -80,14 +84,20 @@ from app.modules.poa_reports.application.service import (
 from app.modules.poa_tracking.infrastructure.repository import InMemoryPoaAdvanceRepository
 from app.modules.poa_tracking.infrastructure.sql_repository import SqlAlchemyPoaAdvanceRepository
 from app.shared.infrastructure.db.session import create_database
+from app.shared.infrastructure.db.unit_of_work import (
+    NoOpUnitOfWorkFactory,
+    SqlAlchemyUnitOfWorkFactory,
+)
 
 
 @dataclass
 class Resources:
     db_engine: object | None
     db_session_factory: object | None
+    unit_of_work: object
     user_repository: object
     refresh_token_store: object
+    revoked_token_store: object
     area_repository: object
     instrument_repository: object
     period_repository: object
@@ -112,8 +122,10 @@ class Resources:
 def create_resources(settings: Settings) -> Resources:
     db_engine, db_session_factory = create_database(settings)
     if db_session_factory is None:
+        unit_of_work = NoOpUnitOfWorkFactory()
         user_repository = InMemoryUserRepository()
         refresh_token_store = InMemoryRefreshTokenStore()
+        revoked_token_store = InMemoryRevokedTokenStore()
         area_repository = InMemoryAreaRepository()
         instrument_repository = InMemoryInstrumentRepository()
         period_repository = InMemoryPeriodRepository()
@@ -127,7 +139,9 @@ def create_resources(settings: Settings) -> Resources:
         threshold_config_repository = InMemoryThresholdConfigRepository()
         poa_repository = InMemoryPoaRepository()
         poa_advance_repository = InMemoryPoaAdvanceRepository()
-        poa_report_service = InMemoryPoaReportService(poa_repository, poa_advance_repository)
+        poa_report_service = InMemoryPoaReportService(
+            poa_repository, poa_advance_repository, evidence_repository
+        )
         dashboard_service = InMemoryDashboardService(
             indicator_repository,
             capture_repository,
@@ -138,13 +152,16 @@ def create_resources(settings: Settings) -> Resources:
             indicator_repository,
             capture_repository,
             instrument_repository,
+            evidence_repository,
         )
         report_log = InMemoryReportLog()
         notification_repository = InMemoryNotificationRepository()
         password_setup_token_store = InMemoryPasswordSetupTokenStore()
     else:
+        unit_of_work = SqlAlchemyUnitOfWorkFactory(db_session_factory)
         user_repository = SqlAlchemyUserRepository(db_session_factory)
         refresh_token_store = SqlAlchemyRefreshTokenStore(db_session_factory)
+        revoked_token_store = SqlAlchemyRevokedTokenStore(db_session_factory)
         area_repository = SqlAlchemyAreaRepository(db_session_factory)
         instrument_repository = SqlAlchemyInstrumentRepository(db_session_factory)
         period_repository = SqlAlchemyPeriodRepository(db_session_factory)
@@ -171,8 +188,10 @@ def create_resources(settings: Settings) -> Resources:
     return Resources(
         db_engine=db_engine,
         db_session_factory=db_session_factory,
+        unit_of_work=unit_of_work,
         user_repository=user_repository,
         refresh_token_store=refresh_token_store,
+        revoked_token_store=revoked_token_store,
         area_repository=area_repository,
         instrument_repository=instrument_repository,
         period_repository=period_repository,

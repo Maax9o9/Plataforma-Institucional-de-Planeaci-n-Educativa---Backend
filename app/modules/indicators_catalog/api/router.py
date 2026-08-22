@@ -278,6 +278,7 @@ async def update_indicator(
     use_case: UpdateIndicator = Depends(get_update_indicator_use_case),
 ) -> IndicadorRespuesta:
     changes = body.model_dump(exclude_none=True)
+    expected_version = changes.pop("version", None)
     changes = {
         "name": changes.pop("nombre", None),
         "calculation_method": changes.pop("metodo_calculo", None),
@@ -297,6 +298,7 @@ async def update_indicator(
             indicator_id=indicator_id,
             actor_id=current_user.id,
             changes=changes,
+            expected_version=expected_version,
         )
     )
     return IndicadorRespuesta.from_domain(indicator)

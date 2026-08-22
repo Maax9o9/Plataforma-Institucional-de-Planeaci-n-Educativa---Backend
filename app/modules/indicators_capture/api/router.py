@@ -4,13 +4,18 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 
+from app.core.authorization import actor_from_user, ensure_owner_or_planning
 from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user
 from app.shared.domain.exceptions import ForbiddenError, ResourceNotFoundError
 
-from ...evidence_management.api.dependencies import get_attach_evidence_use_case
+from ...evidence_management.api.dependencies import (
+    get_attach_evidence_use_case,
+    get_evidence_access_control,
+)
 from ...evidence_management.api.schemas import EvidenciaRespuesta
-from ...evidence_management.application.dto import AttachEvidenceCommand
+from ...evidence_management.application.dto import AttachEvidenceCommand, UnlinkEvidenceCommand
+from ...evidence_management.application.use_cases.link_evidence import UnlinkEvidence
 from ...evidence_management.application.use_cases.manage_evidence import AttachEvidence
 from ...evidence_management.domain.value_objects import FlowEntity
 from ..application.dto import EditCaptureCommand, RegisterCaptureCommand, SendCaptureCommand
@@ -181,13 +186,14 @@ async def list_my_captures(
 async def get_capture(
     capture_id: int,
     request: Request,
-    _current_user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ) -> CapturaRespuesta:
     capture = await request.app.state.capture_repository.get_by_id(capture_id)
     if capture is None:
         from app.shared.domain.exceptions import ResourceNotFoundError
 
         raise ResourceNotFoundError("La captura no existe.")
+    ensure_owner_or_planning(current_user, capture.capturer_id)
     return CapturaRespuesta.from_domain(capture)
 
 
@@ -262,7 +268,7 @@ async def attach_capture_evidence(
             path_or_url=body.ruta_o_url,
             entity=FlowEntity.CAPTURE,
             entity_id=capture_id,
-            actor_id=current_user.id,
+            actor=actor_from_user(current_user),
             mime_type=body.mime_type,
             size_bytes=body.tamanio_bytes,
             checksum_sha256=body.checksum_sha256,
@@ -308,14 +314,17 @@ async def unlink_capture_evidence(
     capture = await request.app.state.capture_repository.get_by_id(capture_id)
     if capture is None:
         raise ResourceNotFoundError("La captura no existe.")
-    capture.ensure_editable(period_is_open=True)
-    if capture.capturer_id != current_user.id and not current_user.has_any_role(
-        {"planeacion", "admin_sistema"}
-    ):
-        raise ForbiddenError()
-    removed = await request.app.state.evidence_repository.unlink(
-        evidence_id, FlowEntity.CAPTURE, capture_id
+    await UnlinkEvidence(
+        request.app.state.evidence_repository,
+        request.app.state.event_bus,
+        get_evidence_access_control(request),
+        request.app.state.unit_of_work,
+    ).execute(
+        UnlinkEvidenceCommand(
+            evidence_id=evidence_id,
+            entity=FlowEntity.CAPTURE,
+            entity_id=capture_id,
+            actor=actor_from_user(current_user),
+        )
     )
-    if not removed:
-        raise ResourceNotFoundError("La evidencia no esta vinculada a la captura.")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

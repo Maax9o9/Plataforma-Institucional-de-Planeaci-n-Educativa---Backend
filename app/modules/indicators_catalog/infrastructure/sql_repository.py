@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -64,6 +64,7 @@ class SqlAlchemyIndicatorRepository:
             criteria_ids=await self._criteria_for(session, model.id),
             created_at=model.creado_en,
             updated_at=model.actualizado_en,
+            version=model.version,
         )
 
     async def add(self, indicator: Indicator) -> None:
@@ -89,6 +90,7 @@ class SqlAlchemyIndicatorRepository:
                     activo=indicator.is_active,
                     creado_en=now,
                     actualizado_en=now,
+                    version=indicator.version,
                 )
                 session.add(model)
                 await session.flush()
@@ -136,27 +138,39 @@ class SqlAlchemyIndicatorRepository:
     async def update(self, indicator: Indicator) -> None:
         async with self.session_factory() as session:
             try:
-                model = await session.get(IndicatorModel, indicator.id)
-                if model is None:
-                    return
-                model.clave = indicator.key
-                model.nombre = indicator.name
-                model.definicion = indicator.definition
-                model.metodo_calculo = indicator.calculation_method
-                model.unidad_medida = indicator.unit
-                model.dimension = indicator.dimension
-                model.documento_verificacion = indicator.verification_document
-                model.fuente_informacion = indicator.information_source
-                model.observaciones_metodologicas = indicator.methodological_notes
-                model.tipo_indicador_id = indicator.indicator_type_id
-                model.area_id = indicator.area_id
-                model.responsable_id = indicator.responsible_id
-                model.periodicidad = indicator.periodicity.value
-                model.umbral_verde_min = indicator.green_threshold
-                model.umbral_amarillo_min = indicator.yellow_threshold
-                model.activo = indicator.is_active
-                model.actualizado_en = indicator.updated_at
+                statement = (
+                    update(IndicatorModel)
+                    .where(
+                        IndicatorModel.id == indicator.id,
+                        IndicatorModel.version == indicator.version,
+                    )
+                    .values(
+                        clave=indicator.key,
+                        nombre=indicator.name,
+                        definicion=indicator.definition,
+                        metodo_calculo=indicator.calculation_method,
+                        unidad_medida=indicator.unit,
+                        dimension=indicator.dimension,
+                        documento_verificacion=indicator.verification_document,
+                        fuente_informacion=indicator.information_source,
+                        observaciones_metodologicas=indicator.methodological_notes,
+                        tipo_indicador_id=indicator.indicator_type_id,
+                        area_id=indicator.area_id,
+                        responsable_id=indicator.responsible_id,
+                        periodicidad=indicator.periodicity.value,
+                        umbral_verde_min=indicator.green_threshold,
+                        umbral_amarillo_min=indicator.yellow_threshold,
+                        activo=indicator.is_active,
+                        actualizado_en=indicator.updated_at,
+                        version=indicator.version + 1,
+                    )
+                )
+                result = await session.execute(statement)
+                if result.rowcount != 1:
+                    await session.rollback()
+                    raise ConflictError("El indicador fue modificado por otro usuario.")
                 await session.commit()
+                indicator.version += 1
             except IntegrityError as exc:
                 await session.rollback()
                 raise ConflictError("No se pudo actualizar el indicador.") from exc

@@ -24,6 +24,8 @@ La Fase 0 ya tiene una implementacion ejecutable con fallback sin base de datos:
 - `poa_tracking`: avances de los tres cuatrimestres, cumplimiento y acumulado.
 - `poa_validation`: validacion/rechazo de avances usando `cambios_estado` compartido.
 - `poa_reports`: reportes cuatrimestrales, anuales, de estatus y ejecutivo.
+- `dashboards`: vistas ejecutiva, de Planeacion y del area con aislamiento por rol.
+- `notifications`: avisos internos/correo y recordatorios automaticos idempotentes.
 
 Con `DATABASE_URL` configurada se usan adaptadores SQLAlchemy async sobre PostgreSQL. Sin esa variable se usan repositorios en memoria para desarrollo y pruebas; no deben usarse como persistencia de un ambiente compartido.
 
@@ -73,6 +75,12 @@ Para disponer de un usuario inicial en desarrollo, configura `BOOTSTRAP_ADMIN_EM
 
 Los usuarios administrativos no necesitan capturar una contrasena en `POST /api/v1/usuarios`: reciben un enlace de un solo uso en su correo y establecen la contrasena mediante `POST /api/v1/auth/password-setup`. El token expira y no se almacena en texto plano.
 
+Los recordatorios de vencimiento se procesan automaticamente para los dias 5, 3, 2 y 1
+anteriores al cierre. `REMINDER_CHECK_INTERVAL_SECONDS` controla la frecuencia de revision;
+la clave idempotente evita duplicados aunque la aplicacion se reinicie. El endpoint
+`POST /api/v1/notificaciones/recordatorios/generar` se conserva para ejecucion manual por
+Planeacion o administracion.
+
 ## Pruebas
 
 ```powershell
@@ -91,7 +99,9 @@ pytest
   expone el mismo identificador mediante `X-Request-ID`.
 - `POST /api/v1/archivos` acepta PDF, JPG y PNG, valida la firma real, calcula SHA-256 y
   genera el nombre en servidor. El máximo predeterminado es 10 MiB y puede configurarse con
-  `UPLOAD_MAX_BYTES`; los archivos se almacenan fuera de directorios públicos.
+  `UPLOAD_MAX_BYTES`; los archivos se almacenan fuera de directorios públicos. Solo un
+  usuario autorizado sobre la captura o avance vinculado puede descargarlos mediante
+  `GET /api/v1/archivos/{nombre_generado}`.
 - Los campos oficiales de un área incluyen `codigo`, `nombre`, `area_padre_id`, `tipo`,
   `color` y `activo`. La migración `0018_integracion_frontend` agrega los campos nuevos.
 - Los orígenes CORS de staging y producción deben declararse explícitamente en
@@ -99,6 +109,36 @@ pytest
 
 Las cuentas y contraseñas de prueba no se incluyen en el repositorio. Deben provisionarse
 en el ambiente correspondiente y compartirse por un canal privado.
+
+## Despliegue en VPS
+
+El workflow conserva los nombres `EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY` y
+`EC2_DEPLOY_PATH` por compatibilidad con los Repository Secrets existentes, aunque el
+servidor sea una VPS. La configuracion funcional permanece exclusivamente en
+`/opt/planeacion-api/.env`; GitHub Actions no la reemplaza.
+
+Antes de desplegar, el `.env` de la VPS debe incluir al menos:
+
+```dotenv
+ENVIRONMENT=production
+SECRET_KEY=<valor-aleatorio-de-32-o-mas-caracteres>
+DATABASE_URL=postgresql+asyncpg://planeacion:<password>@postgres:5432/planeacion
+POSTGRES_PASSWORD=<el-mismo-password-de-DATABASE_URL>
+CORS_ORIGINS=["https://testeo.tech"]
+CORS_ALLOW_ALL=false
+FRONTEND_URL=https://testeo.tech
+```
+
+Si aun no existe frontend, usa temporalmente el origen HTTPS publico del backend, como en
+el ejemplo. CORS solo controla navegadores y no sustituye la autenticacion; cuando exista
+el frontend, reemplazalo o agrega su origen HTTPS exacto. No habilites `CORS_ALLOW_ALL` en
+produccion. `POSTGRES_PASSWORD` es obligatorio para Compose y debe coincidir con la
+contraseña incluida en `DATABASE_URL`.
+
+El despliegue valida Compose, construye la imagen, ejecuta `alembic upgrade head`, levanta
+los servicios y solo termina correctamente cuando `/health` responde con
+`database=connected`. Los archivos se conservan en el volumen `planeacion_uploads` y la
+base de datos en `planeacion_postgres_data`.
 
 ## Proxima etapa
 

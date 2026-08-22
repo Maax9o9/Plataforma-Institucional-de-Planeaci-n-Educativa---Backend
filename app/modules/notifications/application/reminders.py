@@ -9,10 +9,37 @@ from ..domain.entities import Notification
 
 
 class GenerateReminders:
-    def __init__(self, periods, indicators, notifications) -> None:
+    def __init__(
+        self,
+        periods,
+        indicators,
+        notifications,
+        poa=None,
+        notification_service=None,
+    ) -> None:
         self.periods = periods
         self.indicators = indicators
         self.notifications = notifications
+        self.poa = poa
+        self.notification_service = notification_service
+
+    async def _responsible_ids(self, period) -> set[int]:
+        if period.period_type.value == "poa":
+            if self.poa is None:
+                return set()
+            responsible_ids: set[int] = set()
+            for activity in await self.poa.list_activities(area_id=None):
+                objective = await self.poa.get_objective(activity.objective_id)
+                process = await self.poa.get_process(objective.process_id) if objective else None
+                exercise = await self.poa.get_exercise(process.exercise_id) if process else None
+                if exercise is not None and exercise.year == period.year:
+                    responsible_ids.add(activity.responsible_id)
+            return responsible_ids
+        return {
+            indicator.responsible_id
+            for indicator in await self.indicators.list(active_only=True)
+            if period.periodicity is None or indicator.periodicity == period.periodicity
+        }
 
     async def execute(self, today: date | None = None) -> int:
         today = today or date.today()
@@ -24,23 +51,34 @@ class GenerateReminders:
             if days_left not in {5, 3, 2, 1}:
                 continue
             notification_type = f"recordatorio_{days_left}d"
-            for indicator in await self.indicators.list(active_only=True):
+            message = (
+                f"El periodo {period.name} vence el {period.ends_on.isoformat()}. "
+                "Revisa tus pendientes."
+            )
+            for responsible_id in await self._responsible_ids(period):
                 event_id = uuid5(
                     NAMESPACE_URL,
-                    f"reminder:{period.id}:{notification_type}:{today.isoformat()}:{indicator.responsible_id}",
+                    f"reminder:{period.id}:{notification_type}:{today.isoformat()}:{responsible_id}",
                 )
-                await self.notifications.create(
-                    Notification(
-                        user_id=indicator.responsible_id,
+                if self.notification_service is not None:
+                    await self.notification_service.notify_user(
+                        user_id=responsible_id,
                         notification_type=notification_type,
-                        message=(
-                            f"El periodo {period.name} vence el {period.ends_on.isoformat()}. "
-                            "Revisa tus pendientes."
-                        ),
+                        message=message,
                         entity="periodo",
                         entity_id=period.id,
                         source_event_id=event_id,
                     )
-                )
+                else:
+                    await self.notifications.create(
+                        Notification(
+                            user_id=responsible_id,
+                            notification_type=notification_type,
+                            message=message,
+                            entity="periodo",
+                            entity_id=period.id,
+                            source_event_id=event_id,
+                        )
+                    )
                 created += 1
         return created

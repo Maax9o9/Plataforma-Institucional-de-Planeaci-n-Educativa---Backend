@@ -13,7 +13,9 @@ from app.modules.indicators_reports.application.exporters import export_pdf, exp
 
 TAG = "Reportes POA"
 router = APIRouter(prefix="/poa/reportes", tags=[TAG])
-REPORT_ROLES = ("planeacion", "admin_sistema", "rectoria", "responsable_area", "consulta")
+PLANNING_ROLES = ("planeacion", "admin_sistema")
+EXECUTIVE_ROLES = (*PLANNING_ROLES, "rectoria")
+AREA_STATUS_ROLES = (*PLANNING_ROLES, "responsable_area")
 
 
 async def _generate(request: Request, report_type: str, user, filters: dict, formato: str):
@@ -40,11 +42,23 @@ async def _generate(request: Request, report_type: str, user, filters: dict, for
 async def report_quarterly(
     request: Request,
     periodo_id: int | None = None,
+    proceso_id: int | None = None,
+    area_id: int | None = None,
+    objetivo_id: int | None = None,
     formato: Literal["json", "xlsx", "pdf"] = "json",
-    current_user=Depends(require_roles(*REPORT_ROLES)),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
 ):
     return await _generate(
-        request, "cuatrimestral", current_user, {"periodo_id": periodo_id}, formato
+        request,
+        "cuatrimestral",
+        current_user,
+        {
+            "periodo_id": periodo_id,
+            "proceso_id": proceso_id,
+            "area_id": area_id,
+            "objetivo_id": objetivo_id,
+        },
+        formato,
     )
 
 
@@ -53,7 +67,7 @@ async def report_annual(
     request: Request,
     ejercicio_id: int | None = None,
     formato: Literal["json", "xlsx", "pdf"] = "json",
-    current_user=Depends(require_roles(*REPORT_ROLES)),
+    current_user=Depends(require_roles(*EXECUTIVE_ROLES)),
 ):
     return await _generate(request, "anual", current_user, {"ejercicio_id": ejercicio_id}, formato)
 
@@ -65,7 +79,7 @@ async def report_by_process(
     request: Request,
     proceso_id: int | None = None,
     formato: Literal["json", "xlsx", "pdf"] = "json",
-    current_user=Depends(require_roles(*REPORT_ROLES)),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
 ):
     return await _generate(
         request, "por_proceso", current_user, {"proceso_id": proceso_id}, formato
@@ -77,7 +91,7 @@ async def report_by_area(
     request: Request,
     area_id: int | None = None,
     formato: Literal["json", "xlsx", "pdf"] = "json",
-    current_user=Depends(require_roles(*REPORT_ROLES)),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
 ):
     return await _generate(request, "por_area", current_user, {"area_id": area_id}, formato)
 
@@ -88,10 +102,24 @@ async def report_by_area(
 async def report_status(
     request: Request,
     tipo: Literal["cumplidas", "pendientes", "atrasadas"] = "pendientes",
+    area_id: int | None = None,
+    proceso_id: int | None = None,
+    responsable_id: int | None = None,
     formato: Literal["json", "xlsx", "pdf"] = "json",
-    current_user=Depends(require_roles(*REPORT_ROLES)),
+    current_user=Depends(require_roles(*AREA_STATUS_ROLES)),
 ):
-    return await _generate(request, "estatus", current_user, {"tipo": tipo}, formato)
+    return await _generate(
+        request,
+        "estatus",
+        current_user,
+        {
+            "tipo": tipo,
+            "area_id": area_id,
+            "proceso_id": proceso_id,
+            "responsable_id": responsable_id,
+        },
+        formato,
+    )
 
 
 @router.get(
@@ -103,7 +131,7 @@ async def report_missing_evidence(
     request: Request,
     periodo_id: int | None = None,
     formato: Literal["json", "xlsx", "pdf"] = "json",
-    current_user=Depends(require_roles(*REPORT_ROLES)),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
 ):
     return await _generate(
         request, "evidencias_faltantes", current_user, {"periodo_id": periodo_id}, formato
@@ -119,7 +147,7 @@ async def report_executive(
     request: Request,
     ejercicio_id: int | None = None,
     formato: Literal["json", "xlsx", "pdf"] = "json",
-    current_user=Depends(require_roles("planeacion", "admin_sistema", "rectoria")),
+    current_user=Depends(require_roles(*EXECUTIVE_ROLES)),
 ):
     return await _generate(
         request, "ejecutivo", current_user, {"ejercicio_id": ejercicio_id}, formato

@@ -8,6 +8,7 @@ import logging
 from app.shared.application.event_bus import EventBus
 from app.shared.application.ports.email_sender import EmailSender
 from app.shared.domain.domain_event import DomainEvent
+from app.shared.infrastructure.db.unit_of_work import run_after_commit
 
 from ..domain.entities import Notification
 from ..domain.ports.repositories import NotificationRepository
@@ -22,11 +23,13 @@ class NotificationService:
         user_repository,
         email_sender: EmailSender,
         indicator_repository=None,
+        poa_repository=None,
     ) -> None:
         self.repository = repository
         self.user_repository = user_repository
         self.email_sender = email_sender
         self.indicator_repository = indicator_repository
+        self.poa_repository = poa_repository
 
     def register(self, event_bus: EventBus) -> None:
         event_bus.subscribe(DomainEvent, self.handle_event)
@@ -35,24 +38,47 @@ class NotificationService:
         event_name = event.__class__.__name__
         notification_type = self._type_for(event_name)
         recipients = await self._recipients_for(event)
-        scheduled_email = False
         for user_id in recipients:
-            notification = await self.repository.create(
-                Notification(
-                    user_id=user_id,
-                    notification_type=notification_type,
-                    message=self._message(event),
-                    entity=event.aggregate_type,
-                    entity_id=event.aggregate_id,
-                    source_event_id=event.event_id,
-                )
+            await self.notify_user(
+                user_id=user_id,
+                notification_type=notification_type,
+                message=self._message(event),
+                entity=event.aggregate_type,
+                entity_id=event.aggregate_id,
+                source_event_id=event.event_id,
             )
-            user = await self.user_repository.get_by_id(user_id)
-            if user is not None and user.notify_email:
-                asyncio.create_task(self._send_email(notification, user.email.value))
-                scheduled_email = True
-        if scheduled_email:
+
+    async def notify_user(
+        self,
+        *,
+        user_id: int,
+        notification_type: str,
+        message: str,
+        entity: str | None,
+        entity_id: int | None,
+        source_event_id,
+    ) -> Notification:
+        """Persiste y entrega una notificacion sin duplicar correos idempotentes."""
+
+        notification = await self.repository.create(
+            Notification(
+                user_id=user_id,
+                notification_type=notification_type,
+                message=message,
+                entity=entity,
+                entity_id=entity_id,
+                source_event_id=source_event_id,
+            )
+        )
+        user = await self.user_repository.get_by_id(user_id)
+        if user is not None and user.notify_email and not notification.sent_by_email:
+
+            async def send_after_commit(notification=notification, email=user.email.value):
+                asyncio.create_task(self._send_email(notification, email))
+
+            await run_after_commit(send_after_commit)
             await asyncio.sleep(0)
+        return notification
 
     async def _send_email(self, notification: Notification, recipient: str) -> None:
         try:
@@ -72,6 +98,11 @@ class NotificationService:
         if event.data.get("recipient_id"):
             return {int(event.data["recipient_id"])}
         if event.__class__.__name__ == "PeriodOpened" and self.indicator_repository:
+            if event.data.get("type") == "poa" and self.poa_repository is not None:
+                return {
+                    item.responsible_id
+                    for item in await self.poa_repository.list_activities(area_id=None)
+                }
             recipients: set[int] = set()
             for indicator in await self.indicator_repository.list(active_only=True):
                 if event.data.get("periodicity") in {None, indicator.periodicity.value}:

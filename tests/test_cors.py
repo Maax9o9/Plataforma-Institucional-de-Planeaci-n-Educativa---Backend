@@ -53,6 +53,26 @@ async def test_cors_preflight_allows_configured_origin():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["PUT", "DELETE"])
+async def test_cors_preflight_allows_all_api_write_methods(method):
+    app = create_app(make_settings())
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.options(
+            "/api/v1/evidencias/1/version",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": method,
+                "Access-Control-Request-Headers": "Authorization, Content-Type",
+            },
+        )
+    assert response.status_code == 200
+    assert method in response.headers["access-control-allow-methods"]
+
+
+@pytest.mark.asyncio
 async def test_cors_preflight_rejects_unconfigured_origin():
     app = create_app(make_settings())
     async with AsyncClient(

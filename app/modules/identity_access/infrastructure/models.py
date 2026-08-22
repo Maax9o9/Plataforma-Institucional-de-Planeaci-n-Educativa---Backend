@@ -77,6 +77,14 @@ class AccessLogModel(Base):
     fecha: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class RevokedAccessTokenModel(Base):
+    __tablename__ = "access_tokens_revocados"
+
+    jti: Mapped[UUID] = mapped_column(primary_key=True)
+    expira_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revocado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class PasswordSetupTokenModel(Base):
     __tablename__ = "tokens_configuracion_contrasena"
 

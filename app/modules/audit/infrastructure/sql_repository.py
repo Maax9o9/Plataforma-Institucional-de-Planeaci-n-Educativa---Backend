@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
+
 from ..domain.entities import AuditEntry
 from .models import AuditModel
 
@@ -16,7 +18,7 @@ class SqlAlchemyAuditRepository:
         self.session_factory = session_factory
 
     async def append(self, entry: AuditEntry) -> None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = AuditModel(
                 usuario_id=entry.actor_id,
                 evento=entry.event_name,
@@ -27,7 +29,7 @@ class SqlAlchemyAuditRepository:
                 fecha=entry.occurred_at or datetime.now(UTC),
             )
             session.add(model)
-            await session.commit()
+            await commit_or_flush(session)
 
     async def list(
         self,
@@ -41,7 +43,7 @@ class SqlAlchemyAuditRepository:
         aggregate_type: str | None = None,
         aggregate_id: int | None = None,
     ) -> list[AuditEntry]:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             statement = select(AuditModel)
             if actor_id is not None:
                 statement = statement.where(AuditModel.usuario_id == actor_id)
@@ -86,7 +88,7 @@ class SqlAlchemyAuditRepository:
         aggregate_type: str | None = None,
         aggregate_id: int | None = None,
     ) -> int:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             statement = select(func.count()).select_from(AuditModel)
             if actor_id is not None:
                 statement = statement.where(AuditModel.usuario_id == actor_id)

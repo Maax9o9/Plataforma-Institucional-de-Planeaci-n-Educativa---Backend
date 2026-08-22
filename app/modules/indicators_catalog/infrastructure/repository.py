@@ -35,6 +35,7 @@ class InMemoryIndicatorRepository:
         return sorted(items, key=lambda item: item.key)
 
     async def update(self, indicator: Indicator) -> None:
+        indicator.version += 1
         self._items[indicator.id] = indicator
 
     async def add_baseline(self, baseline: Baseline) -> None:

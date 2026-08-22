@@ -5,6 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from app.shared.application.event_bus import EventBus
+from app.shared.application.responsibility import ensure_operational_responsible
 from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError
 
 from ...domain.entities import Baseline, Goal, Indicator
@@ -52,6 +53,11 @@ class UpdateIndicator:
         indicator = await self.repository.get_by_id(command.indicator_id)
         if indicator is None:
             raise ResourceNotFoundError("El indicador no existe.")
+        if (
+            command.expected_version is not None
+            and command.expected_version != indicator.version
+        ):
+            raise ConflictError("El indicador fue modificado por otro usuario.")
         previous = {
             key: getattr(indicator, key) for key in command.changes if hasattr(indicator, key)
         }
@@ -65,12 +71,11 @@ class UpdateIndicator:
                 from app.shared.domain.exceptions import ValidationError
 
                 raise ValidationError("El area no existe o esta desactivada.")
-        if "responsible_id" in command.changes:
-            user = await self.user_reader.get_by_id(command.changes["responsible_id"])
-            if user is None or not user.is_active:
-                from app.shared.domain.exceptions import ValidationError
-
-                raise ValidationError("El responsable no existe o esta desactivado.")
+        if "responsible_id" in command.changes or "area_id" in command.changes:
+            responsible_id = command.changes.get("responsible_id", indicator.responsible_id)
+            area_id = command.changes.get("area_id", indicator.area_id)
+            user = await self.user_reader.get_by_id(responsible_id)
+            ensure_operational_responsible(user, area_id)
         indicator.update(**command.changes)
         await self.repository.update(indicator)
         await self.event_bus.publish(
@@ -150,10 +155,18 @@ class CreateGoal:
         self.event_bus = event_bus
 
     async def execute(self, command: CreateGoalCommand) -> Goal:
-        if await self.repository.get_by_id(command.indicator_id) is None:
+        indicator = await self.repository.get_by_id(command.indicator_id)
+        if indicator is None:
             raise ResourceNotFoundError("El indicador no existe.")
-        if await self.period_reader.get_by_id(command.period_id) is None:
+        period = await self.period_reader.get_by_id(command.period_id)
+        if period is None:
             raise ResourceNotFoundError("El periodo no existe.")
+        if period.period_type.value != "indicadores":
+            raise ConflictError("La meta requiere un periodo de indicadores.")
+        if period.periodicity != indicator.periodicity:
+            raise ConflictError("La periodicidad de la meta no coincide con el indicador.")
+        if period.status.value != "borrador":
+            raise ConflictError("Las metas deben registrarse antes de abrir el periodo.")
         if command.value < 0:
             raise ConflictError("La meta no puede ser negativa.")
         goal = Goal(

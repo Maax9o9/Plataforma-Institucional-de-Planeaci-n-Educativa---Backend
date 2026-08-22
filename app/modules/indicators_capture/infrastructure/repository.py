@@ -5,6 +5,7 @@ from __future__ import annotations
 from itertools import count
 
 from ..domain.entities import Capture
+from ..domain.value_objects import CaptureStatus
 
 
 class InMemoryCaptureRepository:
@@ -61,3 +62,15 @@ class InMemoryCaptureRepository:
 
     async def list_all(self) -> list[Capture]:
         return sorted(self._items.values(), key=lambda item: item.id)
+
+    async def reset_validated_for_period(self, period_id: int, actor_id: int) -> list[int]:
+        del actor_id
+        reset_ids = []
+        for item in self._items.values():
+            if item.period_id == period_id and item.status is CaptureStatus.VALIDATED:
+                reset_ids.append(item.id)
+                item.status = CaptureStatus.DRAFT
+                item.progress_percentage = None
+                item.semaphore = None
+                item.touch()
+        return reset_ids

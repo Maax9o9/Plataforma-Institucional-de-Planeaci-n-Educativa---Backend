@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.shared.application.event_bus import EventBus
+from app.shared.application.responsibility import ensure_operational_responsible
 from app.shared.domain.exceptions import ConflictError, ValidationError
 
 from ...domain.entities import Indicator
@@ -35,8 +36,7 @@ class RegisterIndicator:
         if area is None or not area.is_active:
             raise ValidationError("El area no existe o esta desactivada.")
         user = await self.user_reader.get_by_id(command.responsible_id)
-        if user is None or not user.is_active:
-            raise ValidationError("El responsable no existe o esta desactivado.")
+        ensure_operational_responsible(user, command.area_id)
         for instrument_id in command.instrument_ids:
             instrument = await self.instrument_reader.get_by_id(instrument_id)
             if instrument is None or not instrument.is_active:

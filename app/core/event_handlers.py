@@ -17,14 +17,16 @@ from app.shared.application.event_bus import EventBus
 from .container import Resources
 
 
-def register_event_handlers(event_bus: EventBus, resources: Resources, email_sender) -> None:
+def register_event_handlers(event_bus: EventBus, resources: Resources, email_sender):
     register_audit_subscriber(event_bus, resources.audit_repository)
-    NotificationService(
+    notification_service = NotificationService(
         resources.notification_repository,
         resources.user_repository,
         email_sender,
         resources.indicator_repository,
-    ).register(event_bus)
+        resources.poa_repository,
+    )
+    notification_service.register(event_bus)
 
     evaluation = CalculateEvaluation(
         indicators=resources.indicator_repository,
@@ -70,3 +72,4 @@ def register_event_handlers(event_bus: EventBus, resources: Resources, email_sen
     event_bus.subscribe(CaptureValidated, calculate_after_validation)
     event_bus.subscribe(CaptureCreated, record_capture_created)
     event_bus.subscribe(CaptureSent, record_capture_sent)
+    return notification_service

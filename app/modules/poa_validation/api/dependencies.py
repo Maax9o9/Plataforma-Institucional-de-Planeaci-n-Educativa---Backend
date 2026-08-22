@@ -8,6 +8,7 @@ def get_validate_poa_advance_use_case(request: Request) -> ValidatePoaAdvance:
         request.app.state.poa_advance_repository,
         request.app.state.state_change_repository,
         request.app.state.event_bus,
+        request.app.state.unit_of_work,
     )
 
 
@@ -16,4 +17,5 @@ def get_reject_poa_advance_use_case(request: Request) -> RejectPoaAdvance:
         request.app.state.poa_advance_repository,
         request.app.state.state_change_repository,
         request.app.state.event_bus,
+        request.app.state.unit_of_work,
     )

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request, status
 
-from app.core.security import get_current_user, require_roles
+from app.core.authorization import actor_from_user
+from app.core.security import require_roles
 
 from ..application.dto import (
     CreateActivityCommand,
@@ -127,7 +128,7 @@ async def create_activity(
                 annual_goal=body.meta_anual,
                 observations=body.observaciones,
                 responsible_id=body.responsable_id,
-                actor_id=current_user.id,
+                actor=actor_from_user(current_user),
             )
         )
     )
@@ -139,8 +140,12 @@ async def create_activity(
 async def list_activities(
     request: Request,
     area_id: int | None = None,
-    _current_user=Depends(get_current_user),
+    current_user=Depends(require_roles(*ACTIVITY_ROLES)),
 ) -> list[ActividadRespuesta]:
+    if current_user.has_any_role({"responsable_area"}) and not current_user.has_any_role(
+        {"planeacion", "admin_sistema"}
+    ):
+        area_id = current_user.area_id
     items = await request.app.state.poa_repository.list_activities(area_id=area_id)
     return [ActividadRespuesta.from_domain(item) for item in items]
 
@@ -164,7 +169,7 @@ async def update_activity(
             annual_goal=body.meta_anual,
             observations=body.observaciones,
             responsible_id=body.responsable_id,
-            actor_id=current_user.id,
+            actor=actor_from_user(current_user),
         )
     )
     return ActividadRespuesta.from_domain(item)
