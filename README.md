@@ -90,8 +90,13 @@ pytest
 ## Contrato para integracion frontend
 
 - El prefijo estable es `/api/v1` y los campos HTTP usan `snake_case`.
-- El refresh token se entrega en JSON. Se rota en cada uso, se revoca en logout y la
-  reutilizacion invalida la sesion completa. El frontend no debe persistir el access token.
+- El refresh token se entrega exclusivamente en la cookie `planeacion_refresh`, marcada
+  `HttpOnly` y `SameSite`; nunca se expone a JavaScript ni aparece en el JSON. Se rota en
+  cada llamada a `POST /auth/refresh`, se elimina en logout y su reutilizacion invalida la
+  sesion completa. El access token se devuelve en JSON y debe mantenerse solo en memoria.
+- El frontend debe enviar `credentials: "include"` en login, refresh y logout. Para un
+  frontend en otro origen, `CORS_ORIGINS` debe enumerar ese origen: el comodin
+  `CORS_ALLOW_ALL=true` no es compatible con cookies credenciales en navegadores.
 - `GET /usuarios`, `GET /indicadores`, `GET /capturas` y `GET /bitacora` usan respuestas
   paginadas con `items`, `total`, `offset` y `limit`.
 - `/auditoria` se conserva como alias legado no paginado; `/bitacora` es el contrato nuevo.
@@ -126,6 +131,8 @@ DATABASE_URL=postgresql+asyncpg://planeacion:<password>@postgres:5432/planeacion
 POSTGRES_PASSWORD=<el-mismo-password-de-DATABASE_URL>
 CORS_ORIGINS=["https://testeo.tech"]
 CORS_ALLOW_ALL=false
+REFRESH_COOKIE_SECURE=true
+REFRESH_COOKIE_SAMESITE=lax
 FRONTEND_URL=https://testeo.tech
 ```
 
@@ -134,6 +141,11 @@ el ejemplo. CORS solo controla navegadores y no sustituye la autenticacion; cuan
 el frontend, reemplazalo o agrega su origen HTTPS exacto. No habilites `CORS_ALLOW_ALL` en
 produccion. `POSTGRES_PASSWORD` es obligatorio para Compose y debe coincidir con la
 contraseña incluida en `DATABASE_URL`.
+
+`SameSite=lax` funciona cuando frontend y API pertenecen al mismo sitio, por ejemplo
+`app.testeo.tech` y `api.testeo.tech`. Si el frontend vive en un sitio distinto, configura
+`REFRESH_COOKIE_SAMESITE=none` y conserva obligatoriamente
+`REFRESH_COOKIE_SECURE=true`, ademas del origen HTTPS explicito en `CORS_ORIGINS`.
 
 El despliegue valida Compose, construye la imagen, ejecuta `alembic upgrade head`, levanta
 los servicios y solo termina correctamente cuando `/health` responde con

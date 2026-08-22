@@ -35,6 +35,10 @@ def _validate_security_settings(settings: Settings) -> None:
         settings.secret_key = SecretStr(secrets.token_urlsafe(32))
     elif settings.environment == "production" and len(settings.secret_key.get_secret_value()) < 32:
         raise RuntimeError("SECRET_KEY debe tener al menos 32 caracteres en produccion.")
+    if settings.environment == "production" and not settings.refresh_cookie_secure:
+        raise RuntimeError("REFRESH_COOKIE_SECURE debe estar habilitado en produccion.")
+    if settings.refresh_cookie_samesite == "none" and not settings.refresh_cookie_secure:
+        raise RuntimeError("SameSite=None requiere REFRESH_COOKIE_SECURE=true.")
 
 
 def _bind_resources(app: FastAPI, resources: Resources) -> None:

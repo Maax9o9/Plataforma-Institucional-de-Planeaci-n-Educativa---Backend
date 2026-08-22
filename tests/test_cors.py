@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from starlette.responses import Response
 
 from app.core.config import Settings
 from app.main import create_app
+from app.modules.identity_access.api.cookies import set_refresh_cookie
 
 
 def make_settings(
@@ -20,6 +22,7 @@ def make_settings(
         email_provider="console",
         cors_allow_all=allow_all,
         cors_origins=origins if origins is not None else ["http://localhost:5173"],
+        refresh_cookie_secure=environment == "production",
     )
 
 
@@ -106,3 +109,31 @@ def test_cors_allow_all_is_available_only_for_non_production():
 
     with pytest.raises(RuntimeError, match="CORS_ALLOW_ALL"):
         create_app(make_settings(environment="production", allow_all=True))
+
+
+def test_production_requires_secure_refresh_cookie():
+    settings = make_settings(environment="production")
+    settings.refresh_cookie_secure = False
+    with pytest.raises(RuntimeError, match="REFRESH_COOKIE_SECURE"):
+        create_app(settings)
+
+
+def test_samesite_none_requires_secure_cookie():
+    settings = make_settings()
+    settings.refresh_cookie_samesite = "none"
+    with pytest.raises(RuntimeError, match="SameSite=None"):
+        create_app(settings)
+
+
+def test_cross_site_refresh_cookie_is_httponly_secure_and_samesite_none():
+    settings = make_settings()
+    settings.refresh_cookie_secure = True
+    settings.refresh_cookie_samesite = "none"
+    response = Response()
+
+    set_refresh_cookie(response, "token-de-prueba", settings)
+
+    header = response.headers["set-cookie"]
+    assert "HttpOnly" in header
+    assert "Secure" in header
+    assert "SameSite=none" in header
