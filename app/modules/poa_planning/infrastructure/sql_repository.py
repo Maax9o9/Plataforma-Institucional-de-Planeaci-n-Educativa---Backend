@@ -131,5 +131,13 @@ class SqlAlchemyPoaRepository:
     async def list_activities(self, *, area_id: int | None = None) -> list[PoaActivity]:
         async with self.session_factory() as session:
             statement = select(PoaActivityModel).order_by(PoaActivityModel.id)
+            if area_id is not None:
+                statement = (
+                    statement.join(
+                        PoaObjectiveModel, PoaObjectiveModel.id == PoaActivityModel.objetivo_id
+                    )
+                    .join(PoaProcessModel, PoaProcessModel.id == PoaObjectiveModel.proceso_id)
+                    .where(PoaProcessModel.area_id == area_id)
+                )
             models = (await session.scalars(statement)).all()
             return [self._activity(model) for model in models]

@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.shared.domain.exceptions import ConflictError
+from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
 
 from ..domain.entities import Period
 from ..domain.value_objects import Periodicity, PeriodStatus, PeriodType
@@ -35,7 +36,7 @@ class SqlAlchemyPeriodRepository:
         )
 
     async def add(self, period: Period) -> None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             try:
                 model = PeriodModel(
                     tipo=period.period_type.value,
@@ -46,20 +47,21 @@ class SqlAlchemyPeriodRepository:
                     fecha_limite=period.ends_on,
                     estado=period.status.value,
                 )
-                session.add(model)
-                await session.commit()
+                async with session.begin_nested():
+                    session.add(model)
+                    await session.flush()
+                await commit_or_flush(session)
             except IntegrityError as exc:
-                await session.rollback()
                 raise ConflictError("El periodo ya existe o sus datos no son validos.") from exc
         period.id = model.id
 
     async def get_by_id(self, period_id: int) -> Period | None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = await session.get(PeriodModel, period_id)
             return self._to_domain(model) if model else None
 
     async def list(self) -> list[Period]:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             models = (
                 await session.scalars(
                     select(PeriodModel).order_by(PeriodModel.fecha_inicio, PeriodModel.id)
@@ -68,7 +70,7 @@ class SqlAlchemyPeriodRepository:
             return [self._to_domain(model) for model in models]
 
     async def update(self, period: Period) -> None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = await session.get(PeriodModel, period.id)
             if model is None:
                 return
@@ -77,4 +79,4 @@ class SqlAlchemyPeriodRepository:
                 model.motivo_reapertura = period.reopen_reason
                 model.reabierto_por = period.reopened_by
                 model.reabierto_en = datetime.now(UTC)
-            await session.commit()
+            await commit_or_flush(session)

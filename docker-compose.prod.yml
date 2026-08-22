@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: planeacion
       POSTGRES_USER: planeacion
-      POSTGRES_PASSWORD: planeacion_dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD debe configurarse en .env}
     volumes:
       - planeacion_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -23,6 +23,8 @@ services:
     restart: unless-stopped
     expose:
       - "8000"
+    volumes:
+      - planeacion_uploads:/app/var/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -52,3 +54,4 @@ services:
 
 volumes:
   planeacion_postgres_data:
+  planeacion_uploads:

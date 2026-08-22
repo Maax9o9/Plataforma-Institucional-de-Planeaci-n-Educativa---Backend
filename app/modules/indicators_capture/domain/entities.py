@@ -41,6 +41,8 @@ class Capture(BaseEntity):
             raise CaptureImmutableError()
         if self.status is CaptureStatus.SENT:
             raise InvalidStateError("Una captura enviada no puede editarse.")
+        if not period_is_open:
+            raise InvalidStateError("El periodo de la captura no esta abierto.")
 
     def edit(self, *, period_is_open: bool, **changes) -> None:
         self.ensure_editable(period_is_open)

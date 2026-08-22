@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request, status
 
+from app.core.authorization import actor_from_user
 from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user
-from app.shared.domain.exceptions import ResourceNotFoundError
 
 from ..application.dto import AttachEvidenceCommand, ReplaceEvidenceCommand
 from ..application.use_cases.manage_evidence import AttachEvidence, ReplaceEvidence
-from ..domain.value_objects import FlowEntity
-from .dependencies import get_attach_evidence_use_case, get_replace_evidence_use_case
+from .dependencies import (
+    get_attach_evidence_use_case,
+    get_evidence_access_control,
+    get_replace_evidence_use_case,
+)
 from .schemas import (
     AdjuntarEvidenciaRequest,
     EvidenciaRespuesta,
@@ -39,11 +42,6 @@ async def attach_evidence(
     current_user=Depends(get_current_user),
     use_case: AttachEvidence = Depends(get_attach_evidence_use_case),
 ) -> EvidenciaRespuesta:
-    if body.entidad is FlowEntity.CAPTURE:
-        capture = await request.app.state.capture_repository.get_by_id(body.entidad_id)
-        if capture is None:
-            raise ResourceNotFoundError("La captura no existe.")
-        capture.ensure_editable(period_is_open=True)
     evidence = await use_case.execute(
         AttachEvidenceCommand(
             name=body.nombre,
@@ -53,7 +51,7 @@ async def attach_evidence(
             path_or_url=body.ruta_o_url,
             entity=body.entidad,
             entity_id=body.entidad_id,
-            actor_id=current_user.id,
+            actor=actor_from_user(current_user),
             mime_type=body.mime_type,
             size_bytes=body.tamanio_bytes,
             checksum_sha256=body.checksum_sha256,
@@ -78,7 +76,7 @@ async def replace_evidence(
         ReplaceEvidenceCommand(
             evidence_id=evidence_id,
             path_or_url=body.ruta_o_url,
-            actor_id=current_user.id,
+            actor=actor_from_user(current_user),
             mime_type=body.mime_type,
             size_bytes=body.tamanio_bytes,
             checksum_sha256=body.checksum_sha256,
@@ -94,10 +92,11 @@ async def replace_evidence(
 async def list_evidence_versions(
     evidence_id: int,
     request: Request,
-    _current_user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ) -> list[VersionEvidenciaRespuesta]:
-    if await request.app.state.evidence_repository.get(evidence_id) is None:
-        raise ResourceNotFoundError("La evidencia no existe.")
+    await get_evidence_access_control(request).ensure_can_view(
+        evidence_id, actor_from_user(current_user)
+    )
     versions = await request.app.state.evidence_repository.list_versions(evidence_id)
     return [
         VersionEvidenciaRespuesta(

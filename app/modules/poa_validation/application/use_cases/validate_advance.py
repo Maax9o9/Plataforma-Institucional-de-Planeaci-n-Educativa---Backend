@@ -15,12 +15,19 @@ from ..dto import RejectPoaAdvanceCommand, ValidatePoaAdvanceCommand
 
 
 class ValidatePoaAdvance:
-    def __init__(self, advances: PoaAdvanceReader, changes, event_bus: EventBus) -> None:
+    def __init__(
+        self, advances: PoaAdvanceReader, changes, event_bus: EventBus, unit_of_work
+    ) -> None:
         self.advances = advances
         self.changes = changes
         self.event_bus = event_bus
+        self.unit_of_work = unit_of_work
 
     async def execute(self, command: ValidatePoaAdvanceCommand):
+        async with self.unit_of_work():
+            return await self._execute(command)
+
+    async def _execute(self, command: ValidatePoaAdvanceCommand):
         item = await self.advances.get_by_id(command.advance_id)
         if item is None:
             raise ResourceNotFoundError("El avance POA no existe.")
@@ -55,12 +62,19 @@ class ValidatePoaAdvance:
 
 
 class RejectPoaAdvance:
-    def __init__(self, advances: PoaAdvanceReader, changes, event_bus: EventBus) -> None:
+    def __init__(
+        self, advances: PoaAdvanceReader, changes, event_bus: EventBus, unit_of_work
+    ) -> None:
         self.advances = advances
         self.changes = changes
         self.event_bus = event_bus
+        self.unit_of_work = unit_of_work
 
     async def execute(self, command: RejectPoaAdvanceCommand):
+        async with self.unit_of_work():
+            return await self._execute(command)
+
+    async def _execute(self, command: RejectPoaAdvanceCommand):
         item = await self.advances.get_by_id(command.advance_id)
         if item is None:
             raise ResourceNotFoundError("El avance POA no existe.")

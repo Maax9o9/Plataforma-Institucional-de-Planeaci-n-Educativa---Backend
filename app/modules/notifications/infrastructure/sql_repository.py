@@ -8,6 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
+
 from ..domain.entities import Notification
 from .models import NotificationModel
 
@@ -32,7 +34,7 @@ class SqlAlchemyNotificationRepository:
         )
 
     async def create(self, notification: Notification) -> Notification:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = NotificationModel(
                 usuario_id=notification.user_id,
                 tipo=notification.notification_type,
@@ -43,10 +45,11 @@ class SqlAlchemyNotificationRepository:
                 fecha=notification.created_at or datetime.now(UTC),
             )
             try:
-                session.add(model)
-                await session.commit()
+                async with session.begin_nested():
+                    session.add(model)
+                    await session.flush()
+                await commit_or_flush(session)
             except IntegrityError:
-                await session.rollback()
                 result = await session.execute(
                     select(NotificationModel).where(
                         NotificationModel.usuario_id == notification.user_id,
@@ -60,7 +63,7 @@ class SqlAlchemyNotificationRepository:
             return notification
 
     async def list_for_user(self, user_id: int, unread_only: bool = False) -> list[Notification]:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             statement = select(NotificationModel).where(NotificationModel.usuario_id == user_id)
             if unread_only:
                 statement = statement.where(NotificationModel.leida.is_(False))
@@ -70,15 +73,15 @@ class SqlAlchemyNotificationRepository:
             return [self._to_domain(model) for model in models]
 
     async def mark_read(self, notification_id: int, user_id: int) -> None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = await session.get(NotificationModel, notification_id)
             if model and model.usuario_id == user_id:
                 model.leida = True
-                await session.commit()
+                await commit_or_flush(session)
 
     async def mark_email_sent(self, notification_id: int) -> None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = await session.get(NotificationModel, notification_id)
             if model:
                 model.enviada_por_correo = True
-                await session.commit()
+                await commit_or_flush(session)

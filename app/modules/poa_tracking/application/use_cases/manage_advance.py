@@ -5,6 +5,7 @@ from app.shared.domain.exceptions import ConflictError, ForbiddenError, Resource
 
 from ....evidence_management.domain.value_objects import FlowEntity
 from ...domain.entities import PoaAdvance
+from ...domain.events import PoaAdvanceChanged
 from ...domain.ports.repositories import EvidenceReader, PoaAdvanceRepository, ReferenceReader
 from ..dto import EditAdvanceCommand, RegisterAdvanceCommand, SendAdvanceCommand
 
@@ -34,12 +35,23 @@ class RegisterAdvance:
         activity = await self.activities.get_activity(command.activity_id)
         if activity is None:
             raise ResourceNotFoundError("La actividad POA no existe.")
-        user = await self.users.get_by_id(command.capturer_id)
+        if activity.responsible_id != command.actor.id:
+            raise ForbiddenError("El usuario no es el responsable de la actividad POA.")
+        user = await self.users.get_by_id(command.actor.id)
         if user is None or not user.is_active:
             raise ForbiddenError("El capturista no existe o esta desactivado.")
         period = await self.periods.get_by_id(command.period_id)
         if not _period_is_open(period):
             raise ConflictError("El periodo POA no esta abierto.")
+        if getattr(period.period_type, "value", period.period_type) != "poa":
+            raise ConflictError("Los avances POA requieren un periodo de tipo POA.")
+        objective = await self.activities.get_objective(activity.objective_id)
+        process = await self.activities.get_process(objective.process_id) if objective else None
+        exercise = await self.activities.get_exercise(process.exercise_id) if process else None
+        if exercise is None:
+            raise ResourceNotFoundError("La estructura del ejercicio POA no existe.")
+        if period.year != exercise.year:
+            raise ConflictError("El periodo no pertenece al ejercicio de la actividad POA.")
         for criterion_id in command.criteria_ids:
             criterion = await self.criteria.get_by_id(criterion_id)
             if criterion is None or not criterion.is_active:
@@ -52,13 +64,22 @@ class RegisterAdvance:
             activity_id=command.activity_id,
             quarter=command.quarter,
             period_id=command.period_id,
-            capturer_id=command.capturer_id,
+            capturer_id=command.actor.id,
             scheduled=command.scheduled,
             achieved=command.achieved,
             observations=command.observations,
             criteria_ids=command.criteria_ids,
         )
         await self.repository.add(item)
+        await self.event_bus.publish(
+            PoaAdvanceChanged(
+                actor_id=command.actor.id,
+                aggregate_type="poa_advance",
+                aggregate_id=item.id,
+                action="created",
+                data={"activity_id": item.activity_id, "period_id": item.period_id},
+            )
+        )
         return item
 
 
@@ -85,6 +106,15 @@ class EditAdvance:
             criteria_ids=command.criteria_ids,
         )
         await self.repository.update(item)
+        await self.event_bus.publish(
+            PoaAdvanceChanged(
+                actor_id=command.actor_id,
+                aggregate_type="poa_advance",
+                aggregate_id=item.id,
+                action="updated",
+                data={"activity_id": item.activity_id},
+            )
+        )
         return item
 
 
@@ -124,4 +154,13 @@ class SendAdvance:
                     "La suma programada de los cuatrimestres difiere mas de 10% de la meta anual."
                 ]
         await self.repository.update(item)
+        await self.event_bus.publish(
+            PoaAdvanceChanged(
+                actor_id=command.actor_id,
+                aggregate_type="poa_advance",
+                aggregate_id=item.id,
+                action="sent",
+                data={"activity_id": item.activity_id, "period_id": item.period_id},
+            )
+        )
         return item

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from app.shared.domain.base_entity import BaseEntity
-from app.shared.domain.exceptions import InvalidStateError, ValidationError
+from app.shared.domain.exceptions import CaptureImmutableError, InvalidStateError, ValidationError
 
 from ...indicators_capture.domain.value_objects import CaptureStatus
 
@@ -42,11 +42,16 @@ class PoaAdvance(BaseEntity):
             criteria_ids=set(values.get("criteria_ids", set())),
         )
 
-    def edit(self, *, period_is_open: bool, **changes) -> None:
-        if self.status is CaptureStatus.VALIDATED and not period_is_open:
-            raise InvalidStateError("Un avance validado no puede editarse con el periodo cerrado.")
+    def ensure_editable(self, *, period_is_open: bool) -> None:
+        if self.status is CaptureStatus.VALIDATED:
+            raise CaptureImmutableError("El avance POA validado no admite modificaciones.")
         if self.status is CaptureStatus.SENT:
             raise InvalidStateError("Un avance enviado no puede editarse.")
+        if not period_is_open:
+            raise InvalidStateError("El periodo POA no esta abierto.")
+
+    def edit(self, *, period_is_open: bool, **changes) -> None:
+        self.ensure_editable(period_is_open=period_is_open)
         for name, value in changes.items():
             if value is not None and hasattr(self, name):
                 setattr(self, name, value)

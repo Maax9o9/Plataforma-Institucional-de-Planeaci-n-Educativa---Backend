@@ -31,6 +31,7 @@ class RegistrarIndicadorRequest(BaseModel):
 
 
 class ActualizarIndicadorRequest(BaseModel):
+    version: int | None = Field(default=None, ge=1)
     nombre: str | None = Field(default=None, min_length=2, max_length=300)
     metodo_calculo: str | None = None
     unidad_medida: str | None = Field(default=None, max_length=100)
@@ -92,7 +93,7 @@ class IndicadorRespuesta(BaseModel):
     criterio_seaes_ids: list[int]
     creado_en: datetime
     actualizado_en: datetime
-    version: int = 1
+    version: int
 
     @classmethod
     def from_domain(cls, indicator: Indicator) -> IndicadorRespuesta:
@@ -118,6 +119,7 @@ class IndicadorRespuesta(BaseModel):
             criterio_seaes_ids=sorted(indicator.criteria_ids),
             creado_en=indicator.created_at,
             actualizado_en=indicator.updated_at,
+            version=indicator.version,
         )
 
 

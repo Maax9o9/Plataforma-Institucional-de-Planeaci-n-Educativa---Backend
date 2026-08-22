@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     password_setup_expire_hours: int = 24
     upload_directory: str = "var/uploads"
     upload_max_bytes: int = 10 * 1024 * 1024
+    reminder_check_interval_seconds: int = Field(default=6 * 60 * 60, ge=300)
 
 
 @lru_cache

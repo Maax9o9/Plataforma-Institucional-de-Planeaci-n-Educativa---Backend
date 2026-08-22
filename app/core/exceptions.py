@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import logging
+from datetime import UTC, datetime
+from uuid import uuid4
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.shared.domain.exceptions import AppError
+from app.modules.audit.domain.entities import AuditEntry
+from app.shared.domain.exceptions import AppError, CaptureImmutableError
+
+logger = logging.getLogger(__name__)
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -16,6 +23,25 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(AppError)
     async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
+        if isinstance(exc, CaptureImmutableError):
+            user = getattr(request.state, "current_user", None)
+            try:
+                await request.app.state.audit_repository.append(
+                    AuditEntry(
+                        id=uuid4(),
+                        occurred_at=datetime.now(UTC),
+                        actor_id=user.id if user else None,
+                        event_name="ImmutableEditBlocked",
+                        aggregate_type=(
+                            "poa_advance" if "/poa/" in request.url.path else "capture"
+                        ),
+                        aggregate_id=None,
+                        action="edit_blocked",
+                        data={"method": request.method, "path": request.url.path},
+                    )
+                )
+            except Exception:
+                logger.exception("No se pudo auditar el intento de edicion bloqueado")
         return JSONResponse(
             status_code=exc.status_code,
             content={

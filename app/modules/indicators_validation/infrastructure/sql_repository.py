@@ -5,6 +5,8 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
+
 from ...indicators_capture.domain.value_objects import CaptureStatus
 from ..domain.entities import StateChange
 from .models import StateChangeModel
@@ -15,7 +17,7 @@ class SqlAlchemyStateChangeRepository:
         self.session_factory = session_factory
 
     async def add(self, change: StateChange) -> None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             session.add(
                 StateChangeModel(
                     entidad=change.entity,
@@ -27,10 +29,10 @@ class SqlAlchemyStateChangeRepository:
                     comentario=change.comment,
                 )
             )
-            await session.commit()
+            await commit_or_flush(session)
 
     async def list_for_capture(self, capture_id: int) -> list[StateChange]:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             models = (
                 await session.scalars(
                     select(StateChangeModel)
@@ -55,7 +57,7 @@ class SqlAlchemyStateChangeRepository:
             ]
 
     async def list_for_poa_advance(self, advance_id: int) -> list[StateChange]:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             models = (
                 await session.scalars(
                     select(StateChangeModel)

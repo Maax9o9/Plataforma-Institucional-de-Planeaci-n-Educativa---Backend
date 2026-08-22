@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from app.shared.application.actor import ActorContext
+
 
 @dataclass(frozen=True)
 class CreateExerciseCommand:
@@ -34,7 +36,7 @@ class CreateActivityCommand:
     annual_goal: Decimal
     observations: str | None
     responsible_id: int
-    actor_id: int
+    actor: ActorContext
 
 
 @dataclass(frozen=True)
@@ -45,4 +47,4 @@ class UpdateActivityCommand:
     annual_goal: Decimal | None
     observations: str | None
     responsible_id: int | None
-    actor_id: int
+    actor: ActorContext

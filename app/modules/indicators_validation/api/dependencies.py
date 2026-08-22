@@ -10,6 +10,7 @@ def get_validate_capture_use_case(request: Request) -> ValidateCapture:
         request.app.state.capture_repository,
         request.app.state.state_change_repository,
         request.app.state.event_bus,
+        request.app.state.unit_of_work,
     )
 
 
@@ -18,4 +19,5 @@ def get_reject_capture_use_case(request: Request) -> RejectCapture:
         request.app.state.capture_repository,
         request.app.state.state_change_repository,
         request.app.state.event_bus,
+        request.app.state.unit_of_work,
     )

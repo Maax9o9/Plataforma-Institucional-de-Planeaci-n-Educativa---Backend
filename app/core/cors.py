@@ -61,7 +61,7 @@ def build_cors_options(settings: Settings) -> dict:
     return {
         "allow_origins": normalized_origins,
         "allow_credentials": True,
-        "allow_methods": ["GET", "POST", "PATCH"],
+        "allow_methods": ["GET", "POST", "PATCH", "PUT", "DELETE"],
         "allow_headers": ["Accept", "Authorization", "Content-Type", "X-Request-ID"],
         "expose_headers": ["X-Request-ID"],
         "max_age": 600,

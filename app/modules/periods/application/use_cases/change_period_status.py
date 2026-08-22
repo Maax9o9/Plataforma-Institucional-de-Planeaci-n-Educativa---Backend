@@ -10,11 +10,20 @@ from ..dto import ChangePeriodCommand
 
 
 class OpenPeriod:
-    def __init__(self, repository: PeriodRepository, event_bus: EventBus) -> None:
+    def __init__(
+        self, repository: PeriodRepository, event_bus: EventBus, unit_of_work=None
+    ) -> None:
         self.repository = repository
         self.event_bus = event_bus
+        self.unit_of_work = unit_of_work
 
     async def execute(self, command: ChangePeriodCommand) -> Period:
+        if self.unit_of_work is None:
+            return await self._execute(command)
+        async with self.unit_of_work():
+            return await self._execute(command)
+
+    async def _execute(self, command: ChangePeriodCommand) -> Period:
         period = await self.repository.get_by_id(command.period_id)
         if period is None:
             raise ResourceNotFoundError("El periodo no existe.")
@@ -38,11 +47,20 @@ class OpenPeriod:
 
 
 class ClosePeriod:
-    def __init__(self, repository: PeriodRepository, event_bus: EventBus) -> None:
+    def __init__(
+        self, repository: PeriodRepository, event_bus: EventBus, unit_of_work=None
+    ) -> None:
         self.repository = repository
         self.event_bus = event_bus
+        self.unit_of_work = unit_of_work
 
     async def execute(self, command: ChangePeriodCommand) -> Period:
+        if self.unit_of_work is None:
+            return await self._execute(command)
+        async with self.unit_of_work():
+            return await self._execute(command)
+
+    async def _execute(self, command: ChangePeriodCommand) -> Period:
         period = await self.repository.get_by_id(command.period_id)
         if period is None:
             raise ResourceNotFoundError("El periodo no existe.")

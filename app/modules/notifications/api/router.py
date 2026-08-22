@@ -56,5 +56,7 @@ async def generate_reminders(
         request.app.state.period_repository,
         request.app.state.indicator_repository,
         request.app.state.notification_repository,
+        request.app.state.poa_repository,
+        request.app.state.notification_service,
     ).execute()
     return {"generadas": total}

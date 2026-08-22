@@ -21,12 +21,18 @@ class ValidateCapture:
         captures: CaptureReader,
         changes: StateChangeRepository,
         event_bus: EventBus,
+        unit_of_work,
     ) -> None:
         self.captures = captures
         self.changes = changes
         self.event_bus = event_bus
+        self.unit_of_work = unit_of_work
 
     async def execute(self, command: ValidateCaptureCommand) -> Capture:
+        async with self.unit_of_work():
+            return await self._execute(command)
+
+    async def _execute(self, command: ValidateCaptureCommand) -> Capture:
         capture = await self.captures.get_by_id(command.capture_id)
         if capture is None:
             raise ResourceNotFoundError("La captura no existe.")
@@ -66,12 +72,18 @@ class RejectCapture:
         captures: CaptureReader,
         changes: StateChangeRepository,
         event_bus: EventBus,
+        unit_of_work,
     ) -> None:
         self.captures = captures
         self.changes = changes
         self.event_bus = event_bus
+        self.unit_of_work = unit_of_work
 
     async def execute(self, command: RejectCaptureCommand) -> Capture:
+        async with self.unit_of_work():
+            return await self._execute(command)
+
+    async def _execute(self, command: RejectCaptureCommand) -> Capture:
         capture = await self.captures.get_by_id(command.capture_id)
         if capture is None:
             raise ResourceNotFoundError("La captura no existe.")

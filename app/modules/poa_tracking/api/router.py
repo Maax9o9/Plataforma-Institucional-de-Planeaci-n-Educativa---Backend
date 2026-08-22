@@ -6,11 +6,13 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Request, status
 
-from app.core.security import get_current_user
+from app.core.authorization import actor_from_user, ensure_owner_or_planning
+from app.core.security import get_current_user, require_roles
 from app.shared.domain.exceptions import ResourceNotFoundError
 
 from ...evidence_management.api.dependencies import (
     get_attach_evidence_use_case,
+    get_evidence_access_control,
 )
 from ...evidence_management.application.dto import (
     AttachEvidenceCommand,
@@ -46,7 +48,7 @@ router = APIRouter(prefix="/poa", tags=[TAG])
 )
 async def create_advance(
     body: RegistrarAvanceRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_roles("responsable_area", "planeacion", "admin_sistema")),
     use_case: RegisterAdvance = Depends(get_register_advance_use_case),
 ) -> AvanceRespuesta:
     item = await use_case.execute(
@@ -54,7 +56,7 @@ async def create_advance(
             activity_id=body.actividad_id,
             quarter=body.cuatrimestre,
             period_id=body.periodo_id,
-            capturer_id=current_user.id,
+            actor=actor_from_user(current_user),
             scheduled=body.programado,
             achieved=body.alcanzado,
             observations=body.observaciones,
@@ -79,11 +81,12 @@ async def list_my_advances(
 async def get_advance(
     advance_id: int,
     request: Request,
-    _current_user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ) -> AvanceRespuesta:
     item = await request.app.state.poa_advance_repository.get_by_id(advance_id)
     if item is None:
         raise ResourceNotFoundError("El avance POA no existe.")
+    ensure_owner_or_planning(current_user, item.capturer_id)
     return AvanceRespuesta.from_domain(item)
 
 
@@ -129,11 +132,24 @@ async def send_advance(
 async def accumulated(
     activity_id: int,
     request: Request,
-    _current_user=Depends(get_current_user),
+    current_user=Depends(
+        require_roles("planeacion", "admin_sistema", "rectoria", "responsable_area")
+    ),
 ):
     activity = await request.app.state.poa_repository.get_activity(activity_id)
     if activity is None:
         raise ResourceNotFoundError("La actividad POA no existe.")
+    if not current_user.has_any_role({"planeacion", "admin_sistema", "rectoria"}):
+        objective = await request.app.state.poa_repository.get_objective(activity.objective_id)
+        process = (
+            await request.app.state.poa_repository.get_process(objective.process_id)
+            if objective
+            else None
+        )
+        if process is None or process.area_id != current_user.area_id:
+            from app.shared.domain.exceptions import ForbiddenError
+
+            raise ForbiddenError("La actividad POA no pertenece al area del usuario.")
     items = await request.app.state.poa_advance_repository.list_by_activity(activity_id)
     validated = [item for item in items if item.status.value == "validado"]
     achieved = sum((item.achieved or Decimal(0) for item in validated), Decimal(0))
@@ -172,7 +188,7 @@ async def attach_evidence(
             path_or_url=body.ruta_o_url,
             entity=FlowEntity.POA_ADVANCE,
             entity_id=advance_id,
-            actor_id=current_user.id,
+            actor=actor_from_user(current_user),
         )
     )
     from ...evidence_management.api.schemas import EvidenciaRespuesta
@@ -197,12 +213,14 @@ async def link_evidence(
     await LinkExistingEvidence(
         request.app.state.evidence_repository,
         request.app.state.event_bus,
+        get_evidence_access_control(request),
+        request.app.state.unit_of_work,
     ).execute(
         LinkExistingEvidenceCommand(
             evidence_id=body.evidencia_id,
             entity=FlowEntity.POA_ADVANCE,
             entity_id=advance_id,
-            actor_id=current_user.id,
+            actor=actor_from_user(current_user),
         )
     )
 
@@ -214,9 +232,11 @@ async def link_evidence(
 async def reusable_evidence(
     exercise_id: int,
     request: Request,
-    _current_user=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     from ...evidence_management.api.schemas import EvidenciaRespuesta
 
-    evidences = await request.app.state.evidence_repository.list_all()
+    evidences = await get_evidence_access_control(request).list_reusable_for_exercise(
+        exercise_id, actor_from_user(current_user)
+    )
     return [EvidenciaRespuesta.from_domain(item) for item in evidences]

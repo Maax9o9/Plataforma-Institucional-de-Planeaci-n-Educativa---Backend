@@ -40,6 +40,8 @@ class RegisterCapture:
             raise ConflictError("El periodo no existe o no esta abierto.")
         if getattr(period.period_type, "value", period.period_type) != "indicadores":
             raise ConflictError("Las capturas de indicadores requieren un periodo de indicadores.")
+        if period.periodicity != indicator.periodicity:
+            raise ConflictError("La periodicidad del periodo no coincide con el indicador.")
         existing = await self.repository.get_by_indicator_period(
             command.indicator_id,
             command.period_id,

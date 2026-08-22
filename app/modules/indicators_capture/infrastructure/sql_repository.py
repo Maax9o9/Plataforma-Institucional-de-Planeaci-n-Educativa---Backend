@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.shared.domain.exceptions import ConflictError
+from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
 
 from ..domain.entities import Capture
 from ..domain.value_objects import CaptureStatus
@@ -39,7 +40,7 @@ class SqlAlchemyCaptureRepository:
 
     async def add(self, capture: Capture) -> None:
         now = datetime.now(UTC)
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             try:
                 model = CaptureModel(
                     indicador_id=capture.indicator_id,
@@ -54,7 +55,7 @@ class SqlAlchemyCaptureRepository:
                     actualizado_en=now,
                 )
                 session.add(model)
-                await session.commit()
+                await commit_or_flush(session)
             except IntegrityError as exc:
                 await session.rollback()
                 raise ConflictError("Ya existe una captura para el indicador y periodo.") from exc
@@ -63,12 +64,12 @@ class SqlAlchemyCaptureRepository:
         capture.updated_at = now
 
     async def get_by_id(self, capture_id: int) -> Capture | None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = await session.get(CaptureModel, capture_id)
             return self._to_domain(model) if model else None
 
     async def get_by_indicator_period(self, indicator_id: int, period_id: int) -> Capture | None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = (
                 await session.execute(
                     select(CaptureModel).where(
@@ -80,7 +81,7 @@ class SqlAlchemyCaptureRepository:
             return self._to_domain(model) if model else None
 
     async def update(self, capture: Capture) -> None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = await session.get(CaptureModel, capture.id)
             if model is None:
                 return
@@ -90,14 +91,14 @@ class SqlAlchemyCaptureRepository:
             model.observaciones = capture.observations
             model.estado = capture.status.value
             model.actualizado_en = capture.updated_at
-            await session.commit()
+            await commit_or_flush(session)
 
     async def list_by_capturer(
         self,
         capturer_id: int,
         period_id: int | None = None,
     ) -> list[Capture]:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             statement = select(CaptureModel).where(CaptureModel.capturista_id == capturer_id)
             if period_id is not None:
                 statement = statement.where(CaptureModel.periodo_id == period_id)
@@ -105,7 +106,7 @@ class SqlAlchemyCaptureRepository:
             return [self._to_domain(model) for model in models]
 
     async def list_by_indicator(self, indicator_id: int) -> list[Capture]:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             models = (
                 await session.scalars(
                     select(CaptureModel)
@@ -119,16 +120,35 @@ class SqlAlchemyCaptureRepository:
             return [self._to_domain(model) for model in models]
 
     async def update_evaluation(self, capture_id: int, progress_percentage, semaphore: str) -> None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = await session.get(CaptureModel, capture_id)
             if model is None:
                 return
             model.pct_avance = progress_percentage
             model.semaforo = semaphore
             model.actualizado_en = datetime.now(UTC)
-            await session.commit()
+            await commit_or_flush(session)
 
     async def list_all(self) -> list[Capture]:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             models = (await session.scalars(select(CaptureModel).order_by(CaptureModel.id))).all()
             return [self._to_domain(model) for model in models]
+
+    async def reset_validated_for_period(self, period_id: int, actor_id: int) -> list[int]:
+        del actor_id
+        reset_ids = []
+        async with session_scope(self.session_factory) as session:
+            models = await session.scalars(
+                select(CaptureModel).where(
+                    CaptureModel.periodo_id == period_id,
+                    CaptureModel.estado == "validado",
+                )
+            )
+            for model in models:
+                reset_ids.append(model.id)
+                model.estado = "borrador"
+                model.pct_avance = None
+                model.semaforo = None
+                model.actualizado_en = datetime.now(UTC)
+            await commit_or_flush(session)
+        return reset_ids

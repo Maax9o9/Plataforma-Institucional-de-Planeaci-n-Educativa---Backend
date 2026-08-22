@@ -56,6 +56,7 @@ async def get_current_user(request: Request, claims=Depends(get_access_claims)):
     user = await request.app.state.user_repository.get_by_id(claims.subject)
     if user is None or not user.is_active:
         raise AuthenticationError("El usuario no esta disponible.")
+    request.state.current_user = user
     return user
 
 

@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.shared.domain.exceptions import ConflictError
+from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
 
 from ...indicators_capture.domain.value_objects import CaptureStatus
 from ..domain.entities import PoaAdvance
@@ -43,7 +44,7 @@ class SqlAlchemyPoaAdvanceRepository:
 
     async def add(self, item: PoaAdvance) -> None:
         now = datetime.now(UTC)
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             try:
                 model = PoaAdvanceModel(
                     actividad_id=item.activity_id,
@@ -68,7 +69,7 @@ class SqlAlchemyPoaAdvanceRepository:
                             for criterion_id in item.criteria_ids
                         ],
                     )
-                await session.commit()
+                await commit_or_flush(session)
             except IntegrityError as exc:
                 await session.rollback()
                 raise ConflictError(
@@ -79,12 +80,12 @@ class SqlAlchemyPoaAdvanceRepository:
         item.updated_at = now
 
     async def get_by_id(self, item_id: int) -> PoaAdvance | None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = await session.get(PoaAdvanceModel, item_id)
             return await self._to_domain(session, model) if model else None
 
     async def get_by_activity_quarter(self, activity_id: int, quarter: int) -> PoaAdvance | None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = (
                 await session.execute(
                     select(PoaAdvanceModel).where(
@@ -96,7 +97,7 @@ class SqlAlchemyPoaAdvanceRepository:
             return await self._to_domain(session, model) if model else None
 
     async def update(self, item: PoaAdvance) -> None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = await session.get(PoaAdvanceModel, item.id)
             if model is None:
                 return
@@ -119,10 +120,10 @@ class SqlAlchemyPoaAdvanceRepository:
                         for criterion_id in item.criteria_ids
                     ],
                 )
-            await session.commit()
+            await commit_or_flush(session)
 
     async def list_by_activity(self, activity_id: int) -> list[PoaAdvance]:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             models = (
                 await session.scalars(
                     select(PoaAdvanceModel)
@@ -133,7 +134,7 @@ class SqlAlchemyPoaAdvanceRepository:
             return [await self._to_domain(session, model) for model in models]
 
     async def list_by_capturer(self, capturer_id: int) -> list[PoaAdvance]:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             models = (
                 await session.scalars(
                     select(PoaAdvanceModel)
@@ -144,7 +145,7 @@ class SqlAlchemyPoaAdvanceRepository:
             return [await self._to_domain(session, model) for model in models]
 
     async def has_validated_for_activity(self, activity_id: int) -> bool:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             result = await session.execute(
                 select(PoaAdvanceModel.id).where(
                     PoaAdvanceModel.actividad_id == activity_id,
@@ -153,8 +154,9 @@ class SqlAlchemyPoaAdvanceRepository:
             )
             return result.scalar_one_or_none() is not None
 
-    async def reset_validated_for_period(self, period_id: int, actor_id: int) -> None:
-        async with self.session_factory() as session:
+    async def reset_validated_for_period(self, period_id: int, actor_id: int) -> list[int]:
+        reset_ids = []
+        async with session_scope(self.session_factory) as session:
             models = await session.scalars(
                 select(PoaAdvanceModel).where(
                     PoaAdvanceModel.periodo_id == period_id,
@@ -162,6 +164,8 @@ class SqlAlchemyPoaAdvanceRepository:
                 )
             )
             for model in models:
+                reset_ids.append(model.id)
                 model.estado = "borrador"
                 model.actualizado_en = datetime.now(UTC)
-            await session.commit()
+            await commit_or_flush(session)
+        return reset_ids

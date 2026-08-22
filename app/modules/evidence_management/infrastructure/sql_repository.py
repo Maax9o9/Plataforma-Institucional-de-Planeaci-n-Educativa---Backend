@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.shared.domain.exceptions import ConflictError
+from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
 
 from ..domain.entities import Evidence, EvidenceLink, EvidenceVersion
 from ..domain.value_objects import EvidenceType, FlowEntity
@@ -20,7 +21,7 @@ class SqlAlchemyEvidenceRepository:
         self.session_factory = session_factory
 
     async def add(self, evidence: Evidence) -> None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = EvidenceModel(
                 nombre=evidence.name,
                 descripcion=evidence.description,
@@ -30,11 +31,11 @@ class SqlAlchemyEvidenceRepository:
                 creado_en=datetime.now(UTC),
             )
             session.add(model)
-            await session.commit()
+            await commit_or_flush(session)
         evidence.id = model.id
 
     async def add_version(self, version: EvidenceVersion) -> None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             session.add(
                 EvidenceVersionModel(
                     evidencia_id=version.evidence_id,
@@ -46,10 +47,10 @@ class SqlAlchemyEvidenceRepository:
                     fecha=version.created_at,
                 )
             )
-            await session.commit()
+            await commit_or_flush(session)
 
     async def link(self, link: EvidenceLink) -> None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             try:
                 session.add(
                     EvidenceLinkModel(
@@ -60,13 +61,13 @@ class SqlAlchemyEvidenceRepository:
                         fecha=datetime.now(UTC),
                     )
                 )
-                await session.commit()
+                await commit_or_flush(session)
             except IntegrityError as exc:
                 await session.rollback()
                 raise ConflictError("La evidencia ya esta vinculada a ese registro.") from exc
 
     async def has_for(self, entity: FlowEntity, entity_id: int) -> bool:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             result = await session.execute(
                 select(EvidenceLinkModel.id).where(
                     EvidenceLinkModel.entidad == entity.value,
@@ -76,7 +77,7 @@ class SqlAlchemyEvidenceRepository:
             return result.scalar_one_or_none() is not None
 
     async def get(self, evidence_id: int) -> Evidence | None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = await session.get(EvidenceModel, evidence_id)
             if model is None:
                 return None
@@ -90,7 +91,7 @@ class SqlAlchemyEvidenceRepository:
             )
 
     async def list_all(self) -> list[Evidence]:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             models = (await session.scalars(select(EvidenceModel).order_by(EvidenceModel.id))).all()
             return [
                 Evidence(
@@ -105,7 +106,7 @@ class SqlAlchemyEvidenceRepository:
             ]
 
     async def list_for(self, entity: FlowEntity, entity_id: int) -> list[Evidence]:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             models = (
                 await session.scalars(
                     select(EvidenceModel)
@@ -130,7 +131,7 @@ class SqlAlchemyEvidenceRepository:
             ]
 
     async def list_versions(self, evidence_id: int) -> list[EvidenceVersion]:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             models = (
                 await session.scalars(
                     select(EvidenceVersionModel)
@@ -151,8 +152,36 @@ class SqlAlchemyEvidenceRepository:
                 for model in models
             ]
 
+    async def list_links(self, evidence_id: int) -> list[EvidenceLink]:
+        async with session_scope(self.session_factory) as session:
+            models = (
+                await session.scalars(
+                    select(EvidenceLinkModel)
+                    .where(EvidenceLinkModel.evidencia_id == evidence_id)
+                    .order_by(EvidenceLinkModel.id)
+                )
+            ).all()
+            return [
+                EvidenceLink(
+                    evidence_id=model.evidencia_id,
+                    entity=FlowEntity(model.entidad),
+                    entity_id=model.entidad_id,
+                    linked_by=model.vinculado_por,
+                )
+                for model in models
+            ]
+
+    async def find_evidence_id_by_path(self, path: str) -> int | None:
+        async with session_scope(self.session_factory) as session:
+            return await session.scalar(
+                select(EvidenceVersionModel.evidencia_id)
+                .where(EvidenceVersionModel.ruta_o_url == path)
+                .order_by(EvidenceVersionModel.id.desc())
+                .limit(1)
+            )
+
     async def unlink(self, evidence_id: int, entity: FlowEntity, entity_id: int) -> bool:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             result = await session.execute(
                 delete(EvidenceLinkModel).where(
                     EvidenceLinkModel.evidencia_id == evidence_id,
@@ -160,5 +189,5 @@ class SqlAlchemyEvidenceRepository:
                     EvidenceLinkModel.entidad_id == entity_id,
                 )
             )
-            await session.commit()
+            await commit_or_flush(session)
             return bool(result.rowcount)

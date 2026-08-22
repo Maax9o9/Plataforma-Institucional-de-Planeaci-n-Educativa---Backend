@@ -14,7 +14,10 @@ from .schemas import ReporteRespuesta
 
 TAG = "Reportes de indicadores"
 router = APIRouter(prefix="/reportes", tags=[TAG])
-REPORT_ROLES = ("planeacion", "admin_sistema", "rectoria", "responsable_area", "consulta")
+PLANNING_ROLES = ("planeacion", "admin_sistema")
+INSTRUMENT_ROLES = (*PLANNING_ROLES, "consulta")
+INSTITUTIONAL_ROLES = (*PLANNING_ROLES, "rectoria", "consulta")
+AREA_ROLES = (*PLANNING_ROLES, "responsable_area", "consulta")
 
 
 async def _generate(
@@ -50,9 +53,29 @@ async def report_pide(
     request: Request,
     periodo_id: int | None = None,
     formato: Literal["json", "xlsx", "pdf"] = "json",
-    current_user=Depends(require_roles(*REPORT_ROLES)),
+    current_user=Depends(require_roles(*INSTRUMENT_ROLES)),
 ) -> ReporteRespuesta:
     return await _generate(request, "pide", current_user, {"periodo_id": periodo_id}, formato)
+
+
+@router.get("/seaes", response_model=ReporteRespuesta, summary="Generar reporte SEAES")
+async def report_seaes(
+    request: Request,
+    periodo_id: int | None = None,
+    formato: Literal["json", "xlsx", "pdf"] = "json",
+    current_user=Depends(require_roles(*INSTRUMENT_ROLES)),
+) -> ReporteRespuesta:
+    return await _generate(request, "seaes", current_user, {"periodo_id": periodo_id}, formato)
+
+
+@router.get("/cocodi", response_model=ReporteRespuesta, summary="Generar reporte COCODI")
+async def report_cocodi(
+    request: Request,
+    periodo_id: int | None = None,
+    formato: Literal["json", "xlsx", "pdf"] = "json",
+    current_user=Depends(require_roles(*INSTRUMENT_ROLES)),
+) -> ReporteRespuesta:
+    return await _generate(request, "cocodi", current_user, {"periodo_id": periodo_id}, formato)
 
 
 @router.get(
@@ -64,7 +87,7 @@ async def report_institutional(
     request: Request,
     periodo_id: int | None = None,
     formato: Literal["json", "xlsx", "pdf"] = "json",
-    current_user=Depends(require_roles(*REPORT_ROLES)),
+    current_user=Depends(require_roles(*INSTITUTIONAL_ROLES)),
 ) -> ReporteRespuesta:
     return await _generate(
         request,
@@ -85,7 +108,7 @@ async def report_by_area(
     area_id: int | None = None,
     periodo_id: int | None = None,
     formato: Literal["json", "xlsx", "pdf"] = "json",
-    current_user=Depends(require_roles(*REPORT_ROLES)),
+    current_user=Depends(require_roles(*AREA_ROLES)),
 ) -> ReporteRespuesta:
     return await _generate(
         request,
@@ -103,11 +126,18 @@ async def report_by_area(
 )
 async def report_by_responsible(
     request: Request,
+    responsable_id: int | None = None,
     area_id: int | None = None,
     formato: Literal["json", "xlsx", "pdf"] = "json",
-    current_user=Depends(require_roles(*REPORT_ROLES)),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
 ) -> ReporteRespuesta:
-    return await _generate(request, "por_responsable", current_user, {"area_id": area_id}, formato)
+    return await _generate(
+        request,
+        "por_responsable",
+        current_user,
+        {"area_id": area_id, "responsable_id": responsable_id},
+        formato,
+    )
 
 
 @router.get(
@@ -119,7 +149,7 @@ async def report_by_period(
     periodo_id: int,
     request: Request,
     formato: Literal["json", "xlsx", "pdf"] = "json",
-    current_user=Depends(require_roles(*REPORT_ROLES)),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
 ) -> ReporteRespuesta:
     return await _generate(
         request,
@@ -140,7 +170,7 @@ async def report_at_risk(
     area_id: int | None = None,
     periodo_id: int | None = None,
     formato: Literal["json", "xlsx", "pdf"] = "json",
-    current_user=Depends(require_roles(*REPORT_ROLES)),
+    current_user=Depends(require_roles(*INSTITUTIONAL_ROLES)),
 ) -> ReporteRespuesta:
     return await _generate(
         request,
@@ -160,7 +190,7 @@ async def report_without_capture(
     request: Request,
     periodo_id: int | None = None,
     formato: Literal["json", "xlsx", "pdf"] = "json",
-    current_user=Depends(require_roles(*REPORT_ROLES)),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
 ) -> ReporteRespuesta:
     return await _generate(
         request,
@@ -180,7 +210,7 @@ async def report_missing_evidence(
     request: Request,
     periodo_id: int | None = None,
     formato: Literal["json", "xlsx", "pdf"] = "json",
-    current_user=Depends(require_roles(*REPORT_ROLES)),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
 ) -> ReporteRespuesta:
     return await _generate(
         request,

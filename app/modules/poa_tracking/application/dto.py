@@ -3,13 +3,15 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from app.shared.application.actor import ActorContext
+
 
 @dataclass(frozen=True)
 class RegisterAdvanceCommand:
     activity_id: int
     quarter: int
     period_id: int
-    capturer_id: int
+    actor: ActorContext
     scheduled: Decimal | None
     achieved: Decimal | None
     observations: str | None
