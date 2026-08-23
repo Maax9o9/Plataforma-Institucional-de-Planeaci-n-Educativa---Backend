@@ -59,6 +59,50 @@ class InMemoryRefreshTokenStore:
             self._tokens[token_id] = _StoredRefreshToken(stored.token_hash, consumed)
             return stored.record
 
+    async def rotate(
+        self,
+        *,
+        current_token: str,
+        current_token_id: UUID,
+        new_token: str,
+        new_token_id: UUID,
+        user_id: int,
+        session_id: UUID,
+        expires_at: datetime,
+    ) -> RefreshTokenRecord | None:
+        async with self._lock:
+            stored = self._tokens.get(current_token_id)
+            if stored is None or stored.token_hash != self._hash(current_token):
+                return None
+            now = datetime.now(UTC)
+            active = stored.record.active and stored.record.expires_at > now
+            current = RefreshTokenRecord(**{**stored.record.__dict__, "active": active})
+            self._tokens[current_token_id] = _StoredRefreshToken(
+                stored.token_hash,
+                RefreshTokenRecord(**{**stored.record.__dict__, "active": False}),
+            )
+            if not active:
+                for token_id, candidate in list(self._tokens.items()):
+                    if candidate.record.session_id == stored.record.session_id:
+                        self._tokens[token_id] = _StoredRefreshToken(
+                            candidate.token_hash,
+                            RefreshTokenRecord(
+                                **{**candidate.record.__dict__, "active": False}
+                            ),
+                        )
+                return current
+            self._tokens[new_token_id] = _StoredRefreshToken(
+                self._hash(new_token),
+                RefreshTokenRecord(
+                    token_id=new_token_id,
+                    user_id=user_id,
+                    session_id=session_id,
+                    expires_at=expires_at,
+                    active=True,
+                ),
+            )
+            return current
+
     async def revoke(self, token_id: UUID) -> None:
         async with self._lock:
             stored = self._tokens.get(token_id)

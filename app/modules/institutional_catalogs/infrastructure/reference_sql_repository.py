@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -25,9 +25,14 @@ class SqlAlchemyReferenceRepository:
                         clave=item.key,
                         nombre=item.name,
                         activo=item.is_active,
+                        version=item.version,
                     )
                 else:
-                    model = self.model(nombre=item.name, activo=item.is_active)
+                    model = self.model(
+                        nombre=item.name,
+                        activo=item.is_active,
+                        version=item.version,
+                    )
                 session.add(model)
                 await session.commit()
             except IntegrityError as exc:
@@ -45,6 +50,7 @@ class SqlAlchemyReferenceRepository:
                 key=model.clave if self.is_criteria else model.nombre,
                 name=model.nombre,
                 is_active=model.activo,
+                version=model.version,
             )
 
     async def list(self, *, active_only: bool = True) -> list[ReferenceItem]:
@@ -59,17 +65,32 @@ class SqlAlchemyReferenceRepository:
                 key=model.clave if self.is_criteria else model.nombre,
                     name=model.nombre,
                     is_active=model.activo,
+                    version=model.version,
                 )
                 for model in models
             ]
 
     async def update(self, item: ReferenceItem) -> None:
         async with self.session_factory() as session:
-            model = await session.get(self.model, item.id)
-            if model is None:
-                return
-            model.nombre = item.name
-            model.activo = item.is_active
+            values = {
+                "nombre": item.name,
+                "activo": item.is_active,
+                "version": item.version + 1,
+            }
             if self.is_criteria:
-                model.clave = item.key
+                values["clave"] = item.key
+            result = await session.execute(
+                update(self.model)
+                .where(self.model.id == item.id, self.model.version == item.version)
+                .values(**values)
+            )
+            if result.rowcount != 1:
+                current = await session.scalar(
+                    select(self.model.version).where(self.model.id == item.id)
+                )
+                raise ConflictError(
+                    "El catalogo fue modificado por otra solicitud.",
+                    details={"version_actual": current},
+                )
             await session.commit()
+            item.version += 1

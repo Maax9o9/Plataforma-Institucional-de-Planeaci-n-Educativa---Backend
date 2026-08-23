@@ -23,12 +23,24 @@ class RefreshTokenStore(Protocol):
         *,
         token: str,
         token_id: UUID,
-        user_id: UUID,
+        user_id: int,
         session_id: UUID,
         expires_at: datetime,
     ) -> None: ...
 
     async def consume(self, *, token: str, token_id: UUID) -> RefreshTokenRecord | None: ...
+
+    async def rotate(
+        self,
+        *,
+        current_token: str,
+        current_token_id: UUID,
+        new_token: str,
+        new_token_id: UUID,
+        user_id: int,
+        session_id: UUID,
+        expires_at: datetime,
+    ) -> RefreshTokenRecord | None: ...
 
     async def revoke(self, token_id: UUID) -> None: ...
 

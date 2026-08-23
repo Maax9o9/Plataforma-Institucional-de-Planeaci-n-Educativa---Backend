@@ -67,6 +67,19 @@ Cuando `DATABASE_URL` existe, `app.main` selecciona los repositorios SQLAlchemy.
 
 Las migraciones SQL son la fuente de verdad en `bd/migrations/`; los archivos de `alembic/versions/` solo las orquestan y no deben reemplazarse por `--autogenerate`.
 
+Para restaurar los datos reproducibles de integración (solo desarrollo o staging), define
+una contraseña por canal privado y ejecuta el comando idempotente:
+
+```powershell
+$env:SEED_TEST_PASSWORD = "una-clave-temporal-de-12-o-mas-caracteres"
+python -m app.scripts.seed_integration
+Remove-Item Env:SEED_TEST_PASSWORD
+```
+
+El comando crea las cinco cuentas por rol, catálogos, periodos, seis indicadores, metas,
+capturas en distintos estados, evidencias y auditoría. No imprime ni almacena la contraseña
+en el repositorio. La matriz de permisos está en `docs/RBAC.md`.
+
 ## Correo y notificaciones
 
 El proveedor predeterminado es `console`: registra los correos simulados y no requiere credenciales. Para una cuenta de prueba SMTP, configura en `.env` `EMAIL_PROVIDER=smtp`, `EMAIL_SENDER`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` y `SMTP_PASSWORD`. No guardes la contraseña en el repositorio; usa una contraseña de aplicación o un servidor local como Mailpit.
@@ -99,9 +112,14 @@ pytest
   `CORS_ALLOW_ALL=true` no es compatible con cookies credenciales en navegadores.
 - `GET /usuarios`, `GET /indicadores`, `GET /capturas` y `GET /bitacora` usan respuestas
   paginadas con `items`, `total`, `offset` y `limit`.
-- `/auditoria` se conserva como alias legado no paginado; `/bitacora` es el contrato nuevo.
+- `/auditoria` se conserva temporalmente como alias paginado y deprecado; `/bitacora` es el
+  contrato canónico.
 - Los errores incluyen `code`, `message`, `details` y `request_id`; la respuesta también
   expone el mismo identificador mediante `X-Request-ID`.
+- Los intentos fallidos de login se limitan con `LOGIN_MAX_ATTEMPTS` y
+  `LOGIN_RATE_LIMIT_WINDOW_SECONDS`; un bloqueo temporal devuelve `429` y `Retry-After`.
+- Kubernetes, Docker o el monitor externo pueden usar `/health/live` para liveness y
+  `/health/ready` para readiness de API y PostgreSQL.
 - `POST /api/v1/archivos` acepta PDF, JPG y PNG, valida la firma real, calcula SHA-256 y
   genera el nombre en servidor. El máximo predeterminado es 10 MiB y puede configurarse con
   `UPLOAD_MAX_BYTES`; los archivos se almacenan fuera de directorios públicos. Solo un
@@ -110,7 +128,10 @@ pytest
 - Los campos oficiales de un área incluyen `codigo`, `nombre`, `area_padre_id`, `tipo`,
   `color` y `activo`. La migración `0018_integracion_frontend` agrega los campos nuevos.
 - Los orígenes CORS de staging y producción deben declararse explícitamente en
-  `CORS_ORIGINS`; `CORS_ALLOW_ALL` no está permitido en producción.
+  `CORS_ORIGINS`; `CORS_ALLOW_ALL` no está permitido en ninguno de esos ambientes.
+
+Los cambios de contrato de la versión `0.2.0` se detallan en
+`docs/CONTRATO_FRONTEND_0.2.md`.
 
 Las cuentas y contraseñas de prueba no se incluyen en el repositorio. Deben provisionarse
 en el ambiente correspondiente y compartirse por un canal privado.

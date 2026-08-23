@@ -16,6 +16,7 @@ router = APIRouter(prefix="/catalogos", tags=["Catalogos institucionales"])
 class CrearReferenciaRequest(BaseModel):
     clave: str = Field(min_length=1, max_length=50)
     nombre: str = Field(min_length=1, max_length=300)
+    version: int | None = Field(default=None, ge=1)
 
 
 class ReferenciaRespuesta(BaseModel):
@@ -23,10 +24,17 @@ class ReferenciaRespuesta(BaseModel):
     clave: str
     nombre: str
     activo: bool
+    version: int
 
     @classmethod
     def from_domain(cls, item: ReferenceItem) -> ReferenciaRespuesta:
-        return cls(id=item.id, clave=item.key, nombre=item.name, activo=item.is_active)
+        return cls(
+            id=item.id,
+            clave=item.key,
+            nombre=item.name,
+            activo=item.is_active,
+            version=item.version,
+        )
 
 
 async def _list(
@@ -88,7 +96,7 @@ async def update_criteria(
     item = await UpdateReference(
         request.app.state.criteria_repository,
         request.app.state.event_bus,
-    ).execute(item_id, body.clave, body.nombre, current_user.id)
+    ).execute(item_id, body.clave, body.nombre, current_user.id, body.version)
     return ReferenciaRespuesta.from_domain(item)
 
 
@@ -100,12 +108,13 @@ async def update_criteria(
 async def deactivate_criteria(
     item_id: int,
     request: Request,
+    version: int | None = Query(default=None, ge=1),
     current_user=Depends(require_roles("planeacion", "admin_sistema")),
 ):
     item = await DeactivateReference(
         request.app.state.criteria_repository,
         request.app.state.event_bus,
-    ).execute(item_id, current_user.id)
+    ).execute(item_id, current_user.id, version)
     return ReferenciaRespuesta.from_domain(item)
 
 
@@ -152,7 +161,7 @@ async def update_indicator_type(
     item = await UpdateReference(
         request.app.state.indicator_type_repository,
         request.app.state.event_bus,
-    ).execute(item_id, body.clave, body.nombre, current_user.id)
+    ).execute(item_id, body.clave, body.nombre, current_user.id, body.version)
     return ReferenciaRespuesta.from_domain(item)
 
 
@@ -164,10 +173,11 @@ async def update_indicator_type(
 async def deactivate_indicator_type(
     item_id: int,
     request: Request,
+    version: int | None = Query(default=None, ge=1),
     current_user=Depends(require_roles("planeacion", "admin_sistema")),
 ):
     item = await DeactivateReference(
         request.app.state.indicator_type_repository,
         request.app.state.event_bus,
-    ).execute(item_id, current_user.id)
+    ).execute(item_id, current_user.id, version)
     return ReferenciaRespuesta.from_domain(item)

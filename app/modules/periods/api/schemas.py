@@ -30,6 +30,7 @@ class ReabrirPeriodoRequest(BaseModel):
         description="Motivo obligatorio de la reapertura.",
         examples=["Correccion autorizada por Planeacion"],
     )
+    version: int | None = Field(default=None, ge=1)
 
 
 class PeriodoResponse(BaseModel):
@@ -43,6 +44,7 @@ class PeriodoResponse(BaseModel):
     estado: PeriodStatus
     motivo_reapertura: str | None = None
     reabierto_por: int | None = None
+    version: int
 
     @classmethod
     def from_domain(cls, period: Period) -> PeriodoResponse:
@@ -57,4 +59,5 @@ class PeriodoResponse(BaseModel):
             estado=period.status,
             motivo_reapertura=period.reopen_reason,
             reabierto_por=period.reopened_by,
+            version=period.version,
         )

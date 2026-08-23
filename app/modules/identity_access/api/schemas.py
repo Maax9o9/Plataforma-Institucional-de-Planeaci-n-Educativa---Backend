@@ -62,10 +62,21 @@ class ActualizarUsuarioRequest(BaseModel):
     nombre: str | None = Field(default=None, min_length=2, max_length=150)
     roles: set[Role] | None = None
     area_id: int | None = None
+    notificar_correo: bool | None = None
+    version: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def require_one_change(self) -> ActualizarUsuarioRequest:
-        if all(value is None for value in (self.correo, self.nombre, self.roles, self.area_id)):
+        if all(
+            value is None
+            for value in (
+                self.correo,
+                self.nombre,
+                self.roles,
+                self.area_id,
+                self.notificar_correo,
+            )
+        ):
             raise ValueError("Debe indicar al menos un campo para actualizar.")
         return self
 
@@ -76,9 +87,14 @@ class UsuarioResponse(BaseModel):
     nombre: str
     roles: list[Role]
     area_id: int | None
+    area_nombre: str | None
     activo: bool
+    notificar_correo: bool
     requiere_configurar_contrasena: bool
+    ultimo_acceso: datetime | None
     creado_en: datetime
+    actualizado_en: datetime
+    version: int
 
     @classmethod
     def from_domain(cls, user: User) -> UsuarioResponse:
@@ -88,9 +104,14 @@ class UsuarioResponse(BaseModel):
             nombre=user.full_name,
             roles=sorted(user.roles, key=lambda role: role.value),
             area_id=user.area_id,
+            area_nombre=user.area_name,
             activo=user.is_active,
+            notificar_correo=user.notify_email,
             requiere_configurar_contrasena=user.password_setup_required,
+            ultimo_acceso=user.last_access_at,
             creado_en=user.created_at,
+            actualizado_en=user.updated_at,
+            version=user.version,
         )
 
 

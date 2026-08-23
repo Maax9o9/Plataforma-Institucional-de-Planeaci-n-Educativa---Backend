@@ -87,6 +87,11 @@ class EditCapture:
             raise ResourceNotFoundError("La captura no existe.")
         if capture.capturer_id != command.actor_id:
             raise ForbiddenError("El usuario no es el capturista de la captura.")
+        if command.expected_version is not None and command.expected_version != capture.version:
+            raise ConflictError(
+                "La captura fue modificada por otra solicitud.",
+                details={"version_actual": capture.version},
+            )
         period = await self.period_reader.get_by_id(capture.period_id)
         capture.edit(
             period_is_open=_period_is_open(period),

@@ -34,6 +34,45 @@ class InMemoryIndicatorRepository:
             items = [item for item in items if item.is_active]
         return sorted(items, key=lambda item: item.key)
 
+    async def list_page(
+        self,
+        *,
+        active_only: bool,
+        query: str | None,
+        area_id: int | None,
+        responsible_id: int | None,
+        instrument_id: int | None,
+        criterion_id: int | None,
+        sort: str,
+        descending: bool,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[Indicator], int]:
+        items = await self.list(active_only=active_only)
+        if query:
+            normalized = query.strip().casefold()
+            items = [
+                item
+                for item in items
+                if normalized in item.key.casefold() or normalized in item.name.casefold()
+            ]
+        if area_id is not None:
+            items = [item for item in items if item.area_id == area_id]
+        if responsible_id is not None:
+            items = [item for item in items if item.responsible_id == responsible_id]
+        if instrument_id is not None:
+            items = [item for item in items if instrument_id in item.instrument_ids]
+        if criterion_id is not None:
+            items = [item for item in items if criterion_id in item.criteria_ids]
+        key = {
+            "clave": lambda item: (item.key.casefold(), item.id),
+            "nombre": lambda item: (item.name.casefold(), item.id),
+            "periodicidad": lambda item: (item.periodicity.value, item.id),
+            "actualizado_en": lambda item: (item.updated_at, item.id),
+        }[sort]
+        items.sort(key=key, reverse=descending)
+        return items[offset : offset + limit], len(items)
+
     async def update(self, indicator: Indicator) -> None:
         indicator.version += 1
         self._items[indicator.id] = indicator

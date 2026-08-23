@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -33,6 +33,7 @@ class SqlAlchemyPeriodRepository:
             status=PeriodStatus(model.estado),
             reopen_reason=model.motivo_reapertura,
             reopened_by=model.reabierto_por,
+            version=model.version,
         )
 
     async def add(self, period: Period) -> None:
@@ -46,6 +47,7 @@ class SqlAlchemyPeriodRepository:
                     fecha_inicio=period.starts_on,
                     fecha_limite=period.ends_on,
                     estado=period.status.value,
+                    version=period.version,
                 )
                 async with session.begin_nested():
                     session.add(model)
@@ -71,12 +73,25 @@ class SqlAlchemyPeriodRepository:
 
     async def update(self, period: Period) -> None:
         async with session_scope(self.session_factory) as session:
-            model = await session.get(PeriodModel, period.id)
-            if model is None:
-                return
-            model.estado = period.status.value
+            values = {"estado": period.status.value, "version": period.version + 1}
             if period.reopen_reason:
-                model.motivo_reapertura = period.reopen_reason
-                model.reabierto_por = period.reopened_by
-                model.reabierto_en = datetime.now(UTC)
+                values.update(
+                    motivo_reapertura=period.reopen_reason,
+                    reabierto_por=period.reopened_by,
+                    reabierto_en=datetime.now(UTC),
+                )
+            result = await session.execute(
+                update(PeriodModel)
+                .where(PeriodModel.id == period.id, PeriodModel.version == period.version)
+                .values(**values)
+            )
+            if result.rowcount != 1:
+                current = await session.scalar(
+                    select(PeriodModel.version).where(PeriodModel.id == period.id)
+                )
+                raise ConflictError(
+                    "El periodo fue modificado por otra solicitud.",
+                    details={"version_actual": current},
+                )
             await commit_or_flush(session)
+            period.version += 1

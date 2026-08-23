@@ -29,28 +29,29 @@ class RefreshSession:
 
     async def execute(self, command: RefreshCommand) -> AuthTokens:
         claims = self.token_service.decode_refresh(command.refresh_token)
-        record = await self.refresh_tokens.consume(
-            token=command.refresh_token,
-            token_id=claims.token_id,
-        )
-        if record is None:
-            raise AuthenticationError("El refresh token no es valido.")
-        if not record.active:
-            await self.refresh_tokens.revoke_session(record.session_id)
-            raise AuthenticationError("Se detecto el reuso de un refresh token.")
-
-        user = await self.repository.get_by_id(record.user_id)
+        user = await self.repository.get_by_id(claims.subject)
         if user is None or not user.is_active:
             raise AuthenticationError("El usuario no esta disponible.")
 
-        refresh = self.token_service.issue_refresh(user, record.session_id)
-        await self.refresh_tokens.save(
-            token=refresh.token,
-            token_id=refresh.token_id,
+        refresh = self.token_service.issue_refresh(user, claims.session_id)
+        record = await self.refresh_tokens.rotate(
+            current_token=command.refresh_token,
+            current_token_id=claims.token_id,
+            new_token=refresh.token,
+            new_token_id=refresh.token_id,
             user_id=user.id,
             session_id=refresh.session_id,
             expires_at=refresh.expires_at,
         )
+        if record is None:
+            raise AuthenticationError("El refresh token no es valido.")
+        if (
+            not record.active
+            or record.user_id != claims.subject
+            or record.session_id != claims.session_id
+        ):
+            await self.refresh_tokens.revoke_session(claims.session_id)
+            raise AuthenticationError("Se detecto el reuso de un refresh token.")
         await self.event_bus.publish(
             UserLoggedIn(
                 actor_id=user.id,

@@ -57,6 +57,20 @@ class InMemoryEvidenceRepository:
             key=lambda item: item.created_at,
         )
 
+    async def list_versions_page(
+        self,
+        evidence_id: int,
+        *,
+        offset: int,
+        limit: int,
+        descending: bool,
+    ) -> tuple[list[tuple[int, EvidenceVersion]], int]:
+        versions = await self.list_versions(evidence_id)
+        numbered = list(enumerate(versions, start=1))
+        if descending:
+            numbered.reverse()
+        return numbered[offset : offset + limit], len(numbered)
+
     async def list_links(self, evidence_id: int) -> list[EvidenceLink]:
         return [
             EvidenceLink(

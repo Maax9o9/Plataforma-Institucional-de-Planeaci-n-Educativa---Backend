@@ -28,6 +28,7 @@ class InMemoryAuditRepository:
         to_date: datetime | None = None,
         aggregate_type: str | None = None,
         aggregate_id: int | None = None,
+        descending: bool = True,
     ) -> list[AuditEntry]:
         async with self._lock:
             entries = self._entries
@@ -43,7 +44,11 @@ class InMemoryAuditRepository:
                 entries = [item for item in entries if item.aggregate_type == aggregate_type]
             if aggregate_id is not None:
                 entries = [item for item in entries if item.aggregate_id == aggregate_id]
-            entries = sorted(entries, key=lambda item: item.occurred_at, reverse=True)
+            entries = sorted(
+                entries,
+                key=lambda item: (item.occurred_at, str(item.id)),
+                reverse=descending,
+            )
             return list(entries[offset : offset + limit])
 
     async def count(self, **filters) -> int:

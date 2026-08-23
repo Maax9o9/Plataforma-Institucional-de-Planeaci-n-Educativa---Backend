@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from app.shared.domain.base_entity import BaseEntity
 from app.shared.domain.exceptions import ValidationError
@@ -21,6 +22,9 @@ class User(BaseEntity):
     is_active: bool = True
     notify_email: bool = True
     password_setup_required: bool = False
+    last_access_at: datetime | None = None
+    area_name: str | None = None
+    version: int = 1
 
     @classmethod
     def register(
@@ -63,6 +67,7 @@ class User(BaseEntity):
         full_name: str | None = None,
         roles: set[Role] | frozenset[Role] | None = None,
         area_id: int | None = None,
+        notify_email: bool | None = None,
     ) -> None:
         if email is not None:
             self.email = Email(email)
@@ -78,7 +83,12 @@ class User(BaseEntity):
             self.roles = selected_roles
         if area_id is not None:
             self.area_id = area_id
+        if notify_email is not None:
+            self.notify_email = notify_email
         self.touch()
+
+    def record_successful_login(self, occurred_at: datetime) -> None:
+        self.last_access_at = occurred_at
 
     def has_any_role(self, roles: set[Role] | set[str]) -> bool:
         values = {role.value if isinstance(role, Role) else role for role in roles}

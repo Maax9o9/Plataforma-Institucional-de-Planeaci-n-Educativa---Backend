@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, status
+from typing import Literal
+
+from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.core.authorization import actor_from_user
 from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user
+from app.shared.domain.exceptions import ResourceNotFoundError
 
 from ..application.dto import AttachEvidenceCommand, ReplaceEvidenceCommand
 from ..application.use_cases.manage_evidence import AttachEvidence, ReplaceEvidence
@@ -15,9 +18,11 @@ from .dependencies import (
     get_evidence_access_control,
     get_replace_evidence_use_case,
 )
+from .presenters import present_evidence, public_evidence_reference
 from .schemas import (
     AdjuntarEvidenciaRequest,
     EvidenciaRespuesta,
+    PaginaVersionesEvidenciaRespuesta,
     ReemplazarEvidenciaRequest,
     VersionEvidenciaRespuesta,
 )
@@ -57,7 +62,11 @@ async def attach_evidence(
             checksum_sha256=body.checksum_sha256,
         )
     )
-    return EvidenciaRespuesta.from_domain(evidence)
+    return await present_evidence(
+        evidence,
+        request.app.state.evidence_repository,
+        request.app.state.settings.api_v1_prefix,
+    )
 
 
 @router.put(
@@ -86,27 +95,48 @@ async def replace_evidence(
 
 @router.get(
     "/{evidence_id}/versiones",
-    response_model=list[VersionEvidenciaRespuesta],
+    response_model=PaginaVersionesEvidenciaRespuesta,
     summary="Consultar versiones append-only de una evidencia",
 )
 async def list_evidence_versions(
     evidence_id: int,
     request: Request,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=100),
+    order: Literal["asc", "desc"] = Query(default="desc"),
     current_user=Depends(get_current_user),
-) -> list[VersionEvidenciaRespuesta]:
+) -> PaginaVersionesEvidenciaRespuesta:
     await get_evidence_access_control(request).ensure_can_view(
         evidence_id, actor_from_user(current_user)
     )
-    versions = await request.app.state.evidence_repository.list_versions(evidence_id)
-    return [
+    evidence = await request.app.state.evidence_repository.get(evidence_id)
+    if evidence is None:
+        raise ResourceNotFoundError("La evidencia no existe.")
+    versions, total = await request.app.state.evidence_repository.list_versions_page(
+        evidence_id,
+        offset=offset,
+        limit=limit,
+        descending=order == "desc",
+    )
+    rendered = [
         VersionEvidenciaRespuesta(
-            numero=index,
-            ruta_o_url=item.path_or_url,
+            numero=number,
+            ruta_o_url=public_evidence_reference(
+                item.path_or_url,
+                evidence.evidence_type,
+                request.app.state.settings.api_v1_prefix,
+            ),
             mime_type=item.mime_type,
             tamanio_bytes=item.size_bytes,
             checksum_sha256=item.checksum_sha256,
             fecha=item.created_at,
             usuario_id=item.user_id,
         )
-        for index, item in enumerate(versions, start=1)
+        for number, item in versions
     ]
+    return PaginaVersionesEvidenciaRespuesta(
+        items=rendered,
+        total=total,
+        offset=offset,
+        limit=limit,
+    )

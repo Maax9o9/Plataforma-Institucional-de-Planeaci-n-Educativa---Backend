@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -26,6 +26,7 @@ class SqlAlchemyAreaRepository:
                     parent_id=area.parent_id,
                     tipo=area.area_type,
                     color=area.color,
+                    version=area.version,
                 )
                 session.add(model)
                 await session.commit()
@@ -49,6 +50,7 @@ class SqlAlchemyAreaRepository:
                     area_type=model.tipo,
                     color=model.color,
                     is_active=model.activo,
+                    version=model.version,
                 )
                 for model in models
             ]
@@ -66,21 +68,35 @@ class SqlAlchemyAreaRepository:
                 area_type=model.tipo,
                 color=model.color,
                 is_active=model.activo,
+                version=model.version,
             )
 
     async def update(self, area: Area) -> None:
         async with self.session_factory() as session:
             try:
-                model = await session.get(AreaModel, area.id)
-                if model is None:
-                    return
-                model.nombre = area.name
-                model.codigo = area.code
-                model.parent_id = area.parent_id
-                model.tipo = area.area_type
-                model.color = area.color
-                model.activo = area.is_active
+                result = await session.execute(
+                    update(AreaModel)
+                    .where(AreaModel.id == area.id, AreaModel.version == area.version)
+                    .values(
+                        nombre=area.name,
+                        codigo=area.code,
+                        parent_id=area.parent_id,
+                        tipo=area.area_type,
+                        color=area.color,
+                        activo=area.is_active,
+                        version=area.version + 1,
+                    )
+                )
+                if result.rowcount != 1:
+                    current = await session.scalar(
+                        select(AreaModel.version).where(AreaModel.id == area.id)
+                    )
+                    raise ConflictError(
+                        "El area fue modificada por otra solicitud.",
+                        details={"version_actual": current},
+                    )
                 await session.commit()
+                area.version += 1
             except IntegrityError as exc:
                 await session.rollback()
                 raise ConflictError("Ya existe un area con ese codigo o nombre.") from exc
@@ -98,6 +114,7 @@ class SqlAlchemyInstrumentRepository:
                     activo=instrument.is_active,
                     codigo=instrument.code,
                     descripcion=instrument.description,
+                    version=instrument.version,
                 )
                 session.add(model)
                 await session.commit()
@@ -119,6 +136,7 @@ class SqlAlchemyInstrumentRepository:
                     name=model.nombre,
                     description=model.descripcion,
                     is_active=model.activo,
+                    version=model.version,
                 )
                 for model in models
             ]
@@ -134,19 +152,38 @@ class SqlAlchemyInstrumentRepository:
                 name=model.nombre,
                 description=model.descripcion,
                 is_active=model.activo,
+                version=model.version,
             )
 
     async def update(self, instrument: Instrument) -> None:
         async with self.session_factory() as session:
             try:
-                model = await session.get(InstrumentModel, instrument.id)
-                if model is None:
-                    return
-                model.nombre = instrument.name
-                model.codigo = instrument.code
-                model.descripcion = instrument.description
-                model.activo = instrument.is_active
+                result = await session.execute(
+                    update(InstrumentModel)
+                    .where(
+                        InstrumentModel.id == instrument.id,
+                        InstrumentModel.version == instrument.version,
+                    )
+                    .values(
+                        nombre=instrument.name,
+                        codigo=instrument.code,
+                        descripcion=instrument.description,
+                        activo=instrument.is_active,
+                        version=instrument.version + 1,
+                    )
+                )
+                if result.rowcount != 1:
+                    current = await session.scalar(
+                        select(InstrumentModel.version).where(
+                            InstrumentModel.id == instrument.id
+                        )
+                    )
+                    raise ConflictError(
+                        "El instrumento fue modificado por otra solicitud.",
+                        details={"version_actual": current},
+                    )
                 await session.commit()
+                instrument.version += 1
             except IntegrityError as exc:
                 await session.rollback()
                 raise ConflictError("Ya existe un instrumento con ese codigo o nombre.") from exc

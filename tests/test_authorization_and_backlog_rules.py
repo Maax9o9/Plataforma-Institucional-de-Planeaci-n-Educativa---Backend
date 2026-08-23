@@ -226,9 +226,9 @@ async def test_resource_authorization_inmutability_reports_and_poa_assignment(cl
         f"/api/v1/capturas/{capture_id}/historial", headers=one_headers
     )
     assert history.status_code == 200
-    assert history.json()[-1]["de_estado"] == "validado"
-    assert history.json()[-1]["a_estado"] == "borrador"
-    assert history.json()[-1]["comentario"].startswith("Reapertura:")
+    assert history.json()["items"][0]["de_estado"] == "validado"
+    assert history.json()["items"][0]["a_estado"] == "borrador"
+    assert history.json()["items"][0]["comentario"].startswith("Reapertura:")
 
     exercise = await client.post(
         "/api/v1/poa/ejercicios", json={"anio": 2035}, headers=admin_headers

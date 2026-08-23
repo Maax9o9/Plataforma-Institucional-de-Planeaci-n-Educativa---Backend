@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from typing import Literal
+
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user, require_roles
@@ -12,7 +14,7 @@ from ...indicators_capture.api.schemas import CapturaRespuesta
 from ..application.dto import RejectCaptureCommand, ValidateCaptureCommand
 from ..application.use_cases.validate_capture import RejectCapture, ValidateCapture
 from .dependencies import get_reject_capture_use_case, get_validate_capture_use_case
-from .schemas import CambioEstadoRespuesta, RechazarCapturaRequest
+from .schemas import CambioEstadoRespuesta, PaginaCambiosEstadoRespuesta, RechazarCapturaRequest
 
 TAG = "Validacion de capturas"
 router = APIRouter(prefix="/capturas", tags=[TAG])
@@ -65,14 +67,17 @@ async def reject_capture(
 
 @router.get(
     "/{capture_id}/historial",
-    response_model=list[CambioEstadoRespuesta],
+    response_model=PaginaCambiosEstadoRespuesta,
     summary="Consultar historial de estados",
 )
 async def capture_history(
     capture_id: int,
     request: Request,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=100),
+    order: Literal["asc", "desc"] = Query(default="desc"),
     current_user=Depends(get_current_user),
-) -> list[CambioEstadoRespuesta]:
+) -> PaginaCambiosEstadoRespuesta:
     capture = await request.app.state.capture_repository.get_by_id(capture_id)
     if capture is None:
         raise ResourceNotFoundError("La captura no existe.")
@@ -80,5 +85,15 @@ async def capture_history(
         {"planeacion", "admin_sistema"}
     ):
         raise ForbiddenError()
-    changes = await request.app.state.state_change_repository.list_for_capture(capture_id)
-    return [CambioEstadoRespuesta.from_domain(change) for change in changes]
+    changes, total = await request.app.state.state_change_repository.list_for_capture_page(
+        capture_id,
+        offset=offset,
+        limit=limit,
+        descending=order == "desc",
+    )
+    return PaginaCambiosEstadoRespuesta(
+        items=[CambioEstadoRespuesta.from_domain(change) for change in changes],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )

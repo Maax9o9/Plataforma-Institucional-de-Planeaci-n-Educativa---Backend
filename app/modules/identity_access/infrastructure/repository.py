@@ -41,6 +41,7 @@ class InMemoryUserRepository:
         async with self._lock:
             if user.id not in self._users:
                 return
+            user.version += 1
             self._users[user.id] = user
 
     async def all(self) -> list[User]:

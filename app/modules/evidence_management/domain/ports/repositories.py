@@ -25,6 +25,15 @@ class EvidenceRepository(Protocol):
 
     async def list_versions(self, evidence_id: int) -> list[EvidenceVersion]: ...
 
+    async def list_versions_page(
+        self,
+        evidence_id: int,
+        *,
+        offset: int,
+        limit: int,
+        descending: bool,
+    ) -> tuple[list[tuple[int, EvidenceVersion]], int]: ...
+
     async def list_links(self, evidence_id: int) -> list[EvidenceLink]: ...
 
     async def find_evidence_id_by_path(self, path: str) -> int | None: ...

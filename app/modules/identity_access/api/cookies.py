@@ -10,9 +10,14 @@ def _cookie_path(settings: Settings) -> str:
     return f"{settings.api_v1_prefix.rstrip('/')}/auth"
 
 
-def read_refresh_cookie(request: Request, settings: Settings) -> str:
+def read_refresh_cookie(
+    request: Request,
+    settings: Settings,
+    *,
+    required: bool = True,
+) -> str | None:
     token = request.cookies.get(settings.refresh_cookie_name)
-    if not token:
+    if not token and required:
         raise AuthenticationError("La cookie de sesion no existe.")
     return token
 

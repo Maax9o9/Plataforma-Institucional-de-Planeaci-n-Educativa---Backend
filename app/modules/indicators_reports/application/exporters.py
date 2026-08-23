@@ -23,9 +23,12 @@ def export_xlsx(report: ReportResult) -> BytesIO:
     sheet = workbook.active
     sheet.title = report.report_type[:31]
     columns = _columns(report)
-    sheet.append(columns)
-    for row in report.rows:
-        sheet.append([row.get(column) for column in columns])
+    if not columns:
+        sheet.append(["Sin resultados"])
+    else:
+        sheet.append(columns)
+        for row in report.rows:
+            sheet.append([row.get(column) for column in columns])
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
@@ -39,8 +42,9 @@ def export_pdf(report: ReportResult) -> BytesIO:
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
 
     columns = _columns(report)
-    rows = [columns]
-    rows.extend([[str(row.get(column, "")) for column in columns] for row in report.rows])
+    rows = [columns] if columns else [["Sin resultados"]]
+    if columns:
+        rows.extend([[str(row.get(column, "")) for column in columns] for row in report.rows])
     output = BytesIO()
     document = SimpleDocTemplate(
         output,
@@ -50,7 +54,7 @@ def export_pdf(report: ReportResult) -> BytesIO:
         topMargin=0.35 * inch,
         bottomMargin=0.35 * inch,
     )
-    table = Table(rows or [["Sin datos"]])
+    table = Table(rows)
     table.setStyle(
         TableStyle(
             [

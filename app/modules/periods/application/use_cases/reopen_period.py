@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 
 from app.shared.application.event_bus import EventBus
-from app.shared.domain.exceptions import ResourceNotFoundError
+from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError
 
 from ....indicators_capture.domain.value_objects import CaptureStatus
 from ....indicators_validation.domain.entities import StateChange
@@ -39,6 +39,11 @@ class ReopenPeriod:
         period = await self.repository.get_by_id(command.period_id)
         if period is None:
             raise ResourceNotFoundError("El periodo no existe.")
+        if command.expected_version is not None and command.expected_version != period.version:
+            raise ConflictError(
+                "El periodo fue modificado por otra solicitud.",
+                details={"version_actual": period.version},
+            )
         period.reopen(command.reason, command.actor_id)
         await self.repository.update(period)
         reset_ids: list[int] = []

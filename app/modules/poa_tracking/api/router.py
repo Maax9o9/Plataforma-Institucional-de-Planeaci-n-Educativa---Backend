@@ -14,6 +14,7 @@ from ...evidence_management.api.dependencies import (
     get_attach_evidence_use_case,
     get_evidence_access_control,
 )
+from ...evidence_management.api.presenters import present_evidence
 from ...evidence_management.application.dto import (
     AttachEvidenceCommand,
     LinkExistingEvidenceCommand,
@@ -191,9 +192,12 @@ async def attach_evidence(
             actor=actor_from_user(current_user),
         )
     )
-    from ...evidence_management.api.schemas import EvidenciaRespuesta
 
-    return EvidenciaRespuesta.from_domain(item)
+    return await present_evidence(
+        item,
+        request.app.state.evidence_repository,
+        request.app.state.settings.api_v1_prefix,
+    )
 
 
 @router.post(
@@ -234,9 +238,14 @@ async def reusable_evidence(
     request: Request,
     current_user=Depends(get_current_user),
 ):
-    from ...evidence_management.api.schemas import EvidenciaRespuesta
-
     evidences = await get_evidence_access_control(request).list_reusable_for_exercise(
         exercise_id, actor_from_user(current_user)
     )
-    return [EvidenciaRespuesta.from_domain(item) for item in evidences]
+    return [
+        await present_evidence(
+            item,
+            request.app.state.evidence_repository,
+            request.app.state.settings.api_v1_prefix,
+        )
+        for item in evidences
+    ]

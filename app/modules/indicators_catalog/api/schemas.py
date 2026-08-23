@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 
 from pydantic import BaseModel, Field, model_validator
+
+from app.core.types import (
+    InstitutionalDecimal,
+    NonNegativeInstitutionalDecimal,
+    PercentageDecimal,
+)
 
 from ..domain.entities import Baseline, Goal, Indicator
 from ..domain.value_objects import IndicatorPeriodicity
@@ -63,12 +68,12 @@ class ActualizarUmbralesRequest(BaseModel):
 class LineaBaseRequest(BaseModel):
     anio: int = Field(ge=2000, le=2200, examples=[2024])
     periodo: str | None = Field(default=None, max_length=50)
-    valor: Decimal = Field(examples=["85.50"])
+    valor: InstitutionalDecimal
 
 
 class MetaIndicadorRequest(BaseModel):
     periodo_id: int
-    valor: Decimal = Field(ge=0, examples=["90.00"])
+    valor: NonNegativeInstitutionalDecimal
 
 
 class IndicadorRespuesta(BaseModel):
@@ -131,7 +136,7 @@ class LineaBaseRespuesta(BaseModel):
     indicador_id: int
     anio: int
     periodo: str | None
-    valor: Decimal
+    valor: InstitutionalDecimal
 
     @classmethod
     def from_domain(cls, baseline: Baseline) -> LineaBaseRespuesta:
@@ -146,7 +151,7 @@ class LineaBaseRespuesta(BaseModel):
 class MetaIndicadorRespuesta(BaseModel):
     indicador_id: int
     periodo_id: int
-    valor: Decimal
+    valor: InstitutionalDecimal
 
     @classmethod
     def from_domain(cls, goal: Goal) -> MetaIndicadorRespuesta:
@@ -180,5 +185,5 @@ class CriterioCoberturaRespuesta(BaseModel):
 class CoberturaSeaesRespuesta(BaseModel):
     total_criterios: int
     criterios_cubiertos: int
-    porcentaje_cobertura: Decimal
+    porcentaje_cobertura: PercentageDecimal
     criterios: list[CriterioCoberturaRespuesta]

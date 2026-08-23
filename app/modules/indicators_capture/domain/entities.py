@@ -23,6 +23,7 @@ class Capture(BaseEntity):
     status: CaptureStatus = CaptureStatus.DRAFT
     progress_percentage: Decimal | None = None
     semaphore: str | None = None
+    version: int = 1
 
     @classmethod
     def create(cls, *, indicator_id: int, period_id: int, capturer_id: int, **values) -> Capture:

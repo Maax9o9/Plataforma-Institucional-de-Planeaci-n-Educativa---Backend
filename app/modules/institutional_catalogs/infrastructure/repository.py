@@ -33,6 +33,7 @@ class InMemoryAreaRepository:
 
     async def update(self, area: Area) -> None:
         async with self._lock:
+            area.version += 1
             self._items[area.id] = area
 
 
@@ -61,4 +62,5 @@ class InMemoryInstrumentRepository:
 
     async def update(self, instrument: Instrument) -> None:
         async with self._lock:
+            instrument.version += 1
             self._items[instrument.id] = instrument

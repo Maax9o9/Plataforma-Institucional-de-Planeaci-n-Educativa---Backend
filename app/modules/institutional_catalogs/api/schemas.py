@@ -25,6 +25,7 @@ class AreaRespuesta(BaseModel):
     tipo: Literal["administrativa", "programa_educativo"]
     color: str | None
     activo: bool
+    version: int
 
     @classmethod
     def from_domain(cls, area: Area) -> AreaRespuesta:
@@ -36,10 +37,12 @@ class AreaRespuesta(BaseModel):
             tipo=area.area_type,
             color=area.color,
             activo=area.is_active,
+            version=area.version,
         )
 
 
 class ActualizarAreaRequest(BaseModel):
+    version: int | None = Field(default=None, ge=1)
     codigo: str | None = Field(default=None, min_length=1, max_length=30)
     nombre: str | None = Field(default=None, min_length=2, max_length=150)
     area_padre_id: int | None = None
@@ -72,6 +75,7 @@ class InstrumentoRespuesta(BaseModel):
     nombre: str
     descripcion: str | None
     activo: bool
+    version: int
 
     @classmethod
     def from_domain(cls, instrument: Instrument) -> InstrumentoRespuesta:
@@ -81,10 +85,12 @@ class InstrumentoRespuesta(BaseModel):
             nombre=instrument.name,
             descripcion=instrument.description,
             activo=instrument.is_active,
+            version=instrument.version,
         )
 
 
 class ActualizarInstrumentoRequest(BaseModel):
+    version: int | None = Field(default=None, ge=1)
     codigo: str | None = Field(default=None, min_length=1, max_length=30)
     nombre: str | None = Field(default=None, min_length=2, max_length=150)
     descripcion: str | None = Field(default=None, max_length=500)

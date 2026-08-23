@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.shared.application.event_bus import EventBus
-from app.shared.domain.exceptions import ResourceNotFoundError
+from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError
 
 from ...domain.entities import Area
 from ...domain.events import AreaDeactivated, AreaUpdated
@@ -20,6 +20,11 @@ class UpdateArea:
         area = await self.repository.get_by_id(command.area_id)
         if area is None:
             raise ResourceNotFoundError("El area no existe.")
+        if command.expected_version is not None and command.expected_version != area.version:
+            raise ConflictError(
+                "El area fue modificada por otra solicitud.",
+                details={"version_actual": area.version},
+            )
         area.update_details(
             code=command.code,
             name=command.name,
@@ -49,6 +54,11 @@ class DeactivateArea:
         area = await self.repository.get_by_id(command.item_id)
         if area is None:
             raise ResourceNotFoundError("El area no existe.")
+        if command.expected_version is not None and command.expected_version != area.version:
+            raise ConflictError(
+                "El area fue modificada por otra solicitud.",
+                details={"version_actual": area.version},
+            )
         area.deactivate()
         await self.repository.update(area)
         await self.event_bus.publish(

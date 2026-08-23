@@ -47,3 +47,4 @@ class PeriodModel(Base):
     motivo_reapertura: Mapped[str | None] = mapped_column(Text)
     reabierto_por: Mapped[int | None] = mapped_column(Integer)
     reabierto_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

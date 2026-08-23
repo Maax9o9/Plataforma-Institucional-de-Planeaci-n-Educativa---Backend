@@ -24,6 +24,18 @@ class InMemoryStateChangeRepository:
             if item.entity == "captura" and item.entity_id == capture_id
         ]
 
+    async def list_for_capture_page(
+        self,
+        capture_id: int,
+        *,
+        offset: int,
+        limit: int,
+        descending: bool,
+    ) -> tuple[list[StateChange], int]:
+        items = await self.list_for_capture(capture_id)
+        items.sort(key=lambda item: (item.created_at, item.id), reverse=descending)
+        return items[offset : offset + limit], len(items)
+
     async def list_for_poa_advance(self, advance_id: int) -> list[StateChange]:
         return [
             item

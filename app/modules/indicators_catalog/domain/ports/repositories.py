@@ -16,6 +16,21 @@ class IndicatorRepository(Protocol):
 
     async def list(self, *, active_only: bool = False) -> list[Indicator]: ...
 
+    async def list_page(
+        self,
+        *,
+        active_only: bool,
+        query: str | None,
+        area_id: int | None,
+        responsible_id: int | None,
+        instrument_id: int | None,
+        criterion_id: int | None,
+        sort: str,
+        descending: bool,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[Indicator], int]: ...
+
     async def update(self, indicator: Indicator) -> None: ...
 
     async def add_baseline(self, baseline: Baseline) -> None: ...

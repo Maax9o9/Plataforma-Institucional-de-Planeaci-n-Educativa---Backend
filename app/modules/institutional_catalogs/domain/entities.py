@@ -26,6 +26,7 @@ class Area(BaseEntity):
     area_type: str = "administrativa"
     color: str | None = None
     is_active: bool = True
+    version: int = 1
 
     @classmethod
     def create(
@@ -93,6 +94,7 @@ class Instrument(BaseEntity):
     name: str
     description: str | None = None
     is_active: bool = True
+    version: int = 1
 
     @classmethod
     def create(cls, *, code: str, name: str, description: str | None = None) -> Instrument:

@@ -24,12 +24,18 @@ class UpdateUser:
             existing = await self.repository.get_by_email(command.email)
             if existing is not None and existing.id != user.id:
                 raise ConflictError("Ya existe un usuario con ese correo electronico.")
+        if command.expected_version is not None and command.expected_version != user.version:
+            raise ConflictError(
+                "El usuario fue modificado por otra solicitud.",
+                details={"version_actual": user.version},
+            )
 
         user.update_details(
             email=command.email,
             full_name=command.full_name,
             roles=command.roles,
             area_id=command.area_id,
+            notify_email=command.notify_email,
         )
         await self.repository.update(user)
         await self.event_bus.publish(
