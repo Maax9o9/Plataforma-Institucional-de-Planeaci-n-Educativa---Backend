@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 
 from pydantic import BaseModel, Field, model_validator
+
+from app.core.types import InstitutionalDecimal, PercentageDecimal
 
 from ..domain.strategies import Thresholds
 
@@ -48,7 +49,7 @@ class TendenciaPuntoRespuesta(BaseModel):
     periodo_id: int
     periodo_etiqueta: str
     fecha_inicio: date
-    resultado: Decimal | None
-    meta: Decimal | None
-    porcentaje_avance: Decimal | None
+    resultado: InstitutionalDecimal | None
+    meta: InstitutionalDecimal | None
+    porcentaje_avance: PercentageDecimal | None
     semaforo: str | None

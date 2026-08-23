@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
@@ -55,6 +55,60 @@ class SqlAlchemyStateChangeRepository:
                 )
                 for model in models
             ]
+
+    async def list_for_capture_page(
+        self,
+        capture_id: int,
+        *,
+        offset: int,
+        limit: int,
+        descending: bool,
+    ) -> tuple[list[StateChange], int]:
+        filters = (
+            StateChangeModel.entidad == "captura",
+            StateChangeModel.entidad_id == capture_id,
+        )
+        async with session_scope(self.session_factory) as session:
+            total = int(
+                await session.scalar(
+                    select(func.count()).select_from(StateChangeModel).where(*filters)
+                )
+                or 0
+            )
+            date_order = (
+                StateChangeModel.fecha.desc()
+                if descending
+                else StateChangeModel.fecha.asc()
+            )
+            id_order = (
+                StateChangeModel.id.desc() if descending else StateChangeModel.id.asc()
+            )
+            models = (
+                await session.scalars(
+                    select(StateChangeModel)
+                    .where(*filters)
+                    .order_by(date_order, id_order)
+                    .offset(offset)
+                    .limit(limit)
+                )
+            ).all()
+            return (
+                [
+                    StateChange(
+                        id=model.id,
+                        entity_id=model.entidad_id,
+                        from_status=(
+                            CaptureStatus(model.de_estado) if model.de_estado else None
+                        ),
+                        to_status=CaptureStatus(model.a_estado),
+                        user_id=model.usuario_id,
+                        comment=model.comentario,
+                        created_at=model.fecha,
+                    )
+                    for model in models
+                ],
+                total,
+            )
 
     async def list_for_poa_advance(self, advance_id: int) -> list[StateChange]:
         async with session_scope(self.session_factory) as session:

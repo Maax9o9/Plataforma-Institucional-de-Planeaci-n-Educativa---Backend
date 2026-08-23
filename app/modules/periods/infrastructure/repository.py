@@ -28,4 +28,5 @@ class InMemoryPeriodRepository:
 
     async def update(self, period: Period) -> None:
         async with self._lock:
+            period.version += 1
             self._periods[period.id] = period

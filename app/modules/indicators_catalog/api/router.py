@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
@@ -69,32 +70,29 @@ async def list_indicators(
     responsable_id: int | None = Query(default=None),
     instrumento_id: int | None = Query(default=None),
     criterio_seaes_id: int | None = Query(default=None),
+    sort: Literal["clave", "nombre", "periodicidad", "actualizado_en"] = Query(
+        default="clave"
+    ),
+    order: Literal["asc", "desc"] = Query(default="asc"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=10, ge=1, le=100),
     _current_user=Depends(get_current_user),
 ) -> PaginaIndicadoresRespuesta:
-    indicators = await request.app.state.indicator_repository.list(
+    indicators, total = await request.app.state.indicator_repository.list_page(
         active_only=activos,
+        query=q,
+        area_id=area_id,
+        responsible_id=responsable_id,
+        instrument_id=instrumento_id,
+        criterion_id=criterio_seaes_id,
+        sort=sort,
+        descending=order == "desc",
+        offset=offset,
+        limit=limit,
     )
-    if q:
-        normalized = q.strip().casefold()
-        indicators = [
-            item
-            for item in indicators
-            if normalized in item.key.casefold() or normalized in item.name.casefold()
-        ]
-    if area_id is not None:
-        indicators = [item for item in indicators if item.area_id == area_id]
-    if responsable_id is not None:
-        indicators = [item for item in indicators if item.responsible_id == responsable_id]
-    if instrumento_id is not None:
-        indicators = [item for item in indicators if instrumento_id in item.instrument_ids]
-    if criterio_seaes_id is not None:
-        indicators = [item for item in indicators if criterio_seaes_id in item.criteria_ids]
-    total = len(indicators)
     return PaginaIndicadoresRespuesta(
         items=[
-            IndicadorRespuesta.from_domain(item) for item in indicators[offset : offset + limit]
+            IndicadorRespuesta.from_domain(item) for item in indicators
         ],
         total=total,
         offset=offset,

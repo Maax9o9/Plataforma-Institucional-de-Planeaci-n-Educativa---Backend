@@ -23,6 +23,7 @@ class CreatePeriodCommand:
 class ChangePeriodCommand:
     period_id: int
     actor_id: int
+    expected_version: int | None = None
 
 
 @dataclass(frozen=True)
@@ -30,3 +31,4 @@ class ReopenPeriodCommand:
     period_id: int
     reason: str
     actor_id: int
+    expected_version: int | None = None

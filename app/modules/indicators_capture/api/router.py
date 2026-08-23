@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import date
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.core.authorization import actor_from_user, ensure_owner_or_planning
@@ -13,12 +16,14 @@ from ...evidence_management.api.dependencies import (
     get_attach_evidence_use_case,
     get_evidence_access_control,
 )
+from ...evidence_management.api.presenters import present_evidence
 from ...evidence_management.api.schemas import EvidenciaRespuesta
 from ...evidence_management.application.dto import AttachEvidenceCommand, UnlinkEvidenceCommand
 from ...evidence_management.application.use_cases.link_evidence import UnlinkEvidence
 from ...evidence_management.application.use_cases.manage_evidence import AttachEvidence
 from ...evidence_management.domain.value_objects import FlowEntity
 from ..application.dto import EditCaptureCommand, RegisterCaptureCommand, SendCaptureCommand
+from ..application.read_models import CaptureListRow
 from ..application.use_cases.manage_capture import EditCapture, RegisterCapture, SendCapture
 from .dependencies import (
     get_edit_capture_use_case,
@@ -27,6 +32,7 @@ from .dependencies import (
 )
 from .schemas import (
     AdjuntarEvidenciaCapturaRequest,
+    CapturaBandejaRespuesta,
     CapturaPendienteRespuesta,
     CapturaRespuesta,
     EditarCapturaRequest,
@@ -52,29 +58,135 @@ async def list_captures(
     area_id: int | None = Query(default=None),
     indicador_id: int | None = Query(default=None),
     periodo_id: int | None = Query(default=None),
+    q: str | None = Query(default=None),
+    fecha_desde: date | None = Query(default=None),
+    fecha_hasta: date | None = Query(default=None),
+    responsable_id: int | None = Query(default=None),
+    capturista_id: int | None = Query(default=None),
+    sort: Literal[
+        "actualizado_en",
+        "estado",
+        "indicador",
+        "periodo",
+        "capturista",
+        "porcentaje_avance",
+    ] = Query(default="actualizado_en"),
+    order: Literal["asc", "desc"] = Query(default="desc"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=10, ge=1, le=100),
     current_user=Depends(get_current_user),
 ) -> PaginaCapturasRespuesta:
+    selected_capturer = capturista_id if capturista_id is not None else responsable_id
+    allowed_capturer = (
+        None
+        if current_user.has_any_role({"planeacion", "admin_sistema"})
+        else current_user.id
+    )
+    if hasattr(request.app.state.capture_repository, "list_page_enriched"):
+        rows, total = await request.app.state.capture_repository.list_page_enriched(
+            status=estado,
+            area_id=area_id,
+            indicator_id=indicador_id,
+            period_id=periodo_id,
+            query=q,
+            from_date=fecha_desde,
+            to_date=fecha_hasta,
+            capturer_id=selected_capturer,
+            allowed_capturer_id=allowed_capturer,
+            sort=sort,
+            descending=order == "desc",
+            offset=offset,
+            limit=limit,
+        )
+        return PaginaCapturasRespuesta(
+            items=[CapturaBandejaRespuesta.from_row(row) for row in rows],
+            total=total,
+            offset=offset,
+            limit=limit,
+        )
+
     items = await request.app.state.capture_repository.list_all()
-    if not current_user.has_any_role({"planeacion", "admin_sistema"}):
-        items = [item for item in items if item.capturer_id == current_user.id]
+    if allowed_capturer is not None:
+        items = [item for item in items if item.capturer_id == allowed_capturer]
     if estado is not None:
         items = [item for item in items if item.status.value == estado]
     if indicador_id is not None:
         items = [item for item in items if item.indicator_id == indicador_id]
     if periodo_id is not None:
         items = [item for item in items if item.period_id == periodo_id]
-    if area_id is not None:
-        filtered = []
-        for item in items:
-            indicator = await request.app.state.indicator_repository.get_by_id(item.indicator_id)
-            if indicator is not None and indicator.area_id == area_id:
-                filtered.append(item)
-        items = filtered
-    total = len(items)
+    if selected_capturer is not None:
+        items = [item for item in items if item.capturer_id == selected_capturer]
+    rows = []
+    for item in items:
+        indicator = await request.app.state.indicator_repository.get_by_id(item.indicator_id)
+        period = await request.app.state.period_repository.get_by_id(item.period_id)
+        user = await request.app.state.user_repository.get_by_id(item.capturer_id)
+        area = (
+            await request.app.state.area_repository.get_by_id(indicator.area_id)
+            if indicator
+            else None
+        )
+        if not all((indicator, period, user, area)):
+            continue
+        if area_id is not None and indicator.area_id != area_id:
+            continue
+        if q:
+            normalized = q.strip().casefold()
+            if not any(
+                normalized in value.casefold()
+                for value in (indicator.key, indicator.name, user.full_name)
+            ):
+                continue
+        if fecha_desde is not None and item.updated_at.date() < fecha_desde:
+            continue
+        if fecha_hasta is not None and item.updated_at.date() > fecha_hasta:
+            continue
+        goal = await request.app.state.indicator_repository.get_goal(
+            item.indicator_id,
+            item.period_id,
+        )
+        evidence_total = len(
+            await request.app.state.evidence_repository.list_for(FlowEntity.CAPTURE, item.id)
+        )
+        rows.append(
+            CaptureListRow(
+                id=item.id,
+                indicator_id=indicator.id,
+                indicator_key=indicator.key,
+                indicator_name=indicator.name,
+                indicator_unit=indicator.unit,
+                period_id=period.id,
+                period_label=period.name,
+                period_status=period.status.value,
+                period_deadline=period.ends_on,
+                area_id=area.id,
+                area_code=area.code,
+                area_name=area.name,
+                area_color=area.color,
+                capturer_id=user.id,
+                capturer_name=user.full_name,
+                capturer_email=user.email.value,
+                result=item.result,
+                goal=goal.value if goal else None,
+                progress_percentage=item.progress_percentage,
+                semaphore=item.semaphore,
+                status=item.status.value,
+                evidence_total=evidence_total,
+                updated_at=item.updated_at,
+            )
+        )
+    key = {
+        "actualizado_en": lambda row: (row.updated_at, row.id),
+        "estado": lambda row: (row.status, row.id),
+        "indicador": lambda row: (row.indicator_key, row.id),
+        "periodo": lambda row: (row.period_deadline, row.id),
+        "capturista": lambda row: (row.capturer_name, row.id),
+        "porcentaje_avance": lambda row: (row.progress_percentage or 0, row.id),
+    }[sort]
+    rows.sort(key=key, reverse=order == "desc")
+    total = len(rows)
     return PaginaCapturasRespuesta(
-        items=[CapturaRespuesta.from_domain(item) for item in items[offset : offset + limit]],
+        items=[CapturaBandejaRespuesta.from_row(row) for row in rows[offset : offset + limit]],
         total=total,
         offset=offset,
         limit=limit,
@@ -216,6 +328,7 @@ async def edit_capture(
             source_data=body.datos_fuente,
             activity=body.actividad_realizada,
             observations=body.observaciones,
+            expected_version=body.version,
         )
     )
     return CapturaRespuesta.from_domain(capture)
@@ -274,7 +387,11 @@ async def attach_capture_evidence(
             checksum_sha256=body.checksum_sha256,
         )
     )
-    return EvidenciaRespuesta.from_domain(evidence)
+    return await present_evidence(
+        evidence,
+        request.app.state.evidence_repository,
+        request.app.state.settings.api_v1_prefix,
+    )
 
 
 @router.get(
@@ -297,7 +414,14 @@ async def list_capture_evidence(
     evidences = await request.app.state.evidence_repository.list_for(
         FlowEntity.CAPTURE, capture_id
     )
-    return [EvidenciaRespuesta.from_domain(item) for item in evidences]
+    return [
+        await present_evidence(
+            item,
+            request.app.state.evidence_repository,
+            request.app.state.settings.api_v1_prefix,
+        )
+        for item in evidences
+    ]
 
 
 @router.delete(

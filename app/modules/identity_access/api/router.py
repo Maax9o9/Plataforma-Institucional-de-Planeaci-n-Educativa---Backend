@@ -7,7 +7,8 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.core.schemas import ErrorResponse
-from app.core.security import get_access_claims, get_current_user, require_roles
+from app.core.security import get_current_user, get_logout_claims, require_roles
+from app.shared.domain.exceptions import AuthenticationError, RateLimitError
 
 from ..application.dto import (
     ChangeUserStatusCommand,
@@ -55,7 +56,10 @@ router = APIRouter()
     response_model=LoginResponse,
     summary="Autenticar usuario institucional",
     description="Devuelve el access token y guarda el refresh token en cookie HttpOnly.",
-    responses={401: {"model": ErrorResponse, "description": "Credenciales invalidas."}},
+    responses={
+        401: {"model": ErrorResponse, "description": "Credenciales invalidas."},
+        429: {"model": ErrorResponse, "description": "Demasiados intentos fallidos."},
+    },
     tags=[TAG],
 )
 async def login(
@@ -64,7 +68,17 @@ async def login(
     response: Response,
     use_case: AuthenticateUser = Depends(get_authenticate_user_use_case),
 ) -> LoginResponse:
-    result = await use_case.execute(email=str(body.correo), password=body.contrasena)
+    client_host = request.client.host if request.client else "unknown"
+    rate_limit_key = f"{client_host}:{str(body.correo).casefold()}"
+    retry_after = await request.app.state.login_rate_limiter.retry_after(rate_limit_key)
+    if retry_after:
+        raise RateLimitError(details={"retry_after": retry_after})
+    try:
+        result = await use_case.execute(email=str(body.correo), password=body.contrasena)
+    except AuthenticationError:
+        await request.app.state.login_rate_limiter.record_failure(rate_limit_key)
+        raise
+    await request.app.state.login_rate_limiter.clear(rate_limit_key)
     set_refresh_cookie(response, result.refresh_token, request.app.state.settings)
     return LoginResponse(
         access_token=result.access_token,
@@ -90,6 +104,7 @@ async def refresh(
 ) -> LoginResponse:
     settings = request.app.state.settings
     refresh_token = read_refresh_cookie(request, settings)
+    assert refresh_token is not None
     result = await use_case.execute(RefreshCommand(refresh_token=refresh_token))
     set_refresh_cookie(response, result.refresh_token, settings)
     return LoginResponse(
@@ -103,18 +118,21 @@ async def refresh(
     "/auth/logout",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Cerrar sesion y revocar tokens",
-    description="Revoca el access token actual y el refresh token de la sesion.",
+    description=(
+        "Revoca el access token actual y, cuando la cookie esta presente, toda su "
+        "familia de refresh tokens. La cookie es opcional para permitir logout repetido."
+    ),
     responses={401: {"model": ErrorResponse, "description": "Token invalido."}},
     tags=[TAG],
 )
 async def logout(
     request: Request,
     response: Response,
-    claims=Depends(get_access_claims),
+    claims=Depends(get_logout_claims),
     use_case: LogoutUser = Depends(get_logout_user_use_case),
 ) -> Response:
     settings = request.app.state.settings
-    refresh_token = read_refresh_cookie(request, settings)
+    refresh_token = read_refresh_cookie(request, settings, required=False)
     await use_case.execute(
         LogoutCommand(
             access_subject=claims.subject,
@@ -267,6 +285,8 @@ async def update_user(
             full_name=body.nombre,
             roles=body.roles,
             area_id=body.area_id,
+            notify_email=body.notificar_correo,
+            expected_version=body.version,
             actor_id=current_user.id,
         )
     )

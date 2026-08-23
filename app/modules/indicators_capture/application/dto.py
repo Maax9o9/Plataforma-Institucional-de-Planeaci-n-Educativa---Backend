@@ -25,6 +25,7 @@ class EditCaptureCommand:
     source_data: str | None
     activity: str | None
     observations: str | None
+    expected_version: int | None = None
 
 
 @dataclass(frozen=True)

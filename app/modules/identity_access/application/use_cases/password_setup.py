@@ -15,6 +15,7 @@ from ...domain.entities import User
 from ...domain.events import UserRegistered
 from ...domain.ports.password_hasher import PasswordHasher
 from ...domain.ports.password_setup_repository import PasswordSetupTokenStore
+from ...domain.ports.refresh_token_repository import RefreshTokenStore
 from ...domain.ports.user_repository import UserRepository
 from ..dto import RegisterUserCommand
 
@@ -93,10 +94,12 @@ class SetInitialPassword:
         repository: UserRepository,
         password_hasher: PasswordHasher,
         token_store: PasswordSetupTokenStore,
+        refresh_tokens: RefreshTokenStore,
     ) -> None:
         self.repository = repository
         self.password_hasher = password_hasher
         self.token_store = token_store
+        self.refresh_tokens = refresh_tokens
 
     async def validate_token(self, raw_token: str) -> bool:
         return await self.token_store.is_valid(self._hash(raw_token))
@@ -114,6 +117,7 @@ class SetInitialPassword:
         user.password_setup_required = False
         user.touch()
         await self.repository.update(user)
+        await self.refresh_tokens.revoke_user(user.id)
 
     @staticmethod
     def _hash(raw_token: str) -> str:

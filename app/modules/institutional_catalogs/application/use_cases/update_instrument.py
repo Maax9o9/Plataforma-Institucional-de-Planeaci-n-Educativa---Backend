@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.shared.application.event_bus import EventBus
-from app.shared.domain.exceptions import ResourceNotFoundError, ValidationError
+from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError
 
 from ...domain.entities import Instrument
 from ...domain.events import InstrumentDeactivated, InstrumentUpdated
@@ -17,11 +17,17 @@ class UpdateInstrument:
         self.event_bus = event_bus
 
     async def execute(self, command: UpdateInstrumentCommand) -> Instrument:
-        if command.code is not None and command.code.strip().upper() != "PIDE":
-            raise ValidationError("El unico instrumento habilitado actualmente es PIDE.")
         instrument = await self.repository.get_by_id(command.instrument_id)
         if instrument is None:
             raise ResourceNotFoundError("El instrumento no existe.")
+        if (
+            command.expected_version is not None
+            and command.expected_version != instrument.version
+        ):
+            raise ConflictError(
+                "El instrumento fue modificado por otra solicitud.",
+                details={"version_actual": instrument.version},
+            )
         instrument.update_details(
             code=command.code,
             name=command.name,
@@ -49,6 +55,14 @@ class DeactivateInstrument:
         instrument = await self.repository.get_by_id(command.item_id)
         if instrument is None:
             raise ResourceNotFoundError("El instrumento no existe.")
+        if (
+            command.expected_version is not None
+            and command.expected_version != instrument.version
+        ):
+            raise ConflictError(
+                "El instrumento fue modificado por otra solicitud.",
+                details={"version_actual": instrument.version},
+            )
         instrument.deactivate()
         await self.repository.update(instrument)
         await self.event_bus.publish(

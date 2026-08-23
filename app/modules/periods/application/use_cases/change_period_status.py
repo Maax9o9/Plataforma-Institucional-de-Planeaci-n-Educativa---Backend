@@ -1,7 +1,7 @@
 """Casos de uso de abrir y cerrar periodos."""
 
 from app.shared.application.event_bus import EventBus
-from app.shared.domain.exceptions import ResourceNotFoundError
+from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError
 
 from ...domain.entities import Period
 from ...domain.events import PeriodClosed, PeriodOpened
@@ -27,6 +27,11 @@ class OpenPeriod:
         period = await self.repository.get_by_id(command.period_id)
         if period is None:
             raise ResourceNotFoundError("El periodo no existe.")
+        if command.expected_version is not None and command.expected_version != period.version:
+            raise ConflictError(
+                "El periodo fue modificado por otra solicitud.",
+                details={"version_actual": period.version},
+            )
         period.open()
         await self.repository.update(period)
         await self.event_bus.publish(
@@ -64,6 +69,11 @@ class ClosePeriod:
         period = await self.repository.get_by_id(command.period_id)
         if period is None:
             raise ResourceNotFoundError("El periodo no existe.")
+        if command.expected_version is not None and command.expected_version != period.version:
+            raise ConflictError(
+                "El periodo fue modificado por otra solicitud.",
+                details={"version_actual": period.version},
+            )
         period.close()
         await self.repository.update(period)
         await self.event_bus.publish(

@@ -42,6 +42,7 @@ class SqlAlchemyAuditRepository:
         to_date=None,
         aggregate_type: str | None = None,
         aggregate_id: int | None = None,
+        descending: bool = True,
     ) -> list[AuditEntry]:
         async with session_scope(self.session_factory) as session:
             statement = select(AuditModel)
@@ -57,9 +58,11 @@ class SqlAlchemyAuditRepository:
                 statement = statement.where(AuditModel.entidad == aggregate_type)
             if aggregate_id is not None:
                 statement = statement.where(AuditModel.entidad_id == aggregate_id)
+            date_order = AuditModel.fecha.desc() if descending else AuditModel.fecha.asc()
+            id_order = AuditModel.id.desc() if descending else AuditModel.id.asc()
             models = (
                 await session.scalars(
-                    statement.order_by(AuditModel.fecha.desc(), AuditModel.id.desc())
+                    statement.order_by(date_order, id_order)
                     .offset(offset)
                     .limit(limit)
                 )
@@ -87,7 +90,9 @@ class SqlAlchemyAuditRepository:
         to_date=None,
         aggregate_type: str | None = None,
         aggregate_id: int | None = None,
+        descending: bool = True,
     ) -> int:
+        del descending
         async with session_scope(self.session_factory) as session:
             statement = select(func.count()).select_from(AuditModel)
             if actor_id is not None:

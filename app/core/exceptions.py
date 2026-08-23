@@ -42,6 +42,9 @@ def register_exception_handlers(app: FastAPI) -> None:
                 )
             except Exception:
                 logger.exception("No se pudo auditar el intento de edicion bloqueado")
+        headers = {"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None
+        if exc.status_code == 429 and isinstance(exc.details, dict):
+            headers = {"Retry-After": str(exc.details.get("retry_after", 1))}
         return JSONResponse(
             status_code=exc.status_code,
             content={
@@ -50,7 +53,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "details": exc.details,
                 "request_id": request_id(request),
             },
-            headers={"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None,
+            headers=headers,
         )
 
     @app.exception_handler(RequestValidationError)
@@ -80,4 +83,21 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "request_id": request_id(request),
             },
             headers=exc.headers,
+        )
+
+    @app.exception_handler(Exception)
+    async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception(
+            "Error interno no controlado request_id=%s",
+            request_id(request),
+            exc_info=exc,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "code": "INTERNAL_SERVER_ERROR",
+                "message": "Ocurrio un error interno al procesar la solicitud.",
+                "details": None,
+                "request_id": request_id(request),
+            },
         )

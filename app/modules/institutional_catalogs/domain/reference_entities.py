@@ -13,6 +13,7 @@ class ReferenceItem(BaseEntity):
     key: str
     name: str
     is_active: bool = True
+    version: int = 1
 
     @classmethod
     def create(cls, *, key: str, name: str) -> ReferenceItem:

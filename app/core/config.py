@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     upload_directory: str = "var/uploads"
     upload_max_bytes: int = 10 * 1024 * 1024
     reminder_check_interval_seconds: int = Field(default=6 * 60 * 60, ge=300)
+    login_max_attempts: int = Field(default=5, ge=1, le=100)
+    login_rate_limit_window_seconds: int = Field(default=60, ge=10, le=3600)
 
 
 @lru_cache

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -134,6 +134,74 @@ class SqlAlchemyIndicatorRepository:
             models = (await session.scalars(statement)).all()
             indicators = [await self._to_domain(session, model) for model in models]
             return indicators
+
+    async def list_page(
+        self,
+        *,
+        active_only: bool,
+        query: str | None,
+        area_id: int | None,
+        responsible_id: int | None,
+        instrument_id: int | None,
+        criterion_id: int | None,
+        sort: str,
+        descending: bool,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[Indicator], int]:
+        async with self.session_factory() as session:
+            filters = []
+            if active_only:
+                filters.append(IndicatorModel.activo.is_(True))
+            if query:
+                pattern = f"%{query.strip()}%"
+                filters.append(
+                    or_(IndicatorModel.clave.ilike(pattern), IndicatorModel.nombre.ilike(pattern))
+                )
+            if area_id is not None:
+                filters.append(IndicatorModel.area_id == area_id)
+            if responsible_id is not None:
+                filters.append(IndicatorModel.responsable_id == responsible_id)
+            if instrument_id is not None:
+                filters.append(
+                    IndicatorModel.id.in_(
+                        select(IndicatorInstrumentModel.c.indicador_id).where(
+                            IndicatorInstrumentModel.c.instrumento_id == instrument_id
+                        )
+                    )
+                )
+            if criterion_id is not None:
+                filters.append(
+                    IndicatorModel.id.in_(
+                        select(IndicatorCriteriaModel.c.indicador_id).where(
+                            IndicatorCriteriaModel.c.criterio_seaes_id == criterion_id
+                        )
+                    )
+                )
+            total = int(
+                await session.scalar(
+                    select(func.count()).select_from(IndicatorModel).where(*filters)
+                )
+                or 0
+            )
+            sort_column = {
+                "clave": IndicatorModel.clave,
+                "nombre": IndicatorModel.nombre,
+                "periodicidad": IndicatorModel.periodicidad,
+                "actualizado_en": IndicatorModel.actualizado_en,
+            }[sort]
+            direction = sort_column.desc() if descending else sort_column.asc()
+            id_direction = IndicatorModel.id.desc() if descending else IndicatorModel.id.asc()
+            models = (
+                await session.scalars(
+                    select(IndicatorModel)
+                    .where(*filters)
+                    .order_by(direction, id_direction)
+                    .offset(offset)
+                    .limit(limit)
+                )
+            ).all()
+            return [await self._to_domain(session, model) for model in models], total
 
     async def update(self, indicator: Indicator) -> None:
         async with self.session_factory() as session:

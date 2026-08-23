@@ -29,4 +29,5 @@ class InMemoryReferenceRepository:
         return [item for item in items if item.is_active] if active_only else items
 
     async def update(self, item: ReferenceItem) -> None:
+        item.version += 1
         self._items[item.id] = item

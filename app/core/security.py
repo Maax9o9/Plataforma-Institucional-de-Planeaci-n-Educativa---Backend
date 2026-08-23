@@ -52,6 +52,17 @@ async def get_access_claims(request: Request, token: str = Depends(oauth2_scheme
     return claims
 
 
+async def get_logout_claims(request: Request, token: str = Depends(oauth2_scheme)):
+    """Valida la firma del access token sin rechazar un logout repetido.
+
+    El endpoint de cierre de sesion debe ser idempotente. Por eso acepta un access
+    token que ya figure en la lista de revocacion, aunque nunca acepta uno invalido
+    o expirado.
+    """
+
+    return request.app.state.token_service.decode_access(token)
+
+
 async def get_current_user(request: Request, claims=Depends(get_access_claims)):
     user = await request.app.state.user_repository.get_by_id(claims.subject)
     if user is None or not user.is_active:

@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, Enum, Integer, String
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.shared.infrastructure.db.base import Base
@@ -32,6 +32,8 @@ class UserModel(Base):
     )
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     actualizado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ultimo_acceso: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class UserRoleModel(Base):
@@ -64,6 +66,10 @@ class RefreshTokenModel(Base):
     emitido_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expira_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revocado_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reemplazado_por: Mapped[UUID | None] = mapped_column(
+        ForeignKey("refresh_tokens.id"),
+        nullable=True,
+    )
 
 
 class AccessLogModel(Base):

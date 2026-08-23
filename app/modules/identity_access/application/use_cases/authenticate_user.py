@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from app.shared.application.event_bus import EventBus
@@ -44,6 +45,9 @@ class AuthenticateUser:
             or not self.password_hasher.verify(password, user.password_hash)
         ):
             raise AuthenticationError("Correo o contrasena incorrectos.")
+
+        user.record_successful_login(datetime.now(UTC))
+        await self.repository.update(user)
 
         session_id = uuid4()
         refresh = self.token_service.issue_refresh(user, session_id)

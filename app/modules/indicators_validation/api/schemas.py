@@ -34,3 +34,10 @@ class CambioEstadoRespuesta(BaseModel):
             fecha=change.created_at,
             comentario=change.comment,
         )
+
+
+class PaginaCambiosEstadoRespuesta(BaseModel):
+    items: list[CambioEstadoRespuesta]
+    total: int
+    offset: int
+    limit: int

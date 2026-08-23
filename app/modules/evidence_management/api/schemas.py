@@ -37,9 +37,14 @@ class EvidenciaRespuesta(BaseModel):
     fecha: date
     tipo: EvidenceType
     subida_por: int
+    version_actual: VersionEvidenciaRespuesta | None = None
 
     @classmethod
-    def from_domain(cls, evidence: Evidence) -> EvidenciaRespuesta:
+    def from_domain(
+        cls,
+        evidence: Evidence,
+        version_actual: VersionEvidenciaRespuesta | None = None,
+    ) -> EvidenciaRespuesta:
         return cls(
             id=evidence.id,
             nombre=evidence.name,
@@ -47,6 +52,7 @@ class EvidenciaRespuesta(BaseModel):
             fecha=evidence.evidence_date,
             tipo=evidence.evidence_type,
             subida_por=evidence.uploaded_by,
+            version_actual=version_actual,
         )
 
 
@@ -58,3 +64,10 @@ class VersionEvidenciaRespuesta(BaseModel):
     checksum_sha256: str | None
     fecha: datetime
     usuario_id: int
+
+
+class PaginaVersionesEvidenciaRespuesta(BaseModel):
+    items: list[VersionEvidenciaRespuesta]
+    total: int
+    offset: int
+    limit: int

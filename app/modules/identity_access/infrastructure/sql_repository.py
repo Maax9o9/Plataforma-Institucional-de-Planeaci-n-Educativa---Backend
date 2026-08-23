@@ -7,10 +7,11 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.modules.institutional_catalogs.infrastructure.models import AreaModel
 from app.shared.domain.exceptions import ConflictError
 from app.shared.domain.value_objects import Email
 
@@ -28,6 +29,11 @@ class SqlAlchemyUserRepository:
         roles = await session.scalars(
             select(UserRoleModel.rol).where(UserRoleModel.usuario_id == model.id)
         )
+        area_name = (
+            await session.scalar(select(AreaModel.nombre).where(AreaModel.id == model.area_id))
+            if model.area_id is not None
+            else None
+        )
         return User(
             id=model.id,
             email=Email(model.correo),
@@ -40,6 +46,9 @@ class SqlAlchemyUserRepository:
             password_setup_required=model.requiere_configurar_contrasena,
             created_at=model.creado_en,
             updated_at=model.actualizado_en,
+            last_access_at=model.ultimo_acceso,
+            area_name=area_name,
+            version=model.version,
         )
 
     async def get_by_id(self, user_id: int) -> User | None:
@@ -97,13 +106,29 @@ class SqlAlchemyUserRepository:
                 model = await session.get(UserModel, user.id)
                 if model is None:
                     return
-                model.correo = user.email.value
-                model.nombre = user.full_name
-                model.area_id = user.area_id
-                model.activo = user.is_active
-                model.notificar_correo = user.notify_email
-                model.requiere_configurar_contrasena = user.password_setup_required
-                model.actualizado_en = user.updated_at
+                result = await session.execute(
+                    update(UserModel)
+                    .where(UserModel.id == user.id, UserModel.version == user.version)
+                    .values(
+                        correo=user.email.value,
+                        nombre=user.full_name,
+                        hash_password=user.password_hash,
+                        area_id=user.area_id,
+                        activo=user.is_active,
+                        notificar_correo=user.notify_email,
+                        requiere_configurar_contrasena=user.password_setup_required,
+                        ultimo_acceso=user.last_access_at,
+                        actualizado_en=user.updated_at,
+                        version=user.version + 1,
+                    )
+                )
+                if not result.rowcount:
+                    await session.rollback()
+                    current = await self.get_by_id(user.id)
+                    raise ConflictError(
+                        "El usuario fue modificado por otra solicitud.",
+                        details={"version_actual": current.version if current else None},
+                    )
                 await session.execute(
                     delete(UserRoleModel).where(UserRoleModel.usuario_id == user.id)
                 )
@@ -111,6 +136,7 @@ class SqlAlchemyUserRepository:
                     UserRoleModel(usuario_id=user.id, rol=role.value) for role in user.roles
                 )
                 await session.commit()
+                user.version += 1
             except IntegrityError as exc:
                 await session.rollback()
                 raise ConflictError("Ya existe un usuario con ese correo electronico.") from exc
@@ -177,6 +203,63 @@ class SqlAlchemyRefreshTokenStore:
                     model.revocado_en = now
                     await session.commit()
                 return record
+
+    async def rotate(
+        self,
+        *,
+        current_token: str,
+        current_token_id: UUID,
+        new_token: str,
+        new_token_id: UUID,
+        user_id: int,
+        session_id: UUID,
+        expires_at: datetime,
+    ) -> RefreshTokenRecord | None:
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(RefreshTokenModel)
+                .where(RefreshTokenModel.jti == current_token_id)
+                .with_for_update()
+            )
+            model = result.scalar_one_or_none()
+            if model is None or model.hash_token != self._hash(current_token):
+                await session.rollback()
+                return None
+
+            now = datetime.now(UTC)
+            active = model.revocado_en is None and model.expira_en > now
+            record = self._record(model, active=active)
+            if not active:
+                await session.execute(
+                    update(RefreshTokenModel)
+                    .where(
+                        RefreshTokenModel.session_id == record.session_id,
+                        RefreshTokenModel.revocado_en.is_(None),
+                    )
+                    .values(revocado_en=now)
+                )
+                await session.commit()
+                return record
+
+            successor_id = uuid4()
+            session.add(
+                RefreshTokenModel(
+                    id=successor_id,
+                    usuario_id=user_id,
+                    jti=new_token_id,
+                    hash_token=self._hash(new_token),
+                    session_id=session_id,
+                    emitido_en=now,
+                    expira_en=expires_at,
+                )
+            )
+            # La FK autorreferenciada exige que el sucesor exista antes de enlazarlo.
+            # Todo permanece dentro de la misma transaccion y con R0 bloqueado.
+            await session.flush()
+            model.revocado_en = now
+            model.reemplazado_por = successor_id
+            await session.commit()
+            return record
 
     async def revoke(self, token_id: UUID) -> None:
         async with self.session_factory() as session:

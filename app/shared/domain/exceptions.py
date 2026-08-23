@@ -70,3 +70,9 @@ class UnsupportedMediaTypeError(AppError):
     code = "FILE_TYPE_NOT_ALLOWED"
     status_code = 415
     default_message = "El tipo real del archivo no esta permitido."
+
+
+class RateLimitError(AppError):
+    code = "RATE_LIMIT_EXCEEDED"
+    status_code = 429
+    default_message = "Se excedio el numero de intentos permitido."

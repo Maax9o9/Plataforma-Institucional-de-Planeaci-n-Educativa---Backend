@@ -20,6 +20,7 @@ from app.core.lifecycle import lifespan
 from app.core.logging import configure_logging
 from app.core.middleware import RequestIdMiddleware, SecurityHeadersMiddleware
 from app.core.openapi import custom_openapi
+from app.core.rate_limit import LoginRateLimiter
 from app.modules.identity_access.infrastructure.security import (
     Argon2PasswordHasher,
     JwtTokenService,
@@ -35,8 +36,10 @@ def _validate_security_settings(settings: Settings) -> None:
         settings.secret_key = SecretStr(secrets.token_urlsafe(32))
     elif settings.environment == "production" and len(settings.secret_key.get_secret_value()) < 32:
         raise RuntimeError("SECRET_KEY debe tener al menos 32 caracteres en produccion.")
-    if settings.environment == "production" and not settings.refresh_cookie_secure:
-        raise RuntimeError("REFRESH_COOKIE_SECURE debe estar habilitado en produccion.")
+    if settings.environment in {"staging", "production"} and not settings.refresh_cookie_secure:
+        raise RuntimeError(
+            "REFRESH_COOKIE_SECURE debe estar habilitado en staging y produccion."
+        )
     if settings.refresh_cookie_samesite == "none" and not settings.refresh_cookie_secure:
         raise RuntimeError("SameSite=None requiere REFRESH_COOKIE_SECURE=true.")
 
@@ -55,7 +58,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     _validate_security_settings(settings)
     app = FastAPI(
         title=settings.app_name,
-        version="0.1.0",
+        version="0.2.0",
         description=(
             "API de la Plataforma Institucional de Planeacion Educativa. "
             "Usa SQLAlchemy async cuando DATABASE_URL esta configurada y memoria "
@@ -69,6 +72,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.event_bus = InMemoryEventBus()
     resources = create_resources(settings)
     _bind_resources(app, resources)
+    app.state.login_rate_limiter = LoginRateLimiter(
+        settings.login_max_attempts,
+        settings.login_rate_limit_window_seconds,
+    )
     app.state.notification_service = register_event_handlers(
         app.state.event_bus,
         resources,

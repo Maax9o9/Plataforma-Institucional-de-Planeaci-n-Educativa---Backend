@@ -32,6 +32,7 @@ class UpdateAreaCommand:
     area_type: str | None
     color: str | None
     actor_id: int
+    expected_version: int | None = None
 
 
 @dataclass(frozen=True)
@@ -41,9 +42,11 @@ class UpdateInstrumentCommand:
     name: str | None
     description: str | None
     actor_id: int
+    expected_version: int | None = None
 
 
 @dataclass(frozen=True)
 class ChangeCatalogStatusCommand:
     item_id: int
     actor_id: int
+    expected_version: int | None = None

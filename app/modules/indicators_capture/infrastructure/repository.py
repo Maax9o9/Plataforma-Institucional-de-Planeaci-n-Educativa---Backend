@@ -32,6 +32,7 @@ class InMemoryCaptureRepository:
         )
 
     async def update(self, capture: Capture) -> None:
+        capture.version += 1
         self._items[capture.id] = capture
 
     async def list_by_capturer(

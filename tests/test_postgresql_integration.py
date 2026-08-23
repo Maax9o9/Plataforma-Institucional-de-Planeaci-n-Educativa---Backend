@@ -1,22 +1,31 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select, text
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.core.config import Settings, get_settings
+from app.main import create_app
 from app.modules.evidence_management.domain.entities import Evidence, EvidenceVersion
 from app.modules.evidence_management.domain.value_objects import EvidenceType
 from app.modules.evidence_management.infrastructure.models import EvidenceModel
 from app.modules.evidence_management.infrastructure.sql_repository import (
     SqlAlchemyEvidenceRepository,
 )
+from app.modules.identity_access.infrastructure.models import RefreshTokenModel
 from app.modules.identity_access.infrastructure.revoked_token_store import (
     SqlAlchemyRevokedTokenStore,
 )
+from app.modules.identity_access.infrastructure.sql_repository import (
+    SqlAlchemyRefreshTokenStore,
+)
+from app.scripts.seed_integration import seed
 from app.shared.infrastructure.db.unit_of_work import SqlAlchemyUnitOfWorkFactory
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
@@ -89,4 +98,117 @@ async def test_postgresql_migrations_uow_rollback_and_persistent_revocation():
         token_id, datetime.now(UTC) + timedelta(minutes=5)
     )
     assert await SqlAlchemyRevokedTokenStore(factory).is_revoked(token_id)
+
+    session_id = uuid4()
+    original_id = uuid4()
+    expires_at = datetime.now(UTC) + timedelta(days=1)
+    await SqlAlchemyRefreshTokenStore(factory).save(
+        token="refresh-original",
+        token_id=original_id,
+        user_id=user_id,
+        session_id=session_id,
+        expires_at=expires_at,
+    )
+    first_store = SqlAlchemyRefreshTokenStore(factory)
+    second_store = SqlAlchemyRefreshTokenStore(factory)
+    first, second = await asyncio.gather(
+        first_store.rotate(
+            current_token="refresh-original",
+            current_token_id=original_id,
+            new_token="refresh-a",
+            new_token_id=uuid4(),
+            user_id=user_id,
+            session_id=session_id,
+            expires_at=expires_at,
+        ),
+        second_store.rotate(
+            current_token="refresh-original",
+            current_token_id=original_id,
+            new_token="refresh-b",
+            new_token_id=uuid4(),
+            user_id=user_id,
+            session_id=session_id,
+            expires_at=expires_at,
+        ),
+    )
+    assert first is not None and second is not None
+    assert sorted((first.active, second.active)) == [False, True]
+    async with factory() as session:
+        active_descendants = await session.scalar(
+            select(func.count())
+            .select_from(RefreshTokenModel)
+            .where(
+                RefreshTokenModel.session_id == session_id,
+                RefreshTokenModel.revocado_en.is_(None),
+            )
+        )
+    assert active_descendants == 0
     await engine.dispose()
+
+
+@pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL no configurada")
+@pytest.mark.asyncio
+async def test_postgresql_seed_and_frontend_read_contracts(monkeypatch):
+    seed_password = "integration-test-password-only"
+    monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL or "")
+    monkeypatch.setenv("SEED_TEST_PASSWORD", seed_password)
+    get_settings.cache_clear()
+    await seed()
+
+    application = create_app(
+        Settings(
+            environment="testing",
+            secret_key="test-secret-key-with-more-than-32-characters",
+            database_url=TEST_DATABASE_URL,
+            email_provider="console",
+        )
+    )
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=application),
+            base_url="http://testserver",
+        ) as client:
+            login = await client.post(
+                "/api/v1/auth/login",
+                json={
+                    "correo": "admin.sistema@upchiapas.edu.mx",
+                    "contrasena": seed_password,
+                },
+            )
+            assert login.status_code == 200
+            headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+            indicators = await client.get(
+                "/api/v1/indicadores?sort=actualizado_en&order=desc&limit=10",
+                headers=headers,
+            )
+            assert indicators.status_code == 200
+            assert indicators.json()["total"] >= 5
+
+            captures = await client.get(
+                "/api/v1/capturas?sort=indicador&order=asc&limit=10",
+                headers=headers,
+            )
+            assert captures.status_code == 200
+            capture_rows = captures.json()["items"]
+            assert capture_rows
+            assert {"indicador", "periodo", "area", "capturista"}.issubset(
+                capture_rows[0]
+            )
+
+            with_evidence = next(row for row in capture_rows if row["evidencias_total"] > 0)
+            evidences = await client.get(
+                f"/api/v1/capturas/{with_evidence['id']}/evidencias",
+                headers=headers,
+            )
+            assert evidences.status_code == 200
+            assert evidences.json()[0]["version_actual"]["ruta_o_url"]
+
+            users = await client.get("/api/v1/usuarios?limit=10", headers=headers)
+            assert users.status_code == 200
+            assert {"area_nombre", "ultimo_acceso", "notificar_correo", "version"}.issubset(
+                users.json()["items"][0]
+            )
+    finally:
+        await application.state.db_engine.dispose()
+        get_settings.cache_clear()

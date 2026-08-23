@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -151,6 +151,63 @@ class SqlAlchemyEvidenceRepository:
                 )
                 for model in models
             ]
+
+    async def list_versions_page(
+        self,
+        evidence_id: int,
+        *,
+        offset: int,
+        limit: int,
+        descending: bool,
+    ) -> tuple[list[tuple[int, EvidenceVersion]], int]:
+        async with session_scope(self.session_factory) as session:
+            total = int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(EvidenceVersionModel)
+                    .where(EvidenceVersionModel.evidencia_id == evidence_id)
+                )
+                or 0
+            )
+            date_order = (
+                EvidenceVersionModel.fecha.desc()
+                if descending
+                else EvidenceVersionModel.fecha.asc()
+            )
+            id_order = (
+                EvidenceVersionModel.id.desc()
+                if descending
+                else EvidenceVersionModel.id.asc()
+            )
+            models = (
+                await session.scalars(
+                    select(EvidenceVersionModel)
+                    .where(EvidenceVersionModel.evidencia_id == evidence_id)
+                    .order_by(date_order, id_order)
+                    .offset(offset)
+                    .limit(limit)
+                )
+            ).all()
+            numbers = (
+                range(total - offset, total - offset - len(models), -1)
+                if descending
+                else range(offset + 1, offset + 1 + len(models))
+            )
+            return [
+                (
+                    number,
+                    EvidenceVersion(
+                        evidence_id=model.evidencia_id,
+                        path_or_url=model.ruta_o_url,
+                        mime_type=model.mime_type,
+                        size_bytes=model.tamanio_bytes,
+                        checksum_sha256=model.checksum_sha256,
+                        user_id=model.usuario_id,
+                        created_at=model.fecha,
+                    ),
+                )
+                for number, model in zip(numbers, models, strict=True)
+            ], total
 
     async def list_links(self, evidence_id: int) -> list[EvidenceLink]:
         async with session_scope(self.session_factory) as session:

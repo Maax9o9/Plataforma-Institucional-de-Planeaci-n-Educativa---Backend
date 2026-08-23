@@ -22,6 +22,7 @@ class Period(BaseEntity):
     status: PeriodStatus = PeriodStatus.DRAFT
     reopen_reason: str | None = None
     reopened_by: int | None = None
+    version: int = 1
 
     @classmethod
     def create(

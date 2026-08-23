@@ -10,4 +10,11 @@ from ..entities import AuditEntry
 class AuditRepository(Protocol):
     async def append(self, entry: AuditEntry) -> None: ...
 
-    async def list(self, *, offset: int = 0, limit: int = 50) -> list[AuditEntry]: ...
+    async def list(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        descending: bool = True,
+        **filters,
+    ) -> list[AuditEntry]: ...

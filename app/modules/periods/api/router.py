@@ -100,11 +100,16 @@ async def create_period(
 )
 async def open_period(
     period_id: int,
+    version: int | None = Query(default=None, ge=1),
     current_user=Depends(require_roles(*MANAGE_ROLES)),
     use_case: OpenPeriod = Depends(get_open_period_use_case),
 ) -> PeriodoResponse:
     period = await use_case.execute(
-        ChangePeriodCommand(period_id=period_id, actor_id=current_user.id)
+        ChangePeriodCommand(
+            period_id=period_id,
+            actor_id=current_user.id,
+            expected_version=version,
+        )
     )
     return PeriodoResponse.from_domain(period)
 
@@ -121,11 +126,16 @@ async def open_period(
 )
 async def close_period(
     period_id: int,
+    version: int | None = Query(default=None, ge=1),
     current_user=Depends(require_roles(*MANAGE_ROLES)),
     use_case: ClosePeriod = Depends(get_close_period_use_case),
 ) -> PeriodoResponse:
     period = await use_case.execute(
-        ChangePeriodCommand(period_id=period_id, actor_id=current_user.id)
+        ChangePeriodCommand(
+            period_id=period_id,
+            actor_id=current_user.id,
+            expected_version=version,
+        )
     )
     return PeriodoResponse.from_domain(period)
 
@@ -151,6 +161,7 @@ async def reopen_period(
             period_id=period_id,
             reason=body.motivo,
             actor_id=current_user.id,
+            expected_version=body.version,
         )
     )
     return PeriodoResponse.from_domain(period)

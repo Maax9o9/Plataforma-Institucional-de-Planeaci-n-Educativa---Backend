@@ -20,6 +20,7 @@ class AreaModel(Base):
     parent_id: Mapped[int | None] = mapped_column(Integer)
     tipo: Mapped[str] = mapped_column(String(30), nullable=False, default="administrativa")
     color: Mapped[str | None] = mapped_column(String(7))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class InstrumentModel(Base):
@@ -30,6 +31,7 @@ class InstrumentModel(Base):
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     codigo: Mapped[str | None] = mapped_column(String(30), unique=True)
     descripcion: Mapped[str | None] = mapped_column(String(500))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class CriteriaSeaesModel(Base):
@@ -39,6 +41,7 @@ class CriteriaSeaesModel(Base):
     clave: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
     nombre: Mapped[str] = mapped_column(String(300), nullable=False)
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class IndicatorTypeModel(Base):
@@ -47,6 +50,7 @@ class IndicatorTypeModel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     nombre: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class SystemConfigModel(Base):

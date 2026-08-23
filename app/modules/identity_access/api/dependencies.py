@@ -85,4 +85,5 @@ def get_set_initial_password_use_case(request: Request) -> SetInitialPassword:
         request.app.state.user_repository,
         request.app.state.password_hasher,
         request.app.state.password_setup_token_store,
+        request.app.state.refresh_token_store,
     )

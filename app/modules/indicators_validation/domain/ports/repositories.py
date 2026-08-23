@@ -18,3 +18,12 @@ class StateChangeRepository(Protocol):
     async def add(self, change: StateChange) -> None: ...
 
     async def list_for_capture(self, capture_id: int) -> list[StateChange]: ...
+
+    async def list_for_capture_page(
+        self,
+        capture_id: int,
+        *,
+        offset: int,
+        limit: int,
+        descending: bool,
+    ) -> tuple[list[StateChange], int]: ...

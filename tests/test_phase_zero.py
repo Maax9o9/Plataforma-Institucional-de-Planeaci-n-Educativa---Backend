@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from app.modules.identity_access.application.dto import RegisterUserCommand
@@ -80,12 +82,90 @@ async def test_authentication_refresh_rotation_and_logout(client, app):
     )
     assert logout.status_code == 204
     assert "Max-Age=0" in logout.headers["set-cookie"]
+    repeated_logout = await client.post(
+        "/api/v1/auth/logout",
+        headers={"Authorization": f"Bearer {new_tokens['access_token']}"},
+    )
+    assert repeated_logout.status_code == 204
     assert (
         await client.get(
             "/api/v1/auth/me",
             headers={"Authorization": f"Bearer {new_tokens['access_token']}"},
         )
     ).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_race_and_lost_response_logout_revoke_token_family(client, app):
+    await create_admin(app)
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"correo": "admin@upchiapas.edu.mx", "contrasena": "password-seguro"},
+    )
+    original_refresh = login.cookies["planeacion_refresh"]
+    cookie_header = {"Cookie": f"planeacion_refresh={original_refresh}"}
+
+    first, second = await asyncio.gather(
+        client.post("/api/v1/auth/refresh", headers=cookie_header),
+        client.post("/api/v1/auth/refresh", headers=cookie_header),
+    )
+    assert sorted((first.status_code, second.status_code)) == [200, 401]
+    successful = first if first.status_code == 200 else second
+    rotated_refresh = successful.cookies["planeacion_refresh"]
+    assert (
+        await client.post(
+            "/api/v1/auth/refresh",
+            headers={"Cookie": f"planeacion_refresh={rotated_refresh}"},
+        )
+    ).status_code == 401
+
+    # Caso independiente: el servidor rota R0 a R1, pero la respuesta se pierde.
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"correo": "admin@upchiapas.edu.mx", "contrasena": "password-seguro"},
+    )
+    original_refresh = login.cookies["planeacion_refresh"]
+    rotation = await client.post(
+        "/api/v1/auth/refresh",
+        headers={"Cookie": f"planeacion_refresh={original_refresh}"},
+    )
+    assert rotation.status_code == 200
+    rotated_refresh = rotation.cookies["planeacion_refresh"]
+
+    # El logout con R0 debe localizar la familia y revocar tambien R1.
+    logout = await client.post(
+        "/api/v1/auth/logout",
+        headers={
+            "Authorization": f"Bearer {login.json()['access_token']}",
+            "Cookie": f"planeacion_refresh={original_refresh}",
+        },
+    )
+    assert logout.status_code == 204
+    assert (
+        await client.post(
+            "/api/v1/auth/refresh",
+            headers={"Cookie": f"planeacion_refresh={rotated_refresh}"},
+        )
+    ).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_login_rate_limit_uses_normalized_error_contract(client):
+    for _ in range(5):
+        response = await client.post(
+            "/api/v1/auth/login",
+            json={"correo": "unknown@upchiapas.edu.mx", "contrasena": "incorrecta"},
+        )
+        assert response.status_code == 401
+
+    blocked = await client.post(
+        "/api/v1/auth/login",
+        json={"correo": "unknown@upchiapas.edu.mx", "contrasena": "incorrecta"},
+    )
+    assert blocked.status_code == 429
+    assert blocked.json()["code"] == "RATE_LIMIT_EXCEEDED"
+    assert blocked.json()["request_id"]
+    assert int(blocked.headers["retry-after"]) >= 1
 
 
 @pytest.mark.asyncio
@@ -140,7 +220,7 @@ async def test_catalog_period_and_audit_flow(client, app):
 
     audit = await client.get("/api/v1/auditoria", headers=headers)
     assert audit.status_code == 200
-    event_names = {entry["evento"] for entry in audit.json()}
+    event_names = {entry["evento"] for entry in audit.json()["items"]}
     assert "AreaCreated" in event_names
     assert "PeriodReopened" in event_names
 

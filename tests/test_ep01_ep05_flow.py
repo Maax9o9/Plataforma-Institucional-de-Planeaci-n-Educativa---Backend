@@ -24,13 +24,36 @@ async def seed_admin(app):
 
 
 @pytest.mark.asyncio
-async def test_indicator_capture_validation_scoring_and_report_flow(client, app):
+async def test_indicator_capture_validation_scoring_and_report_flow(client, app, tmp_path):
     await seed_admin(app)
     login = await client.post(
         "/api/v1/auth/login",
         json={"correo": "planeacion@upchiapas.edu.mx", "contrasena": "password-seguro"},
     )
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    await CreateUser(
+        repository=app.state.user_repository,
+        password_hasher=app.state.password_hasher,
+        event_bus=app.state.event_bus,
+    ).execute(
+        RegisterUserCommand(
+            email="consulta-archivo@upchiapas.edu.mx",
+            full_name="Consulta archivo",
+            password="password-seguro",
+            roles={Role.CONSULTA},
+            area_id=None,
+        )
+    )
+    consultation_login = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "correo": "consulta-archivo@upchiapas.edu.mx",
+            "contrasena": "password-seguro",
+        },
+    )
+    consultation_headers = {
+        "Authorization": f"Bearer {consultation_login.json()['access_token']}"
+    }
 
     area = await client.post(
         "/api/v1/catalogos/areas",
@@ -94,6 +117,38 @@ async def test_indicator_capture_validation_scoring_and_report_flow(client, app)
     )
     assert capture.status_code == 201, capture.text
     capture_id = capture.json()["id"]
+    app.state.settings.upload_directory = str(tmp_path)
+    upload = await client.post(
+        "/api/v1/archivos",
+        files={"archivo": ("reporte.pdf", b"%PDF-1.4\nsecure", "application/pdf")},
+        headers=headers,
+    )
+    assert upload.status_code == 201, upload.text
+    uploaded = upload.json()
+    file_evidence = await client.post(
+        "/api/v1/evidencias",
+        json={
+            "nombre": "Reporte seguro",
+            "descripcion": "Archivo de evidencia",
+            "fecha": "2028-01-31",
+            "tipo": "archivo",
+            "ruta_o_url": uploaded["ruta"],
+            "entidad": "captura",
+            "entidad_id": capture_id,
+            "mime_type": uploaded["mime_type"],
+            "tamanio_bytes": uploaded["tamanio_bytes"],
+            "checksum_sha256": uploaded["checksum_sha256"],
+        },
+        headers=headers,
+    )
+    assert file_evidence.status_code == 201, file_evidence.text
+    download_path = file_evidence.json()["version_actual"]["ruta_o_url"]
+    download = await client.get(download_path, headers=headers)
+    assert download.status_code == 200
+    assert download.content.startswith(b"%PDF-")
+    assert (
+        await client.get(download_path, headers=consultation_headers)
+    ).status_code == 403
     evidence = await client.post(
         "/api/v1/evidencias",
         json={
@@ -120,10 +175,10 @@ async def test_indicator_capture_validation_scoring_and_report_flow(client, app)
 
     history = await client.get(f"/api/v1/capturas/{capture_id}/historial", headers=headers)
     assert history.status_code == 200
-    assert [item["a_estado"] for item in history.json()] == [
-        "borrador",
-        "enviado",
+    assert [item["a_estado"] for item in history.json()["items"]] == [
         "validado",
+        "enviado",
+        "borrador",
     ]
 
     trend = await client.get(f"/api/v1/indicadores/{indicator_id}/tendencia", headers=headers)

@@ -26,6 +26,8 @@ class UpdateUserCommand:
     full_name: str | None
     roles: set[Role] | None
     area_id: int | None
+    notify_email: bool | None
+    expected_version: int | None
     actor_id: int
 
 
@@ -53,4 +55,4 @@ class LogoutCommand:
     access_subject: int
     access_token_id: UUID
     access_expires_at: datetime
-    refresh_token: str
+    refresh_token: str | None

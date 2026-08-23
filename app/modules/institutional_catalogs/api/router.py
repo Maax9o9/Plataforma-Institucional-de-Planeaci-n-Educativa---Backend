@@ -109,6 +109,7 @@ async def update_area(
             area_type=body.tipo,
             color=body.color,
             actor_id=current_user.id,
+            expected_version=body.version,
         )
     )
     return AreaRespuesta.from_domain(area)
@@ -125,11 +126,16 @@ async def update_area(
 )
 async def deactivate_area(
     area_id: int,
+    version: int | None = Query(default=None, ge=1),
     current_user=Depends(require_roles("planeacion", "admin_sistema")),
     use_case: DeactivateArea = Depends(get_deactivate_area_use_case),
 ) -> AreaRespuesta:
     area = await use_case.execute(
-        ChangeCatalogStatusCommand(item_id=area_id, actor_id=current_user.id)
+        ChangeCatalogStatusCommand(
+            item_id=area_id,
+            actor_id=current_user.id,
+            expected_version=version,
+        )
     )
     return AreaRespuesta.from_domain(area)
 
@@ -200,6 +206,7 @@ async def update_instrument(
             name=body.nombre,
             description=body.descripcion,
             actor_id=current_user.id,
+            expected_version=body.version,
         )
     )
     return InstrumentoRespuesta.from_domain(instrument)
@@ -216,10 +223,15 @@ async def update_instrument(
 )
 async def deactivate_instrument(
     instrument_id: int,
+    version: int | None = Query(default=None, ge=1),
     current_user=Depends(require_roles("planeacion", "admin_sistema")),
     use_case: DeactivateInstrument = Depends(get_deactivate_instrument_use_case),
 ) -> InstrumentoRespuesta:
     instrument = await use_case.execute(
-        ChangeCatalogStatusCommand(item_id=instrument_id, actor_id=current_user.id)
+        ChangeCatalogStatusCommand(
+            item_id=instrument_id,
+            actor_id=current_user.id,
+            expected_version=version,
+        )
     )
     return InstrumentoRespuesta.from_domain(instrument)
