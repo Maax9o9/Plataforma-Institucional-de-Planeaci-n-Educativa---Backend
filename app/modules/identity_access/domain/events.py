@@ -33,3 +33,8 @@ class UserDeactivated(DomainEvent):
 @dataclass(frozen=True)
 class UserReactivated(DomainEvent):
     pass
+
+
+@dataclass(frozen=True)
+class UserPasswordChanged(DomainEvent):
+    pass

@@ -90,7 +90,7 @@ def custom_openapi(app: FastAPI):
                 },
             )
     for path, path_item in schema.get("paths", {}).items():
-        if not path.startswith(f"{prefix}/reportes/"):
+        if not path.startswith((f"{prefix}/reportes/", f"{prefix}/poa/reportes/")):
             continue
         operation = path_item.get("get")
         if not operation:

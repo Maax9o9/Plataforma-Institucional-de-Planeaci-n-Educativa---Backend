@@ -132,7 +132,7 @@ async def indicator_history(
 
 
 @router.get(
-    "/poa/actividades/{activity_id}/historial",
+    "/poa/cedulas/actividades/{activity_id}/historial",
     response_model=PaginaAuditoriaResponse,
     summary="Consultar historial de actividad POA",
 )
@@ -142,23 +142,24 @@ async def poa_activity_history(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=10, ge=1, le=100),
     order: Literal["asc", "desc"] = Query(default="desc"),
-    current_user=Depends(require_roles("planeacion", "admin_sistema", "responsable_area")),
+    current_user=Depends(require_roles("planeacion", "admin_sistema", "capturista_poa")),
 ):
-    activity = await request.app.state.poa_repository.get_activity(activity_id)
-    objective = (
-        await request.app.state.poa_repository.get_objective(activity.objective_id)
-        if activity
-        else None
+    from app.modules.poa_planning.application.access_control import (
+        can_capture_activity,
+        can_edit_structure,
     )
-    process = (
-        await request.app.state.poa_repository.get_process(objective.process_id)
-        if objective
-        else None
-    )
-    if process is None:
+    from app.shared.application.actor import ActorContext
+    from app.shared.domain.exceptions import ForbiddenError
+
+    activity = await request.app.state.poa_form_repository.get_form_activity(activity_id)
+    if activity is None:
         raise ResourceNotFoundError("La actividad POA no existe.")
-    ensure_area_or_planning(current_user, process.area_id)
-    filters = {"aggregate_type": "poa_activity", "aggregate_id": activity_id}
+    actor = ActorContext.from_user(current_user)
+    if not can_capture_activity(actor, activity.executing_area_id) and not await can_edit_structure(
+        actor, request.app.state.area_repository
+    ):
+        raise ForbiddenError("La actividad no está asignada al área del usuario.")
+    filters = {"aggregate_type": "poa_form_activity", "aggregate_id": activity_id}
     entries = await request.app.state.audit_repository.list(
         **filters,
         offset=offset,

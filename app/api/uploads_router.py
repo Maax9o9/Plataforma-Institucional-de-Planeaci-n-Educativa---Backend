@@ -56,7 +56,13 @@ async def upload_file(
     request: Request,
     archivo: UploadFile = File(...),
     _current_user=Depends(
-        require_roles("responsable_area", "planeacion", "admin_sistema")
+        require_roles(
+            "responsable_area",
+            "planeacion",
+            "planeacion_admin",
+            "capturista_poa",
+            "admin_sistema",
+        )
     ),
 ) -> ArchivoRespuesta:
     settings = request.app.state.settings

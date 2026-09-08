@@ -35,10 +35,3 @@ class InMemoryStateChangeRepository:
         items = await self.list_for_capture(capture_id)
         items.sort(key=lambda item: (item.created_at, item.id), reverse=descending)
         return items[offset : offset + limit], len(items)
-
-    async def list_for_poa_advance(self, advance_id: int) -> list[StateChange]:
-        return [
-            item
-            for item in self._items
-            if item.entity == "poa_avance" and item.entity_id == advance_id
-        ]

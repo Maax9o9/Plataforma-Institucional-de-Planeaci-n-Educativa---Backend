@@ -18,6 +18,7 @@ from ..application.dto import (
     UpdateUserCommand,
 )
 from ..application.use_cases.authenticate_user import AuthenticateUser
+from ..application.use_cases.change_password import ChangeAdminPassword
 from ..application.use_cases.change_user_status import DeactivateUser, ReactivateUser
 from ..application.use_cases.logout_user import LogoutUser
 from ..application.use_cases.password_setup import InviteUser, SetInitialPassword
@@ -27,6 +28,7 @@ from ..domain.value_objects import Role
 from .cookies import clear_refresh_cookie, read_refresh_cookie, set_refresh_cookie
 from .dependencies import (
     get_authenticate_user_use_case,
+    get_change_admin_password_use_case,
     get_deactivate_user_use_case,
     get_invite_user_use_case,
     get_logout_user_use_case,
@@ -37,6 +39,7 @@ from .dependencies import (
 )
 from .schemas import (
     ActualizarUsuarioRequest,
+    CambiarContrasenaAdminRequest,
     ConfigurarContrasenaRequest,
     LoginRequest,
     LoginResponse,
@@ -49,6 +52,37 @@ from .schemas import (
 TAG = "Usuarios y roles"
 
 router = APIRouter()
+
+
+@router.post(
+    "/auth/cambiar-contrasena",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Cambiar la contraseña de mi cuenta administrativa",
+    tags=[TAG],
+)
+async def change_admin_password(
+    body: CambiarContrasenaAdminRequest,
+    request: Request,
+    response: Response,
+    current_user=Depends(require_roles("admin_sistema", "planeacion_admin")),
+    use_case: ChangeAdminPassword = Depends(get_change_admin_password_use_case),
+) -> None:
+    key = f"password-change:{current_user.id}"
+    limiter = request.app.state.login_rate_limiter
+    retry_after = await limiter.retry_after(key)
+    if retry_after:
+        raise RateLimitError(details={"retry_after": retry_after})
+    try:
+        await use_case.execute(
+            current_user.id,
+            body.contrasena_actual.get_secret_value(),
+            body.contrasena_nueva.get_secret_value(),
+        )
+    except AuthenticationError:
+        await limiter.record_failure(key)
+        raise
+    await limiter.clear(key)
+    clear_refresh_cookie(response, request.app.state.settings)
 
 
 @router.post(

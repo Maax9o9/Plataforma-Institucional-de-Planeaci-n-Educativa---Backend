@@ -33,7 +33,7 @@ async def login(client, email: str) -> dict[str, str]:
 
 
 @pytest.mark.asyncio
-async def test_resource_authorization_inmutability_reports_and_poa_assignment(client, app):
+async def test_resource_authorization_inmutability_and_indicator_reports(client, app):
     await create_user(app, "admin@upchiapas.edu.mx", {Role.ADMIN_SISTEMA, Role.PLANEACION})
     admin_headers = await login(client, "admin@upchiapas.edu.mx")
     area_one = await client.post(
@@ -229,73 +229,3 @@ async def test_resource_authorization_inmutability_reports_and_poa_assignment(cl
     assert history.json()["items"][0]["de_estado"] == "validado"
     assert history.json()["items"][0]["a_estado"] == "borrador"
     assert history.json()["items"][0]["comentario"].startswith("Reapertura:")
-
-    exercise = await client.post(
-        "/api/v1/poa/ejercicios", json={"anio": 2035}, headers=admin_headers
-    )
-    process = await client.post(
-        "/api/v1/poa/procesos",
-        json={
-            "ejercicio_id": exercise.json()["id"],
-            "nombre": "Proceso area uno",
-            "area_id": area_one_id,
-        },
-        headers=admin_headers,
-    )
-    objective = await client.post(
-        "/api/v1/poa/objetivos",
-        json={"proceso_id": process.json()["id"], "objetivo": "Objetivo seguro"},
-        headers=admin_headers,
-    )
-    invalid_poa_assignment = await client.post(
-        "/api/v1/poa/actividades",
-        json={
-            "objetivo_id": objective.json()["id"],
-            "descripcion": "Actividad sin rol operativo",
-            "unidad_medida": "Actividad",
-            "meta_anual": 1,
-            "responsable_id": consultation.id,
-        },
-        headers=admin_headers,
-    )
-    assert invalid_poa_assignment.status_code == 422
-    activity = await client.post(
-        "/api/v1/poa/actividades",
-        json={
-            "objetivo_id": objective.json()["id"],
-            "descripcion": "Actividad asignada",
-            "unidad_medida": "Actividad",
-            "meta_anual": 10,
-            "responsable_id": user_one.id,
-        },
-        headers=admin_headers,
-    )
-    poa_period = await client.post(
-        "/api/v1/periodos",
-        json={
-            "tipo": "poa",
-            "periodicidad": None,
-            "anio": 2035,
-            "etiqueta": "POA 2035 C1",
-            "fecha_inicio": "2035-01-01",
-            "fecha_limite": "2035-04-30",
-        },
-        headers=admin_headers,
-    )
-    await client.post(
-        f"/api/v1/periodos/{poa_period.json()['id']}/abrir", headers=admin_headers
-    )
-    foreign_advance = await client.post(
-        "/api/v1/poa/avances",
-        json={
-            "actividad_id": activity.json()["id"],
-            "cuatrimestre": 1,
-            "periodo_id": poa_period.json()["id"],
-            "programado": 5,
-            "alcanzado": 4,
-            "observaciones": "Intento ajeno",
-            "criterio_seaes_ids": [],
-        },
-        headers=two_headers,
-    )
-    assert foreign_advance.status_code == 403

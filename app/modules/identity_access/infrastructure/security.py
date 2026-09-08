@@ -40,6 +40,7 @@ class JwtTokenService:
                 "iat": now,
                 "jti": str(uuid4()),
                 "type": "access",
+                "pv": user.password_version,
             },
             expires_at,
             self.settings,
@@ -56,6 +57,7 @@ class JwtTokenService:
                 "iat": now,
                 "jti": str(token_id),
                 "type": "refresh",
+                "pv": user.password_version,
             },
             expires_at,
             self.settings,
@@ -78,6 +80,7 @@ class JwtTokenService:
                 area_id=int(payload["area_id"]) if payload.get("area_id") else None,
                 token_id=UUID(str(payload["jti"])),
                 expires_at=datetime.fromtimestamp(float(payload["exp"]), tz=UTC),
+                password_version=int(payload.get("pv", 0)),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise AuthenticationError("El contenido del access token no es valido.") from exc
@@ -92,6 +95,7 @@ class JwtTokenService:
                 session_id=UUID(str(payload["session_id"])),
                 token_id=UUID(str(payload["jti"])),
                 expires_at=datetime.fromtimestamp(float(payload["exp"]), tz=UTC),
+                password_version=int(payload.get("pv", 0)),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise AuthenticationError("El contenido del refresh token no es valido.") from exc

@@ -10,9 +10,8 @@ def get_evidence_access_control(request: Request) -> EvidenceAccessControl:
     return EvidenceAccessControl(
         request.app.state.evidence_repository,
         request.app.state.capture_repository,
-        request.app.state.poa_advance_repository,
         request.app.state.period_repository,
-        request.app.state.poa_repository,
+        request.app.state.poa_form_repository,
     )
 
 

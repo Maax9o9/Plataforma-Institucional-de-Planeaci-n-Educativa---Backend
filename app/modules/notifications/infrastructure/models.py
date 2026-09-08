@@ -31,7 +31,7 @@ class NotificationModel(Base):
         ),
         nullable=False,
     )
-    entidad: Mapped[str | None] = mapped_column(String(30))
+    entidad: Mapped[str | None] = mapped_column(String(60))
     entidad_id: Mapped[int | None] = mapped_column(Integer)
     mensaje: Mapped[str] = mapped_column(Text, nullable=False)
     leida: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

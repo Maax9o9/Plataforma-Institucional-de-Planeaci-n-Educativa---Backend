@@ -24,7 +24,7 @@ def register_event_handlers(event_bus: EventBus, resources: Resources, email_sen
         resources.user_repository,
         email_sender,
         resources.indicator_repository,
-        resources.poa_repository,
+        resources.poa_period_recipients,
     )
     notification_service.register(event_bus)
 

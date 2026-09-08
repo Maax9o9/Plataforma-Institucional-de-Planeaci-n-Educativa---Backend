@@ -9,6 +9,9 @@ from app.shared.domain.exceptions import ValidationError
 
 class Role(StrEnum):
     PLANEACION = "planeacion"
+    PLANEACION_ADMIN = "planeacion_admin"
+    CAPTURISTA_POA = "capturista_poa"
+    REVISOR_POA = "revisor_poa"
     RESPONSABLE_AREA = "responsable_area"
     RECTORIA = "rectoria"
     CONSULTA = "consulta"

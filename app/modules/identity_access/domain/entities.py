@@ -25,6 +25,7 @@ class User(BaseEntity):
     last_access_at: datetime | None = None
     area_name: str | None = None
     version: int = 1
+    password_version: int = 0
 
     @classmethod
     def register(
@@ -92,4 +93,7 @@ class User(BaseEntity):
 
     def has_any_role(self, roles: set[Role] | set[str]) -> bool:
         values = {role.value if isinstance(role, Role) else role for role in roles}
-        return bool({role.value for role in self.roles}.intersection(values))
+        current = {role.value for role in self.roles}
+        if Role.PLANEACION_ADMIN.value in current:
+            current.update({Role.PLANEACION.value, Role.ADMIN_SISTEMA.value})
+        return bool(current.intersection(values))

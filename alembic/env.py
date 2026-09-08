@@ -23,8 +23,8 @@ for _model_module in (
     "app.modules.indicators_validation.infrastructure.models",
     "app.modules.indicators_reports.infrastructure.models",
     "app.modules.poa_planning.infrastructure.models",
+    "app.modules.poa_planning.infrastructure.cedula_models",
     "app.modules.notifications.infrastructure.models",
-    "app.modules.poa_tracking.infrastructure.models",
     "app.modules.institutional_catalogs.infrastructure.models",
     "app.modules.periods.infrastructure.models",
 ):
@@ -35,6 +35,16 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
+
+
+def include_object(obj, name, type_, reflected, compare_to):
+    # Tablas históricas no mapeadas: nunca proponer borrarlas mediante autogenerate.
+    if type_ == "table" and reflected and compare_to is None and name in {
+        "poa_procesos", "poa_objetivos", "poa_actividades", "poa_avances",
+        "poa_avance_criterios", "poa_avance_criterios_seaes",
+    }:
+        return False
+    return True
 
 
 def _database_url() -> str:
@@ -50,6 +60,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=_database_url(),
         target_metadata=target_metadata,
+        include_object=include_object,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -58,7 +69,9 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection, target_metadata=target_metadata, include_object=include_object
+    )
     with context.begin_transaction():
         context.run_migrations()
 

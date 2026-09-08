@@ -50,6 +50,7 @@ def test_sqlalchemy_models_describe_owned_tables():
         "app.modules.identity_access.infrastructure.models",
         "app.modules.institutional_catalogs.infrastructure.models",
         "app.modules.periods.infrastructure.models",
+        "app.modules.poa_planning.infrastructure.cedula_models",
     ):
         import_module(module_name)
 
@@ -66,5 +67,15 @@ def test_sqlalchemy_models_describe_owned_tables():
         "cambios_estado",
         "bitacora",
         "reportes_generados",
+        "poa_catalogo_objetivos",
+        "poa_catalogo_estrategias",
+        "poa_catalogo_indicadores",
+        "poa_catalogo_actividades",
+        "poa_cedulas",
+        "poa_cedula_indicadores",
+        "poa_cedula_cuatrimestres",
+        "poa_cedula_actividades",
+        "poa_cedula_seguimientos",
+        "poa_cedula_emisiones",
     }
     assert expected_tables.issubset(Base.metadata.tables)

@@ -7,16 +7,20 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
 from app.core.config import Settings
+from app.modules.institutional_catalogs.domain.entities import Area
+from app.modules.institutional_catalogs.domain.ports.repositories import AreaRepository
 from app.shared.application.event_bus import EventBus
 from app.shared.application.ports.email_sender import EmailSender
 from app.shared.domain.exceptions import AuthenticationError, ResourceNotFoundError, ValidationError
 
+from ...domain.directory import InstitutionalDirectory
 from ...domain.entities import User
 from ...domain.events import UserRegistered
 from ...domain.ports.password_hasher import PasswordHasher
 from ...domain.ports.password_setup_repository import PasswordSetupTokenStore
 from ...domain.ports.refresh_token_repository import RefreshTokenStore
 from ...domain.ports.user_repository import UserRepository
+from ..access_control import ensure_can_manage_user
 from ..dto import RegisterUserCommand
 
 
@@ -29,6 +33,8 @@ class InviteUser:
         email_sender: EmailSender,
         event_bus: EventBus,
         settings: Settings,
+        area_repository: AreaRepository,
+        directory: InstitutionalDirectory,
     ) -> None:
         self.repository = repository
         self.password_hasher = password_hasher
@@ -36,19 +42,49 @@ class InviteUser:
         self.email_sender = email_sender
         self.event_bus = event_bus
         self.settings = settings
+        self.area_repository = area_repository
+        self.directory = directory
 
     async def execute(self, command: RegisterUserCommand) -> User:
         if await self.repository.get_by_email(command.email):
             from app.shared.domain.exceptions import ConflictError
 
             raise ConflictError("Ya existe un usuario con ese correo electronico.")
+        roles = command.roles
+        area_id = command.area_id
+        area_name = None
+        assignment = self.directory.find_by_email(command.email)
+        await ensure_can_manage_user(
+            self.repository, command.actor_id,
+            assigned_roles=set(assignment.roles) if assignment else roles,
+        )
+        if assignment is not None:
+            areas = await self.area_repository.list(active_only=False)
+            area = next(
+                (
+                    item
+                    for item in areas
+                    if item.name.casefold() == assignment.exact_area_name.casefold()
+                ),
+                None,
+            )
+            if area is None:
+                area = Area.create(
+                    code=assignment.area_code,
+                    name=assignment.exact_area_name,
+                )
+                await self.area_repository.add(area)
+            roles = set(assignment.roles)
+            area_id = area.id
+            area_name = area.name
         user = User.register(
             email=command.email,
             full_name=command.full_name,
             password_hash=self.password_hasher.hash(secrets.token_urlsafe(32)),
-            roles=command.roles,
-            area_id=command.area_id,
+            roles=roles,
+            area_id=area_id,
         )
+        user.area_name = area_name
         user.password_setup_required = True
         await self.repository.add(user)
         raw_token = secrets.token_urlsafe(32)
@@ -82,7 +118,12 @@ class InviteUser:
                 aggregate_type="user",
                 aggregate_id=user.id,
                 action="invited",
-                data={"email": user.email.value},
+                data={
+                    "email": user.email.value,
+                    "directory_assignment": assignment is not None,
+                    "area_id": user.area_id,
+                    "roles": sorted(role.value for role in user.roles),
+                },
             )
         )
         return user
@@ -114,6 +155,7 @@ class SetInitialPassword:
         if user is None:
             raise ResourceNotFoundError("El usuario asociado al enlace no existe.")
         user.password_hash = self.password_hasher.hash(password)
+        user.password_version += 1
         user.password_setup_required = False
         user.touch()
         await self.repository.update(user)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -18,6 +19,9 @@ from app.modules.evidence_management.infrastructure.models import EvidenceModel
 from app.modules.evidence_management.infrastructure.sql_repository import (
     SqlAlchemyEvidenceRepository,
 )
+from app.modules.identity_access.application.dto import RegisterUserCommand
+from app.modules.identity_access.application.use_cases.create_user import CreateUser
+from app.modules.identity_access.domain.value_objects import Role
 from app.modules.identity_access.infrastructure.models import RefreshTokenModel
 from app.modules.identity_access.infrastructure.revoked_token_store import (
     SqlAlchemyRevokedTokenStore,
@@ -212,3 +216,124 @@ async def test_postgresql_seed_and_frontend_read_contracts(monkeypatch):
     finally:
         await application.state.db_engine.dispose()
         get_settings.cache_clear()
+
+
+@pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL no configurada")
+@pytest.mark.asyncio
+async def test_postgresql_directory_roles_and_form_quarter_transaction():
+    application = create_app(
+        Settings(
+            environment="testing",
+            secret_key="test-secret-key-with-more-than-32-characters",
+            database_url=TEST_DATABASE_URL,
+            email_provider="console",
+        )
+    )
+    suffix = uuid4().hex[:8]
+    try:
+        await application.state.poa_form_repository.ensure_catalogs()
+        await CreateUser(
+            repository=application.state.user_repository,
+            password_hasher=application.state.password_hasher,
+            event_bus=application.state.event_bus,
+        ).execute(
+            RegisterUserCommand(
+                email=f"admin-cedula-{suffix}@upchiapas.edu.mx",
+                full_name="Administrador de prueba",
+                password="password-seguro",
+                roles={
+                    Role.PLANEACION_ADMIN,
+                    Role.CAPTURISTA_POA,
+                    Role.REVISOR_POA,
+                },
+                area_id=None,
+            )
+        )
+        async with AsyncClient(
+            transport=ASGITransport(app=application),
+            base_url="http://testserver",
+        ) as client:
+            login = await client.post(
+                "/api/v1/auth/login",
+                json={
+                    "correo": f"admin-cedula-{suffix}@upchiapas.edu.mx",
+                    "contrasena": "password-seguro",
+                },
+            )
+            headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+            invited = await client.post(
+                "/api/v1/usuarios",
+                json={
+                    "correo": "hdelacruz@upchiapas.edu.mx",
+                    "nombre": "Cuenta de Programación y Presupuesto",
+                },
+                headers=headers,
+            )
+            assert invited.status_code == 201, invited.text
+            assert invited.json()["roles"] == ["capturista_poa"]
+            assert invited.json()["area_nombre"] == (
+                "Dirección de Programación y Presupuesto"
+            )
+
+            area = await client.post(
+                "/api/v1/catalogos/areas",
+                json={"codigo": f"SQL-{suffix}", "nombre": f"Área SQL {suffix}"},
+                headers=headers,
+            )
+            exercise = await client.post(
+                "/api/v1/poa/ejercicios",
+                json={"anio": 2198},
+                headers=headers,
+            )
+            form = await client.post(
+                "/api/v1/poa/cedulas",
+                json={
+                    "ejercicio_id": exercise.json()["id"],
+                    "estrategia_clave": "1.1",
+                    "area_responsable_id": area.json()["id"],
+                    "cuatrimestres": [
+                        {
+                            "numero": 1,
+                            "fecha_inicio": "2198-01-10",
+                            "fecha_fin": "2198-04-20",
+                        },
+                        {
+                            "numero": 2,
+                            "fecha_inicio": "2198-05-05",
+                            "fecha_fin": "2198-08-25",
+                        },
+                        {
+                            "numero": 3,
+                            "fecha_inicio": "2198-09-03",
+                            "fecha_fin": "2198-12-15",
+                        },
+                    ],
+                },
+                headers=headers,
+            )
+            assert form.status_code == 201, form.text
+            assert len(form.json()["cuatrimestres"]) == 3
+            assert all(item["periodo_id"] for item in form.json()["cuatrimestres"])
+            updated_form = await client.patch(
+                f"/api/v1/poa/cedulas/{form.json()['id']}",
+                json={"alcance_efecto_socioeconomico": "Corrección administrativa"},
+                headers=headers,
+            )
+            assert updated_form.status_code == 200, updated_form.text
+            assert updated_form.json()["version"] == 2
+
+            indicator = await client.post(
+                f"/api/v1/poa/cedulas/{form.json()['id']}/indicadores",
+                json={"indicador_clave": "1.1.14", "meta_institucional": 10},
+                headers=headers,
+            )
+            assert indicator.status_code == 201, indicator.text
+            updated_indicator = await client.patch(
+                f"/api/v1/poa/cedulas/indicadores/{indicator.json()['id']}",
+                json={"meta_institucional": 12},
+                headers=headers,
+            )
+            assert updated_indicator.status_code == 200, updated_indicator.text
+            assert Decimal(updated_indicator.json()["meta_institucional"]) == Decimal("12")
+    finally:
+        await application.state.db_engine.dispose()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -16,7 +17,7 @@ class AdjuntarEvidenciaRequest(BaseModel):
     fecha: date
     tipo: EvidenceType
     ruta_o_url: str = Field(min_length=1, max_length=500)
-    entidad: FlowEntity
+    entidad: Literal[FlowEntity.CAPTURE, FlowEntity.POA_FORM_FOLLOW_UP]
     entidad_id: int
     mime_type: str | None = None
     tamanio_bytes: int | None = Field(default=None, ge=0)

@@ -13,6 +13,7 @@ from app.shared.domain.exceptions import ResourceNotFoundError
 
 from ..application.dto import AttachEvidenceCommand, ReplaceEvidenceCommand
 from ..application.use_cases.manage_evidence import AttachEvidence, ReplaceEvidence
+from ..domain.value_objects import FlowEntity
 from .dependencies import (
     get_attach_evidence_use_case,
     get_evidence_access_control,
@@ -29,6 +30,32 @@ from .schemas import (
 
 TAG = "Evidencias"
 router = APIRouter(prefix="/evidencias", tags=[TAG])
+
+
+@router.get(
+    "",
+    response_model=list[EvidenciaRespuesta],
+    summary="Consultar evidencias vinculadas a un registro",
+)
+async def list_evidences_for_target(
+    entidad: Literal[FlowEntity.CAPTURE, FlowEntity.POA_FORM_FOLLOW_UP],
+    entidad_id: int,
+    request: Request,
+    current_user=Depends(get_current_user),
+) -> list[EvidenciaRespuesta]:
+    actor = actor_from_user(current_user)
+    await get_evidence_access_control(request).ensure_target_viewable(
+        entidad, entidad_id, actor
+    )
+    items = await request.app.state.evidence_repository.list_for(entidad, entidad_id)
+    return [
+        await present_evidence(
+            item,
+            request.app.state.evidence_repository,
+            request.app.state.settings.api_v1_prefix,
+        )
+        for item in items
+    ]
 
 
 @router.post(

@@ -15,6 +15,9 @@ from app.modules.evidence_management.infrastructure.repository import InMemoryEv
 from app.modules.evidence_management.infrastructure.sql_repository import (
     SqlAlchemyEvidenceRepository,
 )
+from app.modules.identity_access.infrastructure.directory_reference_data import (
+    INSTITUTIONAL_DIRECTORY,
+)
 from app.modules.identity_access.infrastructure.password_setup_store import (
     InMemoryPasswordSetupTokenStore,
     SqlAlchemyPasswordSetupTokenStore,
@@ -75,14 +78,16 @@ from app.modules.notifications.infrastructure.repository import InMemoryNotifica
 from app.modules.notifications.infrastructure.sql_repository import SqlAlchemyNotificationRepository
 from app.modules.periods.infrastructure.repository import InMemoryPeriodRepository
 from app.modules.periods.infrastructure.sql_repository import SqlAlchemyPeriodRepository
+from app.modules.poa_planning.application.period_recipients import PoaPeriodRecipients
+from app.modules.poa_planning.infrastructure.cedula_repository import (
+    InMemoryPoaFormRepository,
+)
+from app.modules.poa_planning.infrastructure.cedula_sql_repository import (
+    SqlAlchemyPoaFormRepository,
+)
 from app.modules.poa_planning.infrastructure.repository import InMemoryPoaRepository
 from app.modules.poa_planning.infrastructure.sql_repository import SqlAlchemyPoaRepository
-from app.modules.poa_reports.application.service import (
-    InMemoryPoaReportService,
-    SqlAlchemyPoaReportService,
-)
-from app.modules.poa_tracking.infrastructure.repository import InMemoryPoaAdvanceRepository
-from app.modules.poa_tracking.infrastructure.sql_repository import SqlAlchemyPoaAdvanceRepository
+from app.modules.poa_reports.application.service import PoaReportService
 from app.shared.infrastructure.db.session import create_database
 from app.shared.infrastructure.db.unit_of_work import (
     NoOpUnitOfWorkFactory,
@@ -110,13 +115,15 @@ class Resources:
     state_change_repository: object
     threshold_config_repository: object
     poa_repository: object
-    poa_advance_repository: object
+    poa_form_repository: object
     poa_report_service: object
+    poa_period_recipients: object
     dashboard_service: object
     indicator_report_service: object
     report_log: object
     notification_repository: object
     password_setup_token_store: object
+    institutional_directory: object
 
 
 def create_resources(settings: Settings) -> Resources:
@@ -138,15 +145,14 @@ def create_resources(settings: Settings) -> Resources:
         state_change_repository = InMemoryStateChangeRepository()
         threshold_config_repository = InMemoryThresholdConfigRepository()
         poa_repository = InMemoryPoaRepository()
-        poa_advance_repository = InMemoryPoaAdvanceRepository()
-        poa_report_service = InMemoryPoaReportService(
-            poa_repository, poa_advance_repository, evidence_repository
+        poa_form_repository = InMemoryPoaFormRepository()
+        poa_report_service = PoaReportService(
+            poa_form_repository, evidence_repository, area_repository
         )
         dashboard_service = InMemoryDashboardService(
             indicator_repository,
             capture_repository,
-            poa_repository,
-            poa_advance_repository,
+            poa_report_service,
         )
         indicator_report_service = InMemoryIndicatorReportService(
             indicator_repository,
@@ -177,9 +183,11 @@ def create_resources(settings: Settings) -> Resources:
         state_change_repository = SqlAlchemyStateChangeRepository(db_session_factory)
         threshold_config_repository = SqlAlchemyThresholdConfigRepository(db_session_factory)
         poa_repository = SqlAlchemyPoaRepository(db_session_factory)
-        poa_advance_repository = SqlAlchemyPoaAdvanceRepository(db_session_factory)
-        poa_report_service = SqlAlchemyPoaReportService(db_session_factory)
-        dashboard_service = SqlAlchemyDashboardService(db_session_factory)
+        poa_form_repository = SqlAlchemyPoaFormRepository(db_session_factory)
+        poa_report_service = PoaReportService(
+            poa_form_repository, evidence_repository, area_repository
+        )
+        dashboard_service = SqlAlchemyDashboardService(db_session_factory, poa_report_service)
         indicator_report_service = SqlAlchemyIndicatorReportService(db_session_factory)
         report_log = SqlAlchemyReportLog(db_session_factory)
         notification_repository = SqlAlchemyNotificationRepository(db_session_factory)
@@ -204,11 +212,13 @@ def create_resources(settings: Settings) -> Resources:
         state_change_repository=state_change_repository,
         threshold_config_repository=threshold_config_repository,
         poa_repository=poa_repository,
-        poa_advance_repository=poa_advance_repository,
+        poa_form_repository=poa_form_repository,
         poa_report_service=poa_report_service,
+        poa_period_recipients=PoaPeriodRecipients(poa_form_repository, user_repository),
         dashboard_service=dashboard_service,
         indicator_report_service=indicator_report_service,
         report_log=report_log,
         notification_repository=notification_repository,
         password_setup_token_store=password_setup_token_store,
+        institutional_directory=INSTITUTIONAL_DIRECTORY,
     )

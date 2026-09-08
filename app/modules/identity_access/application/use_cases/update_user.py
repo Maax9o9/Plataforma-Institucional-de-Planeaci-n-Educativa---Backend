@@ -8,6 +8,7 @@ from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError
 from ...domain.entities import User
 from ...domain.events import UserUpdated
 from ...domain.ports.user_repository import UserRepository
+from ..access_control import ensure_can_manage_user
 from ..dto import UpdateUserCommand
 
 
@@ -20,6 +21,11 @@ class UpdateUser:
         user = await self.repository.get_by_id(command.user_id)
         if user is None:
             raise ResourceNotFoundError("El usuario no existe.")
+        await ensure_can_manage_user(
+            self.repository, command.actor_id,
+            assigned_roles=command.roles if command.roles is not None else user.roles,
+            target=user,
+        )
         if command.email is not None:
             existing = await self.repository.get_by_email(command.email)
             if existing is not None and existing.id != user.id:

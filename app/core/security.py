@@ -67,6 +67,8 @@ async def get_current_user(request: Request, claims=Depends(get_access_claims)):
     user = await request.app.state.user_repository.get_by_id(claims.subject)
     if user is None or not user.is_active:
         raise AuthenticationError("El usuario no esta disponible.")
+    if claims.password_version != user.password_version:
+        raise AuthenticationError("La contraseña cambió. Inicia sesión nuevamente.")
     request.state.current_user = user
     return user
 
@@ -78,6 +80,8 @@ def require_roles(*roles: str):
         current_roles = {
             role.value if hasattr(role, "value") else str(role) for role in current_user.roles
         }
+        if "planeacion_admin" in current_roles:
+            current_roles.update({"planeacion", "admin_sistema"})
         if not current_roles.intersection(roles):
             raise ForbiddenError()
         return current_user

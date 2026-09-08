@@ -72,7 +72,7 @@ class SqlAlchemyEvidenceRepository:
                 select(EvidenceLinkModel.id).where(
                     EvidenceLinkModel.entidad == entity.value,
                     EvidenceLinkModel.entidad_id == entity_id,
-                )
+                ).limit(1)
             )
             return result.scalar_one_or_none() is not None
 

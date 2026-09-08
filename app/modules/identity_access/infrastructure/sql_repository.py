@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.modules.institutional_catalogs.infrastructure.models import AreaModel
 from app.shared.domain.exceptions import ConflictError
 from app.shared.domain.value_objects import Email
+from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
 
 from ..domain.entities import User
 from ..domain.ports.refresh_token_repository import RefreshTokenRecord
@@ -49,15 +50,16 @@ class SqlAlchemyUserRepository:
             last_access_at=model.ultimo_acceso,
             area_name=area_name,
             version=model.version,
+            password_version=model.password_version,
         )
 
     async def get_by_id(self, user_id: int) -> User | None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             model = await session.get(UserModel, user_id)
             return await self._to_domain(session, model) if model else None
 
     async def get_by_email(self, email: str) -> User | None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             result = await session.execute(
                 select(UserModel).where(func.lower(UserModel.correo) == email.strip().lower())
             )
@@ -78,6 +80,7 @@ class SqlAlchemyUserRepository:
             nombre=user.full_name,
             correo=user.email.value,
             hash_password=user.password_hash,
+            password_version=user.password_version,
             area_id=user.area_id,
             activo=user.is_active,
             notificar_correo=user.notify_email,
@@ -85,14 +88,14 @@ class SqlAlchemyUserRepository:
             creado_en=now,
             actualizado_en=now,
         )
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             try:
                 session.add(model)
                 await session.flush()
                 session.add_all(
                     UserRoleModel(usuario_id=model.id, rol=role.value) for role in user.roles
                 )
-                await session.commit()
+                await commit_or_flush(session)
             except IntegrityError as exc:
                 await session.rollback()
                 raise ConflictError("Ya existe un usuario con ese correo electronico.") from exc
@@ -101,7 +104,7 @@ class SqlAlchemyUserRepository:
         user.updated_at = now
 
     async def update(self, user: User) -> None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             try:
                 model = await session.get(UserModel, user.id)
                 if model is None:
@@ -113,6 +116,7 @@ class SqlAlchemyUserRepository:
                         correo=user.email.value,
                         nombre=user.full_name,
                         hash_password=user.password_hash,
+                        password_version=user.password_version,
                         area_id=user.area_id,
                         activo=user.is_active,
                         notificar_correo=user.notify_email,
@@ -135,7 +139,7 @@ class SqlAlchemyUserRepository:
                 session.add_all(
                     UserRoleModel(usuario_id=user.id, rol=role.value) for role in user.roles
                 )
-                await session.commit()
+                await commit_or_flush(session)
                 user.version += 1
             except IntegrityError as exc:
                 await session.rollback()
@@ -286,7 +290,7 @@ class SqlAlchemyRefreshTokenStore:
             await session.commit()
 
     async def revoke_user(self, user_id: int) -> None:
-        async with self.session_factory() as session:
+        async with session_scope(self.session_factory) as session:
             models = await session.scalars(
                 select(RefreshTokenModel).where(
                     RefreshTokenModel.usuario_id == user_id,
@@ -296,4 +300,4 @@ class SqlAlchemyRefreshTokenStore:
             now = datetime.now(UTC)
             for model in models:
                 model.revocado_en = now
-            await session.commit()
+            await commit_or_flush(session)
