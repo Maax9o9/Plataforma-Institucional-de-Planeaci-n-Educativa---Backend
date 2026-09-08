@@ -16,6 +16,30 @@ FOUR_MONTH_LABELS = {
     3: "Septiembre-Diciembre",
 }
 
+STRATEGY_TYPES = ("Eficiencia", "Eficacia", "Pertinencia", "Vinculación", "Equidad de Género")
+
+
+@dataclass(frozen=True, kw_only=True)
+class PoaSignatory:
+    name: str
+    position: str
+
+    def __post_init__(self) -> None:
+        for attribute in ("name", "position"):
+            value = getattr(self, attribute).strip()
+            if not value or len(value) > 200:
+                raise ValidationError(
+                    "Cada firmante requiere nombre y cargo de hasta 200 caracteres."
+                )
+            object.__setattr__(self, attribute, value)
+
+
+def validate_presentation(strategy_type: str | None, signatories: tuple[PoaSignatory, ...]) -> None:
+    if strategy_type is not None and strategy_type not in STRATEGY_TYPES:
+        raise ValidationError("El tipo de estrategia no pertenece al catálogo POA.")
+    if len(signatories) not in {0, 2}:
+        raise ValidationError("El bloque de firmas requiere exactamente dos firmantes.")
+
 
 def _require_non_negative(value: Decimal | None, label: str) -> None:
     if value is not None and value < 0:
@@ -80,6 +104,8 @@ class PoaForm(BaseEntity):
     responsible_area_id: int
     created_by: int
     scope_and_socioeconomic_effect: str | None = None
+    strategy_type: str | None = None
+    signatories: tuple[PoaSignatory, ...] = ()
     version: int = 1
 
     @classmethod
@@ -92,7 +118,10 @@ class PoaForm(BaseEntity):
         responsible_area_id: int,
         created_by: int,
         scope_and_socioeconomic_effect: str | None = None,
+        strategy_type: str | None = None,
+        signatories: tuple[PoaSignatory, ...] = (),
     ) -> PoaForm:
+        validate_presentation(strategy_type, signatories)
         if objective_number not in range(1, 7):
             raise ValidationError("El objetivo del POA debe estar entre 1 y 6.")
         if not strategy_key.strip():
@@ -103,6 +132,8 @@ class PoaForm(BaseEntity):
             strategy_key=strategy_key.strip(),
             responsible_area_id=responsible_area_id,
             created_by=created_by,
+            strategy_type=strategy_type,
+            signatories=signatories,
             scope_and_socioeconomic_effect=(
                 scope_and_socioeconomic_effect.strip() if scope_and_socioeconomic_effect else None
             ),
@@ -115,7 +146,14 @@ class PoaForm(BaseEntity):
         strategy_key: str | None = None,
         responsible_area_id: int | None = None,
         scope_and_socioeconomic_effect: str | None = None,
+        strategy_type: str | None = None,
+        signatories: tuple[PoaSignatory, ...] | None = None,
     ) -> None:
+        validate_presentation(strategy_type, signatories if signatories is not None else ())
+        if strategy_type is not None:
+            self.strategy_type = strategy_type
+        if signatories is not None:
+            self.signatories = signatories
         if objective_number is not None:
             if objective_number not in range(1, 7):
                 raise ValidationError("El objetivo del POA debe estar entre 1 y 6.")
@@ -218,8 +256,9 @@ class PoaFormIndicator(BaseEntity):
         self, *, total_achieved: Decimal, achieved_percentage: Decimal | None
     ) -> None:
         _require_non_negative(total_achieved, "El total alcanzado")
-        if achieved_percentage is None and self.target_value not in {None, Decimal(0)}:
-            achieved_percentage = total_achieved / self.target_value * Decimal(100)
+        # El denominador depende de la fórmula del catálogo, no de la meta a lograr.
+        if achieved_percentage is None:
+            raise ValidationError("Indique el porcentaje alcanzado según la fórmula del indicador.")
         _require_non_negative(achieved_percentage, "El porcentaje alcanzado")
         self.total_achieved = total_achieved
         self.achieved_percentage = achieved_percentage

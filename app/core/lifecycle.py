@@ -25,6 +25,7 @@ async def _run_reminder_scheduler(app: FastAPI) -> None:
             ).execute()
             if total:
                 logger.info("Recordatorios periodicos procesados: %s", total)
+            await app.state.notification_service.retry_pending()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -50,5 +51,6 @@ async def lifespan(app: FastAPI):
             reminder_task.cancel()
             with suppress(asyncio.CancelledError):
                 await reminder_task
+        await app.state.notification_service.close()
         if app.state.db_engine is not None:
             await app.state.db_engine.dispose()

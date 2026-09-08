@@ -59,6 +59,8 @@ class PoaFormModel(Base):
     estrategia_clave: Mapped[str] = mapped_column(String(20), nullable=False)
     area_responsable_id: Mapped[int] = mapped_column(Integer, nullable=False)
     alcance_efecto_socioeconomico: Mapped[str | None] = mapped_column(Text)
+    tipo_estrategia: Mapped[str | None] = mapped_column(String(40))
+    firmantes: Mapped[list[dict[str, str]]] = mapped_column(JSON, nullable=False, default=list)
     creado_por: Mapped[int] = mapped_column(Integer, nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -89,7 +91,7 @@ class PoaFormIndicatorModel(Base):
     meta_numero: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
     meta_porcentaje: Mapped[Decimal | None] = mapped_column(Numeric(7, 4))
     total_alcanzado: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
-    porcentaje_alcanzado: Mapped[Decimal | None] = mapped_column(Numeric(7, 4))
+    porcentaje_alcanzado: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     actualizado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

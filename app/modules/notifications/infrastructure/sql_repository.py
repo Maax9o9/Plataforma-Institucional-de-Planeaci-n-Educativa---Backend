@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -84,4 +84,46 @@ class SqlAlchemyNotificationRepository:
             model = await session.get(NotificationModel, notification_id)
             if model:
                 model.enviada_por_correo = True
+                model.correo_reservado_hasta = None
                 await commit_or_flush(session)
+
+    @staticmethod
+    def _unclaimed():
+        return or_(
+            NotificationModel.correo_reservado_hasta.is_(None),
+            NotificationModel.correo_reservado_hasta <= datetime.now(UTC),
+        )
+
+    async def pending_email(self, limit: int = 100, after_id: int = 0) -> list[Notification]:
+        async with session_scope(self.session_factory) as session:
+            models = await session.scalars(
+                select(NotificationModel)
+                .where(NotificationModel.enviada_por_correo.is_(False), self._unclaimed())
+                .where(NotificationModel.id > after_id)
+                .order_by(NotificationModel.id)
+                .limit(limit)
+            )
+            return [self._to_domain(model) for model in models]
+
+    async def claim_email(self, notification_id: int) -> bool:
+        async with session_scope(self.session_factory) as session:
+            result = await session.execute(
+                update(NotificationModel)
+                .where(
+                    NotificationModel.id == notification_id,
+                    NotificationModel.enviada_por_correo.is_(False),
+                    self._unclaimed(),
+                )
+                .values(correo_reservado_hasta=datetime.now(UTC) + timedelta(minutes=5))
+            )
+            await commit_or_flush(session)
+            return result.rowcount == 1
+
+    async def release_email(self, notification_id: int) -> None:
+        async with session_scope(self.session_factory) as session:
+            await session.execute(
+                update(NotificationModel)
+                .where(NotificationModel.id == notification_id)
+                .values(correo_reservado_hasta=None)
+            )
+            await commit_or_flush(session)

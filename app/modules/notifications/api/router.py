@@ -50,7 +50,7 @@ async def mark_notification_read(
 )
 async def generate_reminders(
     request: Request,
-    _current_user=Depends(require_roles("planeacion", "admin_sistema")),
+    _current_user=Depends(require_roles("planeacion", "planeacion_admin", "admin_sistema")),
 ):
     total = await GenerateReminders(
         request.app.state.period_repository,

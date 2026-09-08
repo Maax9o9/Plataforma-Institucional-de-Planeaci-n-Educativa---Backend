@@ -9,7 +9,10 @@ PLANNING_AREA_NAME = "Dirección de Planeación Educativa"
 
 def ensure_planning(actor: ActorContext) -> None:
     if not actor.is_planning:
-        raise ForbiddenError("Esta operación requiere permisos de Planeación.")
+        raise ForbiddenError(
+            "Esta operación requiere permisos de Planeación.",
+            details={"reason": "POA_PLANNING_REQUIRED"},
+        )
 
 
 def can_capture_activity(actor: ActorContext, executing_area_id: int | None) -> bool:
@@ -33,4 +36,7 @@ async def can_edit_structure(actor: ActorContext, areas: AreaRepository) -> bool
 async def ensure_structure_access(actor: ActorContext, areas: AreaRepository) -> None:
     if await can_edit_structure(actor, areas):
         return
-    raise ForbiddenError("Sólo Planeación puede capturar la estructura de la cédula.")
+    raise ForbiddenError(
+        "Sólo Planeación puede capturar la estructura de la cédula.",
+        details={"reason": "POA_PLANNING_REQUIRED"},
+    )

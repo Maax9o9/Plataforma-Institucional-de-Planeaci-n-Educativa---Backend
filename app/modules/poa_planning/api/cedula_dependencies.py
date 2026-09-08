@@ -66,6 +66,7 @@ def get_add_form_activity_use_case(request: Request) -> AddPoaFormActivity:
         request.app.state.poa_form_repository,
         request.app.state.area_repository,
         request.app.state.event_bus,
+        request.app.state.unit_of_work,
     )
 
 
@@ -74,6 +75,7 @@ def get_update_form_activity_use_case(request: Request) -> UpdatePoaFormActivity
         request.app.state.poa_form_repository,
         request.app.state.area_repository,
         request.app.state.event_bus,
+        request.app.state.unit_of_work,
     )
 
 
@@ -102,4 +104,5 @@ def get_issue_form_use_case(request: Request) -> IssuePoaForm:
         request.app.state.poa_repository,
         request.app.state.event_bus,
         request.app.state.evidence_repository,
+        request.app.state.area_repository,
     )

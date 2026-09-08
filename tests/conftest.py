@@ -32,6 +32,7 @@ async def backend_client(request, tmp_path):
         ) as client:
             yield application, client
     finally:
+        await application.state.notification_service.close()
         if application.state.db_engine is not None:
             await application.state.db_engine.dispose()
 

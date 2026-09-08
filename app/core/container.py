@@ -214,7 +214,9 @@ def create_resources(settings: Settings) -> Resources:
         poa_repository=poa_repository,
         poa_form_repository=poa_form_repository,
         poa_report_service=poa_report_service,
-        poa_period_recipients=PoaPeriodRecipients(poa_form_repository, user_repository),
+        poa_period_recipients=PoaPeriodRecipients(
+            poa_form_repository, user_repository, area_repository, evidence_repository
+        ),
         dashboard_service=dashboard_service,
         indicator_report_service=indicator_report_service,
         report_log=report_log,

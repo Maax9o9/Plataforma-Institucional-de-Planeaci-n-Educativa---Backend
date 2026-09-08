@@ -17,7 +17,7 @@ COPY bd ./bd
 
 RUN pip install .
 
-RUN chown -R app:app /app
+RUN mkdir -p /app/var/uploads && chown -R app:app /app
 USER app
 
 EXPOSE 8000

@@ -44,7 +44,7 @@ def build_cors_options(settings: Settings) -> dict:
             "allow_credentials": False,
             "allow_methods": ["*"],
             "allow_headers": ["*"],
-            "expose_headers": ["X-Request-ID"],
+            "expose_headers": ["X-Request-ID", "Retry-After"],
             "max_age": 600,
         }
 
@@ -63,6 +63,6 @@ def build_cors_options(settings: Settings) -> dict:
         "allow_credentials": True,
         "allow_methods": ["GET", "POST", "PATCH", "PUT", "DELETE"],
         "allow_headers": ["Accept", "Authorization", "Content-Type", "X-Request-ID"],
-        "expose_headers": ["X-Request-ID"],
+        "expose_headers": ["X-Request-ID", "Retry-After"],
         "max_age": 600,
     }
