@@ -7,12 +7,17 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as SQLTimeoutError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.modules.audit.domain.entities import AuditEntry
 from app.shared.domain.exceptions import AppError, CaptureImmutableError
+
+from .validation_messages import validation_detail
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +37,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                         occurred_at=datetime.now(UTC),
                         actor_id=user.id if user else None,
                         event_name="ImmutableEditBlocked",
-                        aggregate_type=(
-                            "poa_form" if "/poa/" in request.url.path else "capture"
-                        ),
+                        aggregate_type=("poa_form" if "/poa/" in request.url.path else "capture"),
                         aggregate_id=None,
                         action="edit_blocked",
                         data={"method": request.method, "path": request.url.path},
@@ -50,7 +53,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content={
                 "code": exc.code,
                 "message": exc.message,
-                "details": exc.details,
+                "details": jsonable_encoder(exc.details),
                 "request_id": request_id(request),
             },
             headers=headers,
@@ -67,10 +70,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "code": "REQUEST_VALIDATION_ERROR",
                 "message": "La solicitud contiene datos invalidos.",
                 # No devolver el cuerpo original: puede contener contraseñas o tokens.
-                "details": [
-                    {"loc": error["loc"], "msg": error["msg"], "type": error["type"]}
-                    for error in exc.errors()
-                ],
+                "details": [validation_detail(error) for error in exc.errors()],
                 "request_id": request_id(request),
             },
         )
@@ -98,10 +98,32 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(
             status_code=500,
+            headers={"X-Request-ID": request_id(request) or ""},
             content={
                 "code": "INTERNAL_SERVER_ERROR",
                 "message": "Ocurrio un error interno al procesar la solicitud.",
                 "details": None,
+                "request_id": request_id(request),
+            },
+        )
+
+    @app.exception_handler(DBAPIError)
+    @app.exception_handler(SQLTimeoutError)
+    async def handle_database_error(request: Request, exc: Exception) -> JSONResponse:
+        unavailable = isinstance(exc, (OperationalError, InterfaceError, SQLTimeoutError)) or (
+            isinstance(exc, DBAPIError) and exc.connection_invalidated
+        )
+        if not unavailable:
+            return await handle_unexpected_error(request, exc)
+        logger.error("Base de datos no disponible request_id=%s", request_id(request), exc_info=exc)
+        return JSONResponse(
+            status_code=503,
+            headers={"Retry-After": "5", "X-Request-ID": request_id(request) or ""},
+            content={
+                "code": "SERVICE_UNAVAILABLE",
+                "message": "El servicio de datos no está disponible temporalmente. "
+                "Conserve su captura y vuelva a intentarlo en unos momentos.",
+                "details": {"retry_after": 5},
                 "request_id": request_id(request),
             },
         )

@@ -37,6 +37,7 @@ from ..application.use_cases.manage_cedula import (
     UpdatePoaFormIndicator,
 )
 from ..domain.cedula_entities import (
+    STRATEGY_TYPES,
     PoaActivityFollowUp,
     PoaForm,
     PoaFormActivity,
@@ -44,6 +45,7 @@ from ..domain.cedula_entities import (
     PoaFormIndicator,
     PoaFormIssue,
     PoaFormQuarter,
+    PoaSignatory,
 )
 from .cedula_dependencies import (
     get_add_form_activity_use_case,
@@ -95,6 +97,8 @@ def _form_response(
         objetivo_numero=item.objective_number,
         estrategia_clave=item.strategy_key,
         area_responsable_id=item.responsible_area_id,
+        tipo_estrategia=item.strategy_type,
+        firmantes=[{"nombre": s.name, "cargo": s.position} for s in item.signatories],
         alcance_efecto_socioeconomico=item.scope_and_socioeconomic_effect,
         creado_por=item.created_by,
         version=item.version,
@@ -195,7 +199,9 @@ async def _ensure_access(repository, item: PoaForm, current_user, areas) -> None
         raise ForbiddenError("La cédula POA no tiene actividades asignadas al área del usuario.")
 
 
-async def _detail_response(repository, detail: PoaFormDetail) -> CedulaPoaDetalleRespuesta:
+async def _detail_response(
+    repository, detail: PoaFormDetail, exercises
+) -> CedulaPoaDetalleRespuesta:
     objectives = {item.number: item for item in await repository.list_objectives()}
     strategy = await repository.get_strategy(detail.form.strategy_key)
     indicator_catalogs = {
@@ -208,8 +214,14 @@ async def _detail_response(repository, detail: PoaFormDetail) -> CedulaPoaDetall
     }
     activities_by_id = {item.id: item for item in detail.activities}
     form_data = _form_response(detail.form, detail.quarters).model_dump()
+    exercise = await exercises.get_exercise(detail.form.exercise_id)
     return CedulaPoaDetalleRespuesta(
         **form_data,
+        anio=exercise.year,
+        titulo=f"PROGRAMA OPERATIVO ANUAL {exercise.year}",
+        institucion="UNIVERSIDAD POLITÉCNICA DE CHIAPAS",
+        formato='FORMATO 01 "DESARROLLO DE PROCESOS"',
+        estrategia_numero=int(detail.form.strategy_key.split(".")[-1]),
         objetivo_denominacion=objectives[detail.form.objective_number].denomination,
         estrategia_denominacion=strategy.denomination,
         indicadores=[
@@ -228,6 +240,11 @@ async def _detail_response(repository, detail: PoaFormDetail) -> CedulaPoaDetall
             for item in detail.follow_ups
         ],
     )
+
+
+@router.get("/catalogos/tipos-estrategia", response_model=list[str])
+async def list_strategy_types(_user=Depends(get_current_user)):
+    return list(STRATEGY_TYPES)
 
 
 @router.get(
@@ -340,6 +357,10 @@ async def create_form(
             strategy_key=body.estrategia_clave,
             responsible_area_id=body.area_responsable_id,
             scope_and_socioeconomic_effect=body.alcance_efecto_socioeconomico,
+            strategy_type=body.tipo_estrategia,
+            signatories=tuple(
+                PoaSignatory(name=s.nombre, position=s.cargo) for s in body.firmantes
+            ),
             quarters=tuple(
                 PoaQuarterRangeInput(
                     quarter=item.numero,
@@ -439,7 +460,9 @@ async def get_form_detail(
         current_user,
         request.app.state.area_repository,
     )
-    return await _detail_response(request.app.state.poa_form_repository, detail)
+    return await _detail_response(
+        request.app.state.poa_form_repository, detail, request.app.state.poa_repository
+    )
 
 
 @router.patch(
@@ -460,6 +483,12 @@ async def update_form(
             strategy_key=body.estrategia_clave,
             responsible_area_id=body.area_responsable_id,
             scope_and_socioeconomic_effect=body.alcance_efecto_socioeconomico,
+            strategy_type=body.tipo_estrategia,
+            signatories=(
+                tuple(PoaSignatory(name=s.nombre, position=s.cargo) for s in body.firmantes)
+                if body.firmantes is not None
+                else None
+            ),
             actor=actor_from_user(current_user),
         )
     )

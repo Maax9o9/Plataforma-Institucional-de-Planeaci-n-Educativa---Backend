@@ -2,12 +2,19 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: planeacion-postgres
+    restart: unless-stopped
+    stop_grace_period: 60s
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       POSTGRES_DB: planeacion
       POSTGRES_USER: planeacion
       POSTGRES_PASSWORD: planeacion_dev
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - planeacion_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -15,6 +22,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 30s
 
 volumes:
   planeacion_postgres_data:

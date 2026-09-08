@@ -1,7 +1,16 @@
+x-logging: &default-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: planeacion-postgres
+    restart: unless-stopped
+    stop_grace_period: 60s
+    logging: *default-logging
     environment:
       POSTGRES_DB: planeacion
       POSTGRES_USER: planeacion
@@ -13,6 +22,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 30s
 
   api:
     build:
@@ -21,6 +31,11 @@ services:
     env_file:
       - .env
     restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    logging: *default-logging
+    environment:
+      UPLOAD_DIRECTORY: /app/var/uploads
     expose:
       - "8000"
     volumes:
@@ -33,7 +48,7 @@ services:
         - CMD
         - python
         - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"
       interval: 10s
       timeout: 5s
       retries: 12
@@ -42,6 +57,12 @@ services:
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/nginx-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     depends_on:
       api:
         condition: service_healthy
@@ -49,8 +70,18 @@ services:
       - "${HTTP_PORT:-80}:80"
       - "443:443"
     volumes:
-      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - type: bind
+        source: ./deploy/nginx/nginx.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /etc/letsencrypt
+        target: /etc/letsencrypt
+        read_only: true
+        bind:
+          create_host_path: false
 
 volumes:
   planeacion_postgres_data:

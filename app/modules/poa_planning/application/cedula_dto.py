@@ -6,6 +6,8 @@ from decimal import Decimal
 
 from app.shared.application.actor import ActorContext
 
+from ..domain.cedula_entities import PoaSignatory
+
 
 @dataclass(frozen=True)
 class PoaQuarterRangeInput:
@@ -22,6 +24,8 @@ class CreatePoaFormCommand:
     scope_and_socioeconomic_effect: str | None
     quarters: tuple[PoaQuarterRangeInput, ...]
     actor: ActorContext
+    strategy_type: str | None = None
+    signatories: tuple[PoaSignatory, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -31,6 +35,8 @@ class UpdatePoaFormCommand:
     responsible_area_id: int | None
     scope_and_socioeconomic_effect: str | None
     actor: ActorContext
+    strategy_type: str | None = None
+    signatories: tuple[PoaSignatory, ...] | None = None
 
 
 @dataclass(frozen=True)

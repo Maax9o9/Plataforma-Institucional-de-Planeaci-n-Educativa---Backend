@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, Enum, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.shared.infrastructure.db.base import Base
@@ -16,21 +16,8 @@ class NotificationModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     usuario_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    tipo: Mapped[str] = mapped_column(
-        Enum(
-            "apertura_periodo",
-            "validacion",
-            "rechazo",
-            "recordatorio_5d",
-            "recordatorio_3d",
-            "recordatorio_2d",
-            "recordatorio_1d",
-            name="tipo_notificacion",
-            native_enum=True,
-            create_type=False,
-        ),
-        nullable=False,
-    )
+    tipo: Mapped[str] = mapped_column(String(60), nullable=False)
+    correo_reservado_hasta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     entidad: Mapped[str | None] = mapped_column(String(60))
     entidad_id: Mapped[int | None] = mapped_column(Integer)
     mensaje: Mapped[str] = mapped_column(Text, nullable=False)

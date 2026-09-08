@@ -68,6 +68,11 @@ async def test_multiple_children_area_permissions_and_snapshots(backend_client):
             "ejercicio_id": exercise.json()["id"],
             "estrategia_clave": "6.1",
             "area_responsable_id": area_id,
+            "tipo_estrategia": "Vinculación",
+            "firmantes": [
+                {"nombre": "Titular Rectoría", "cargo": "Rectoría"},
+                {"nombre": "Titular Secretaría", "cargo": "Secretaría Académica"},
+            ],
             "cuatrimestres": [
                 {"numero": 1, "fecha_inicio": "2197-01-01", "fecha_fin": "2197-04-30"},
                 {"numero": 2, "fecha_inicio": "2197-05-01", "fecha_fin": "2197-08-31"},
@@ -196,6 +201,10 @@ async def test_multiple_children_area_permissions_and_snapshots(backend_client):
     )
     assert issue.status_code == 201, issue.text
     snapshot = issue.json()["snapshot"]
+    assert snapshot["encabezado"]["anio"] == 2197
+    assert snapshot["encabezado"]["tipo_estrategia"] == "Vinculación"
+    assert len(snapshot["bloque_firmas"]) == 2
+    assert snapshot["seccion_1_estrategia"]["area_responsable_nombre"] == f"Área ejecutora {suffix}"
     assert len(snapshot["seccion_2_indicadores"]) == 2
     assert len(snapshot["seccion_4_calendarizacion_y_seguimiento"]) == 2
 
@@ -255,6 +264,28 @@ async def test_multiple_children_area_permissions_and_snapshots(backend_client):
     reassigned = await client.patch(
         f"/api/v1/usuarios/{capturer.id}", headers=headers, json={"area_id": new_area.json()["id"]}
     )
+    duplicate_target = await client.post(
+        "/api/v1/poa/cedulas",
+        headers=headers,
+        json={
+            "ejercicio_id": exercise.json()["id"],
+            "estrategia_clave": "6.1",
+            "area_responsable_id": new_area.json()["id"],
+            "cuatrimestres": [
+                {"numero": 1, "fecha_inicio": "2197-01-01", "fecha_fin": "2197-04-30"},
+                {"numero": 2, "fecha_inicio": "2197-05-01", "fecha_fin": "2197-08-31"},
+                {"numero": 3, "fecha_inicio": "2197-09-01", "fecha_fin": "2197-12-31"},
+            ],
+        },
+    )
+    assert duplicate_target.status_code == 201, duplicate_target.text
+    conflict = await client.patch(
+        form_url, headers=headers, json={"area_responsable_id": new_area.json()["id"]}
+    )
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["details"]["reason"] == "POA_FORM_DUPLICATE"
+    preserved = await client.get(form_url, headers=headers)
+    assert preserved.json()["area_responsable_id"] == area_id
     assert reassigned.status_code == 200, reassigned.text
     scoped_report = await client.get(
         f"/api/v1/poa/reportes/por-area?area_id={area_id}", headers=capturer_headers
@@ -460,6 +491,11 @@ async def test_poa_form_catalogs_quarters_and_immutable_issues(client, app, monk
             "estrategia_clave": "6.1",
             "area_responsable_id": area_id,
             "alcance_efecto_socioeconomico": "Comunidad universitaria",
+            "tipo_estrategia": "Vinculación",
+            "firmantes": [
+                {"nombre": "Titular Rectoría", "cargo": "Rectoría"},
+                {"nombre": "Titular Secretaría", "cargo": "Secretaría Académica"},
+            ],
             "cuatrimestres": [
                 {
                     "numero": 1,
@@ -570,7 +606,7 @@ async def test_poa_form_catalogs_quarters_and_immutable_issues(client, app, monk
     await _open_poa_period(client, headers, q1_period_id)
     early_total = await client.patch(
         f"/api/v1/poa/cedulas/indicadores/{indicator_id}/total-alcanzado",
-        json={"periodo_id": q1_period_id, "total_alcanzado": 35},
+        json={"periodo_id": q1_period_id, "total_alcanzado": 35, "porcentaje_alcanzado": 35},
         headers=headers,
     )
     assert early_total.status_code == 422, early_total.text
@@ -676,9 +712,39 @@ async def test_poa_form_catalogs_quarters_and_immutable_issues(client, app, monk
 
     q3_period_id = periods[3]
     await _open_poa_period(client, headers, q3_period_id)
+    total_url = f"/api/v1/poa/cedulas/indicadores/{indicator_id}/total-alcanzado"
+    total_body = {"periodo_id": q3_period_id, "total_alcanzado": 120, "porcentaje_alcanzado": 37}
+    # Abrir C3 anticipadamente no permite saltar el calendario, ni siquiera al administrador.
+    early = await client.patch(total_url, headers=headers, json=total_body)
+    assert early.status_code == 422, early.text
+    assert early.json()["details"]["reason"] == "POA_TOTAL_OUTSIDE_WINDOW"
+    assert early.json()["details"]["fecha_inicio"] == "2036-09-01"
+    for day, expected in (
+        (date(2036, 8, 31), 422),
+        (date(2036, 9, 1), 200),
+        (date(2036, 12, 31), 200),
+        (date(2037, 1, 1), 422),
+    ):
+        monkeypatch.setattr(
+            "app.modules.poa_planning.application.use_cases.manage_cedula._today", lambda: day
+        )
+        result = await client.patch(total_url, headers=planning_headers, json=total_body)
+        assert result.status_code == expected, result.text
+        if expected == 200:
+            assert Decimal(result.json()["porcentaje_alcanzado"]) == Decimal(37)
+    monkeypatch.setattr(
+        "app.modules.poa_planning.application.use_cases.manage_cedula._today",
+        lambda: date(2036, 9, 1),
+    )
+    denied_total = await client.patch(total_url, headers=capturer_headers, json=total_body)
+    assert denied_total.status_code == 403, denied_total.text
+    missing_percentage = await client.patch(
+        total_url, headers=headers, json={"periodo_id": q3_period_id, "total_alcanzado": 120}
+    )
+    assert missing_percentage.status_code == 422
     total = await client.patch(
         f"/api/v1/poa/cedulas/indicadores/{indicator_id}/total-alcanzado",
-        json={"periodo_id": q3_period_id, "total_alcanzado": 120},
+        json={"periodo_id": q3_period_id, "total_alcanzado": 120, "porcentaje_alcanzado": 120},
         headers=headers,
     )
     assert total.status_code == 200, total.text

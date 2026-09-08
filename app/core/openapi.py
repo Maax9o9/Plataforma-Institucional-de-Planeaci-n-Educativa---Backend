@@ -63,6 +63,22 @@ def custom_openapi(app: FastAPI):
             if not isinstance(operation, dict) or "responses" not in operation:
                 continue
             responses = operation["responses"]
+            for status, code, message in (
+                ("503", "SERVICE_UNAVAILABLE", "Servicio de datos temporalmente no disponible."),
+                ("409", "CONFLICT", "Conflicto con un registro o versión existente."),
+            ):
+                responses.setdefault(
+                    status,
+                    {
+                        "description": message,
+                        "content": {
+                            "application/json": {
+                                "schema": error_schema,
+                                "example": {**error_example, "code": code, "message": message},
+                            }
+                        },
+                    },
+                )
             if "422" in responses:
                 responses["422"] = {
                     "description": "Solicitud o regla de negocio invalida.",
@@ -95,8 +111,8 @@ def custom_openapi(app: FastAPI):
         operation = path_item.get("get")
         if not operation:
             continue
-        content = operation.setdefault("responses", {}).setdefault("200", {}).setdefault(
-            "content", {}
+        content = (
+            operation.setdefault("responses", {}).setdefault("200", {}).setdefault("content", {})
         )
         content.setdefault(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

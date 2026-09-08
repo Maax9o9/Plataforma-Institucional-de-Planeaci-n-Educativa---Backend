@@ -14,7 +14,10 @@ from app.modules.notifications.infrastructure.repository import InMemoryNotifica
 from app.modules.periods.domain.entities import Period
 from app.modules.periods.domain.value_objects import Periodicity, PeriodType
 from app.modules.periods.infrastructure.repository import InMemoryPeriodRepository
-from app.modules.poa_planning.application.period_recipients import PoaPeriodRecipients
+from app.modules.poa_planning.application.period_recipients import (
+    PoaPendingCapture,
+    PoaPeriodRecipients,
+)
 
 
 @pytest.mark.asyncio
@@ -55,11 +58,13 @@ async def test_reminders_target_the_correct_indicator_and_poa_responsibles():
         )
     )
     recipients = AsyncMock()
-    recipients.for_period.return_value = {202}
+    recipients.pending_for_period.return_value = [
+        PoaPendingCapture("poa_form_activity", 1, frozenset({202}), "Pendiente")
+    ]
     use_case = GenerateReminders(periods, indicators, notifications, recipients)
     assert await use_case.execute(today) == 2
     assert await use_case.execute(today) == 2
-    recipients.for_period.assert_awaited_with(poa_period.id)
+    recipients.pending_for_period.assert_awaited_with(poa_period.id)
     assert len(await notifications.list_for_user(101)) == 1
     assert len(await notifications.list_for_user(202)) == 1
 

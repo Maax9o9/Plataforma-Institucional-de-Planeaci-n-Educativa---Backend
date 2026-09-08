@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from itertools import count
 
 from ..domain.entities import Notification
@@ -12,6 +12,7 @@ class InMemoryNotificationRepository:
     def __init__(self) -> None:
         self._items: dict[int, Notification] = {}
         self._next_id = count(1)
+        self._email_leases: dict[int, datetime] = {}
 
     async def create(self, notification: Notification) -> Notification:
         for item in self._items.values():
@@ -41,3 +42,25 @@ class InMemoryNotificationRepository:
     async def mark_email_sent(self, notification_id: int) -> None:
         if notification_id in self._items:
             self._items[notification_id].sent_by_email = True
+        self._email_leases.pop(notification_id, None)
+
+    async def pending_email(self, limit: int = 100, after_id: int = 0) -> list[Notification]:
+        now = datetime.now(UTC)
+        return [
+            item
+            for item in self._items.values()
+            if item.id > after_id
+            and not item.sent_by_email
+            and self._email_leases.get(item.id, now) <= now
+        ][:limit]
+
+    async def claim_email(self, notification_id: int) -> bool:
+        now = datetime.now(UTC)
+        item = self._items.get(notification_id)
+        if item is None or item.sent_by_email or self._email_leases.get(item.id, now) > now:
+            return False
+        self._email_leases[item.id] = now + timedelta(minutes=5)
+        return True
+
+    async def release_email(self, notification_id: int) -> None:
+        self._email_leases.pop(notification_id, None)

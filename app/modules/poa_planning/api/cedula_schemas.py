@@ -4,11 +4,23 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.types import NonNegativeInstitutionalDecimal, PercentageDecimal
+
+
+class PoaRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+StrategyType = Literal["Eficiencia", "Eficacia", "Pertinencia", "Vinculación", "Equidad de Género"]
+
+
+class FirmantePoaSchema(PoaRequest):
+    nombre: str = Field(min_length=1, max_length=200)
+    cargo: str = Field(min_length=1, max_length=200)
 
 
 class ObjetivoPoaCatalogoRespuesta(BaseModel):
@@ -41,7 +53,7 @@ class ActividadPoaCatalogoRespuesta(BaseModel):
     activo: bool
 
 
-class CuatrimestreCedulaRequest(BaseModel):
+class CuatrimestreCedulaRequest(PoaRequest):
     numero: int = Field(ge=1, le=3)
     fecha_inicio: date
     fecha_fin: date
@@ -51,12 +63,21 @@ class CuatrimestreCedulaRespuesta(CuatrimestreCedulaRequest):
     periodo_id: int
 
 
-class CrearCedulaPoaRequest(BaseModel):
+class CrearCedulaPoaRequest(PoaRequest):
     ejercicio_id: int
     estrategia_clave: str = Field(min_length=3, max_length=20, examples=["6.1"])
     area_responsable_id: int
+    tipo_estrategia: StrategyType | None = None
+    firmantes: list[FirmantePoaSchema] = Field(default_factory=list, max_length=2)
     alcance_efecto_socioeconomico: str | None = None
     cuatrimestres: list[CuatrimestreCedulaRequest] = Field(min_length=3, max_length=3)
+
+    @field_validator("firmantes")
+    @classmethod
+    def validate_signatory_count(cls, value):
+        if value is not None and len(value) not in {0, 2}:
+            raise ValueError("Indique exactamente dos firmantes o deje la lista vacía.")
+        return value
 
 
 class CedulaPoaRespuesta(BaseModel):
@@ -65,6 +86,8 @@ class CedulaPoaRespuesta(BaseModel):
     objetivo_numero: int
     estrategia_clave: str
     area_responsable_id: int
+    tipo_estrategia: str | None
+    firmantes: list[FirmantePoaSchema]
     alcance_efecto_socioeconomico: str | None
     creado_por: int
     version: int
@@ -73,7 +96,9 @@ class CedulaPoaRespuesta(BaseModel):
     cuatrimestres: list[CuatrimestreCedulaRespuesta]
 
 
-class ActualizarCedulaPoaRequest(BaseModel):
+class ActualizarCedulaPoaRequest(PoaRequest):
+    tipo_estrategia: StrategyType | None = None
+    firmantes: list[FirmantePoaSchema] | None = Field(default=None, max_length=2)
     estrategia_clave: str | None = Field(default=None, min_length=3, max_length=20)
     area_responsable_id: int | None = None
     alcance_efecto_socioeconomico: str | None = None
@@ -86,13 +111,22 @@ class ActualizarCedulaPoaRequest(BaseModel):
                 self.estrategia_clave,
                 self.area_responsable_id,
                 self.alcance_efecto_socioeconomico,
+                self.tipo_estrategia,
+                self.firmantes,
             )
         ):
             raise ValueError("Debe indicar al menos un campo para actualizar.")
         return self
 
+    @field_validator("firmantes")
+    @classmethod
+    def validate_signatory_count(cls, value):
+        if value is not None and len(value) not in {0, 2}:
+            raise ValueError("Indique exactamente dos firmantes o deje la lista vacía.")
+        return value
 
-class AgregarIndicadorCedulaRequest(BaseModel):
+
+class AgregarIndicadorCedulaRequest(PoaRequest):
     indicador_clave: str = Field(min_length=2, max_length=30)
     meta_institucional: NonNegativeInstitutionalDecimal | None = None
     linea_base_anio: int | None = Field(default=None, ge=2000, le=2200)
@@ -119,7 +153,7 @@ class IndicadorCedulaRespuesta(BaseModel):
     porcentaje_alcanzado: Decimal | None
 
 
-class ActualizarIndicadorCedulaRequest(BaseModel):
+class ActualizarIndicadorCedulaRequest(PoaRequest):
     meta_institucional: NonNegativeInstitutionalDecimal | None = None
     linea_base_anio: int | None = Field(default=None, ge=2000, le=2200)
     linea_base_valor: NonNegativeInstitutionalDecimal | None = None
@@ -144,13 +178,13 @@ class ActualizarIndicadorCedulaRequest(BaseModel):
         return self
 
 
-class CapturarTotalIndicadorRequest(BaseModel):
+class CapturarTotalIndicadorRequest(PoaRequest):
     periodo_id: int
     total_alcanzado: NonNegativeInstitutionalDecimal
-    porcentaje_alcanzado: NonNegativeInstitutionalDecimal | None = None
+    porcentaje_alcanzado: NonNegativeInstitutionalDecimal
 
 
-class AgregarActividadCedulaRequest(BaseModel):
+class AgregarActividadCedulaRequest(PoaRequest):
     actividad_clave: str = Field(min_length=5, max_length=30)
     unidad_medida: str = Field(min_length=1, max_length=100)
     meta_anual: NonNegativeInstitutionalDecimal
@@ -169,7 +203,7 @@ class ActividadCedulaRespuesta(BaseModel):
     observaciones: str | None
 
 
-class ActualizarActividadCedulaRequest(BaseModel):
+class ActualizarActividadCedulaRequest(PoaRequest):
     unidad_medida: str | None = Field(default=None, min_length=1, max_length=100)
     meta_anual: NonNegativeInstitutionalDecimal | None = None
     area_ejecutora_id: int | None = None
@@ -190,7 +224,7 @@ class ActualizarActividadCedulaRequest(BaseModel):
         return self
 
 
-class RegistrarSeguimientoCedulaRequest(BaseModel):
+class RegistrarSeguimientoCedulaRequest(PoaRequest):
     periodo_id: int
     programado: NonNegativeInstitutionalDecimal
     alcanzado: NonNegativeInstitutionalDecimal | None = None
@@ -214,11 +248,16 @@ class SeguimientoCedulaRespuesta(BaseModel):
     alcance: str | None
 
 
-class ActualizarJustificacionSeguimientoRequest(BaseModel):
+class ActualizarJustificacionSeguimientoRequest(PoaRequest):
     justificacion_desviacion: str = Field(min_length=1)
 
 
 class CedulaPoaDetalleRespuesta(CedulaPoaRespuesta):
+    anio: int
+    titulo: str
+    institucion: str
+    formato: str
+    estrategia_numero: int
     objetivo_denominacion: str
     estrategia_denominacion: str
     indicadores: list[IndicadorCedulaRespuesta]
@@ -226,7 +265,7 @@ class CedulaPoaDetalleRespuesta(CedulaPoaRespuesta):
     seguimientos: list[SeguimientoCedulaRespuesta]
 
 
-class EmitirCedulaPoaRequest(BaseModel):
+class EmitirCedulaPoaRequest(PoaRequest):
     cuatrimestre: int = Field(ge=1, le=3)
     periodo_id: int
 

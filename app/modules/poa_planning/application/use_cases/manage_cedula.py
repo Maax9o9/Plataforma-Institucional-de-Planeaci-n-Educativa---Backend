@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
 from app.shared.application.actor import ActorContext
 from app.shared.application.event_bus import EventBus
+from app.shared.domain.calendar import institutional_today
 from app.shared.domain.exceptions import (
+    ConflictError,
     ForbiddenError,
     InvalidStateError,
     ResourceNotFoundError,
@@ -17,7 +19,7 @@ from app.shared.domain.exceptions import (
 )
 
 from ....evidence_management.domain.ports.repositories import EvidenceRepository
-from ....evidence_management.domain.value_objects import EvidenceType, FlowEntity
+from ....evidence_management.domain.value_objects import FlowEntity
 from ....institutional_catalogs.domain.ports.repositories import AreaRepository
 from ....periods.domain.entities import Period
 from ....periods.domain.ports.repository import PeriodRepository
@@ -49,10 +51,11 @@ from ..cedula_dto import (
     UpdatePoaFormCommand,
     UpdatePoaFormIndicatorCommand,
 )
+from ..completeness import emission_errors
 
 
 def _today() -> date:
-    return date.today()
+    return institutional_today()
 
 
 def _ensure_follow_up_access(
@@ -61,7 +64,10 @@ def _ensure_follow_up_access(
     actor: ActorContext,
 ) -> None:
     if not can_capture_activity(actor, activity.executing_area_id):
-        raise ForbiddenError("La actividad POA no está asignada al área del usuario.")
+        raise ForbiddenError(
+            "La actividad POA no está asignada al área del usuario.",
+            details={"reason": "POA_ACTIVITY_NOT_ASSIGNED"},
+        )
 
 
 def _can_override_structure_lock(actor: ActorContext) -> bool:
@@ -81,7 +87,14 @@ async def _ensure_structure_editable(
         raise InvalidStateError("La cédula no tiene configurado el primer cuatrimestre.")
     if _today() > first_quarter.ends_on:
         raise InvalidStateError(
-            "La estructura de la cédula quedó cerrada al finalizar el primer cuatrimestre."
+            "La estructura de la cédula quedó cerrada al finalizar el primer cuatrimestre.",
+            details={
+                "reason": "POA_STRUCTURE_LOCKED",
+                "cedula_id": form.id,
+                "fecha_fin": first_quarter.ends_on.isoformat(),
+                "fecha_actual": _today().isoformat(),
+                "zona_horaria": "America/Mexico_City",
+            },
         )
 
 
@@ -104,12 +117,28 @@ async def _validate_period(
     schedules = await repository.list_form_quarters(form.id)
     schedule = next((item for item in schedules if item.quarter == quarter), None)
     if schedule is None or schedule.period_id != period_id:
-        raise ValidationError("El periodo no corresponde al cuatrimestre de la cédula.")
+        raise ValidationError(
+            "Seleccione el periodo que corresponde al cuatrimestre de esta cédula.",
+            details={
+                "reason": "POA_PERIOD_MISMATCH",
+                "field": "periodo_id",
+                "cuatrimestre": quarter,
+                "periodo_esperado_id": schedule.period_id if schedule else None,
+            },
+        )
     period = await periods.get_by_id(period_id)
     if period is None:
         raise ResourceNotFoundError("El periodo POA no existe.")
     if period.status is not PeriodStatus.OPEN:
-        raise InvalidStateError("El periodo POA debe estar abierto.")
+        raise InvalidStateError(
+            "El periodo POA no está abierto. Solicite su apertura a Planeación.",
+            details={
+                "reason": "POA_PERIOD_NOT_OPEN",
+                "field": "periodo_id",
+                "periodo_id": period.id,
+                "estado": period.status.value,
+            },
+        )
     if period.period_type is not PeriodType.POA:
         raise ValidationError("La cédula requiere un periodo de tipo POA.")
     exercise = await exercises.get_exercise(form.exercise_id)
@@ -141,14 +170,6 @@ async def _publish(
     )
 
 
-async def _has_file_evidence(
-    evidences: EvidenceRepository,
-    follow_up_id: int,
-) -> bool:
-    items = await evidences.list_for(FlowEntity.POA_FORM_FOLLOW_UP, follow_up_id)
-    return any(item.evidence_type is EvidenceType.FILE for item in items)
-
-
 class CreatePoaForm:
     def __init__(
         self,
@@ -173,16 +194,42 @@ class CreatePoaForm:
             raise ResourceNotFoundError("El ejercicio POA no existe.")
         quarters = sorted(command.quarters, key=lambda item: item.quarter)
         if {item.quarter for item in quarters} != {1, 2, 3} or len(quarters) != 3:
-            raise ValidationError("Debe indicar exactamente los tres cuatrimestres.")
+            raise ValidationError(
+                "Debe indicar exactamente los tres cuatrimestres.",
+                details={"reason": "POA_INVALID_QUARTERS", "field": "cuatrimestres"},
+            )
         previous_end = None
         for quarter in quarters:
             four_month_period_name(quarter.quarter)
             if quarter.starts_on.year != exercise.year or quarter.ends_on.year != exercise.year:
-                raise ValidationError("Todos los cuatrimestres deben pertenecer al ejercicio POA.")
+                raise ValidationError(
+                    "Todos los cuatrimestres deben pertenecer al ejercicio POA.",
+                    details={
+                        "reason": "POA_QUARTER_YEAR_MISMATCH",
+                        "field": "cuatrimestres",
+                        "cuatrimestre": quarter.quarter,
+                        "anio_esperado": exercise.year,
+                    },
+                )
             if quarter.ends_on <= quarter.starts_on:
-                raise ValidationError("La fecha final debe ser posterior a la fecha inicial.")
+                raise ValidationError(
+                    "La fecha final debe ser posterior a la fecha inicial.",
+                    details={
+                        "reason": "POA_QUARTER_INVALID_RANGE",
+                        "field": "fecha_fin",
+                        "cuatrimestre": quarter.quarter,
+                    },
+                )
             if previous_end is not None and quarter.starts_on <= previous_end:
-                raise ValidationError("Los cuatrimestres deben estar ordenados y no traslaparse.")
+                raise ValidationError(
+                    "Los cuatrimestres deben estar ordenados y no traslaparse.",
+                    details={
+                        "reason": "POA_QUARTERS_OVERLAP",
+                        "field": "fecha_inicio",
+                        "cuatrimestre": quarter.quarter,
+                        "fin_anterior": previous_end.isoformat(),
+                    },
+                )
             previous_end = quarter.ends_on
         if not _can_override_structure_lock(command.actor) and _today() > quarters[0].ends_on:
             raise InvalidStateError("No se puede crear una cédula después del primer cuatrimestre.")
@@ -199,6 +246,8 @@ class CreatePoaForm:
             responsible_area_id=command.responsible_area_id,
             created_by=command.actor.id,
             scope_and_socioeconomic_effect=command.scope_and_socioeconomic_effect,
+            strategy_type=command.strategy_type,
+            signatories=command.signatories,
         )
         async with self.unit_of_work():
             await self.repository.add_form(item)
@@ -287,12 +336,27 @@ class UpdatePoaForm:
             area = await self.areas.get_by_id(command.responsible_area_id)
             if area is None or not area.is_active:
                 raise ValidationError("El área responsable no existe o está desactivada.")
+        # Editar una copia evita alterar el repositorio en memoria si falla una validación.
+        form = replace(form)
         form.update_details(
+            strategy_type=command.strategy_type,
+            signatories=command.signatories,
             objective_number=objective_number,
             strategy_key=command.strategy_key,
             responsible_area_id=command.responsible_area_id,
             scope_and_socioeconomic_effect=command.scope_and_socioeconomic_effect,
         )
+        duplicates = await self.repository.list_forms(exercise_id=form.exercise_id)
+        if any(
+            other.id != form.id
+            and other.strategy_key == form.strategy_key
+            and other.responsible_area_id == form.responsible_area_id
+            for other in duplicates
+        ):
+            raise ConflictError(
+                "Ya existe una cédula para la estrategia, área y ejercicio.",
+                details={"reason": "POA_FORM_DUPLICATE", "field": "area_responsable_id"},
+            )
         await self.repository.update_form(form)
         await _publish(
             self.event_bus,
@@ -413,6 +477,21 @@ class CapturePoaIndicatorTotal:
             period_id=command.period_id,
             quarter=3,
         )
+        quarters = await self.repository.list_form_quarters(form.id)
+        last_quarter = next(item for item in quarters if item.quarter == 3)
+        if not last_quarter.starts_on <= _today() <= last_quarter.ends_on:
+            raise InvalidStateError(
+                "El total alcanzado sólo se captura durante las fechas del tercer cuatrimestre.",
+                details={
+                    "reason": "POA_TOTAL_OUTSIDE_WINDOW",
+                    "field": "total_alcanzado",
+                    "cuatrimestre": 3,
+                    "fecha_inicio": last_quarter.starts_on.isoformat(),
+                    "fecha_fin": last_quarter.ends_on.isoformat(),
+                    "fecha_actual": _today().isoformat(),
+                    "zona_horaria": "America/Mexico_City",
+                },
+            )
         item.capture_total(
             total_achieved=command.total_achieved,
             achieved_percentage=command.achieved_percentage,
@@ -435,10 +514,12 @@ class AddPoaFormActivity:
         repository: PoaFormRepository,
         areas: AreaRepository,
         event_bus: EventBus,
+        unit_of_work,
     ) -> None:
         self.repository = repository
         self.areas = areas
         self.event_bus = event_bus
+        self.unit_of_work = unit_of_work
 
     async def execute(self, command: AddPoaFormActivityCommand) -> PoaFormActivity:
         form = await _require_form(self.repository, command.form_id)
@@ -461,15 +542,20 @@ class AddPoaFormActivity:
             executing_area_id=command.executing_area_id,
             observations=command.observations,
         )
-        await self.repository.add_form_activity(item)
-        await _publish(
-            self.event_bus,
-            actor_id=command.actor.id,
-            aggregate_type="poa_form_activity",
-            aggregate_id=item.id,
-            action="created",
-            data={"form_id": form.id, "activity_key": item.activity_key},
-        )
+        async with self.unit_of_work():
+            await self.repository.add_form_activity(item)
+            await _publish(
+                self.event_bus,
+                actor_id=command.actor.id,
+                aggregate_type="poa_form_activity",
+                aggregate_id=item.id,
+                action="created",
+                data={
+                    "form_id": form.id,
+                    "activity_key": item.activity_key,
+                    "assigned_area_id": item.executing_area_id,
+                },
+            )
         return item
 
 
@@ -479,10 +565,12 @@ class UpdatePoaFormActivity:
         repository: PoaFormRepository,
         areas: AreaRepository,
         event_bus: EventBus,
+        unit_of_work,
     ) -> None:
         self.repository = repository
         self.areas = areas
         self.event_bus = event_bus
+        self.unit_of_work = unit_of_work
 
     async def execute(self, command: UpdatePoaFormActivityCommand) -> PoaFormActivity:
         item = await self.repository.get_form_activity(command.form_activity_id)
@@ -495,21 +583,31 @@ class UpdatePoaFormActivity:
             area = await self.areas.get_by_id(command.executing_area_id)
             if area is None or not area.is_active:
                 raise ValidationError("El área ejecutora no existe o está desactivada.")
+        previous_area_id = item.executing_area_id
         item.update_details(
             unit=command.unit,
             annual_goal=command.annual_goal,
             executing_area_id=command.executing_area_id,
             observations=command.observations,
         )
-        await self.repository.update_form_activity(item)
-        await _publish(
-            self.event_bus,
-            actor_id=command.actor.id,
-            aggregate_type="poa_form_activity",
-            aggregate_id=item.id,
-            action="updated",
-            data={"form_id": form.id},
-        )
+        async with self.unit_of_work():
+            await self.repository.update_form_activity(item)
+            await _publish(
+                self.event_bus,
+                actor_id=command.actor.id,
+                aggregate_type="poa_form_activity",
+                aggregate_id=item.id,
+                action="updated",
+                data={
+                    "form_id": form.id,
+                    "activity_key": item.activity_key,
+                    "assigned_area_id": (
+                        item.executing_area_id
+                        if previous_area_id != item.executing_area_id
+                        else None
+                    ),
+                },
+            )
         return item
 
 
@@ -607,7 +705,16 @@ async def _build_snapshot(
     evidences: EvidenceRepository,
     detail: PoaFormDetail,
     quarter: int,
+    year: int,
+    areas: AreaRepository,
 ) -> dict[str, Any]:
+    area_ids = {detail.form.responsible_area_id} | {
+        item.executing_area_id for item in detail.activities if item.executing_area_id is not None
+    }
+    area_names = {}
+    for area_id in area_ids:
+        area = await areas.get_by_id(area_id)
+        area_names[area_id] = area.name if area is not None else None
     objectives = {item.number: item for item in await repository.list_objectives()}
     objective = objectives[detail.form.objective_number]
     strategy = await repository.get_strategy(detail.form.strategy_key)
@@ -639,6 +746,15 @@ async def _build_snapshot(
     return _serialize(
         {
             "version_formato": "POA-2026",
+            "encabezado": {
+                "titulo": f"PROGRAMA OPERATIVO ANUAL {year}",
+                "anio": year,
+                "institucion": "UNIVERSIDAD POLITÉCNICA DE CHIAPAS",
+                "formato": 'FORMATO 01 "DESARROLLO DE PROCESOS"',
+                "estrategia_numero": int(detail.form.strategy_key.split(".")[-1]),
+                "tipo_estrategia": detail.form.strategy_type,
+            },
+            "bloque_firmas": [asdict(item) for item in detail.form.signatories],
             "cuatrimestre": quarter,
             "duracion_cuatrimestres": [asdict(item) for item in detail.quarters],
             "seccion_1_estrategia": {
@@ -646,12 +762,15 @@ async def _build_snapshot(
                 "objetivo": asdict(objective),
                 "estrategia": asdict(strategy),
                 "area_responsable_id": detail.form.responsible_area_id,
+                "area_responsable_nombre": area_names[detail.form.responsible_area_id],
                 "alcance_efecto_socioeconomico": (detail.form.scope_and_socioeconomic_effect),
             },
             "seccion_2_indicadores": [
                 {
                     **asdict(item),
                     "catalogo": asdict(indicator_catalogs[item.indicator_key]),
+                    "total_achieved": item.total_achieved if quarter == 3 else None,
+                    "achieved_percentage": item.achieved_percentage if quarter == 3 else None,
                 }
                 for item in detail.indicators
             ],
@@ -659,8 +778,8 @@ async def _build_snapshot(
                 {
                     "cedula_indicador_id": item.id,
                     "indicador_clave": item.indicator_key,
-                    "total_alcanzado": item.total_achieved,
-                    "porcentaje_alcanzado": item.achieved_percentage,
+                    "total_alcanzado": item.total_achieved if quarter == 3 else None,
+                    "porcentaje_alcanzado": item.achieved_percentage if quarter == 3 else None,
                 }
                 for item in detail.indicators
             ],
@@ -668,6 +787,7 @@ async def _build_snapshot(
                 {
                     **asdict(item),
                     "catalogo": asdict(activity_catalogs[item.activity_key]),
+                    "area_ejecutora_nombre": area_names.get(item.executing_area_id),
                     "seguimientos": follow_ups_by_activity.get(item.id, []),
                 }
                 for item in detail.activities
@@ -684,12 +804,14 @@ class IssuePoaForm:
         exercises: PoaRepository,
         event_bus: EventBus,
         evidences: EvidenceRepository,
+        areas: AreaRepository,
     ) -> None:
         self.repository = repository
         self.periods = periods
         self.exercises = exercises
         self.event_bus = event_bus
         self.evidences = evidences
+        self.areas = areas
 
     async def execute(self, command: IssuePoaFormCommand) -> PoaFormIssue:
         ensure_planning(command.actor)
@@ -705,53 +827,22 @@ class IssuePoaForm:
             period_id=command.period_id,
             quarter=command.quarter,
         )
-        if not detail.indicators:
-            raise ValidationError("La cédula debe incluir al menos un indicador.")
-        if not detail.activities:
-            raise ValidationError("La cédula debe incluir al menos una actividad.")
-        followed_activity_ids = {
-            item.form_activity_id for item in detail.follow_ups if item.quarter == command.quarter
-        }
-        missing = [item.id for item in detail.activities if item.id not in followed_activity_ids]
-        if missing:
+        pending = await emission_errors(detail, command.quarter, self.evidences)
+        if pending:
             raise ValidationError(
-                "Todas las actividades deben tener seguimiento del cuatrimestre.",
-                details={"actividad_ids": missing},
-            )
-        incomplete = [
-            item.form_activity_id
-            for item in detail.follow_ups
-            if item.quarter == command.quarter and item.achieved is None
-        ]
-        if incomplete:
-            raise ValidationError(
-                "Todos los seguimientos requieren el valor alcanzado para emitir.",
-                details={"actividad_ids": incomplete},
-            )
-        missing_progress_or_scope = [
-            item.form_activity_id
-            for item in detail.follow_ups
-            if item.quarter == command.quarter and (not item.progress or not item.scope)
-        ]
-        if missing_progress_or_scope:
-            raise ValidationError(
-                "Todos los seguimientos requieren progreso y alcance para emitir.",
-                details={"actividad_ids": missing_progress_or_scope},
-            )
-        missing_evidence = [
-            item.form_activity_id
-            for item in detail.follow_ups
-            if item.quarter == command.quarter
-            and not await _has_file_evidence(self.evidences, item.id)
-        ]
-        if missing_evidence:
-            raise ValidationError(
-                "Todos los seguimientos requieren al menos una evidencia para emitir.",
-                details={"actividad_ids": missing_evidence},
-            )
-        if command.quarter == 3 and any(item.total_achieved is None for item in detail.indicators):
-            raise ValidationError(
-                "Todos los indicadores requieren total alcanzado en el tercer cuatrimestre."
+                "La cédula está incompleta. Revise los campos indicados antes de emitir.",
+                details={
+                    "reason": "POA_FORM_INCOMPLETE",
+                    "cedula_id": form.id,
+                    "cuatrimestre": command.quarter,
+                    "errors": pending,
+                    "actividad_ids": sorted(
+                        {e["actividad_id"] for e in pending if "actividad_id" in e}
+                    ),
+                    "indicador_ids": sorted(
+                        {e["indicador_id"] for e in pending if "indicador_id" in e}
+                    ),
+                },
             )
         exercise = await self.exercises.get_exercise(form.exercise_id)
         if exercise is None:
@@ -766,6 +857,8 @@ class IssuePoaForm:
                 self.evidences,
                 detail,
                 command.quarter,
+                exercise.year,
+                self.areas,
             ),
             issued_by=command.actor.id,
         )

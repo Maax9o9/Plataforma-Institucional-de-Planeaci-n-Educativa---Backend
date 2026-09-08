@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import UTC, datetime
 
 from sqlalchemy import select, update
@@ -23,6 +24,7 @@ from ..domain.cedula_entities import (
     PoaFormQuarter,
     PoaIndicatorCatalog,
     PoaObjectiveCatalog,
+    PoaSignatory,
     PoaStrategyCatalog,
 )
 from .cedula_models import (
@@ -145,6 +147,8 @@ class SqlAlchemyPoaFormRepository:
                     estrategia_clave=item.strategy_key,
                     area_responsable_id=item.responsible_area_id,
                     alcance_efecto_socioeconomico=item.scope_and_socioeconomic_effect,
+                    tipo_estrategia=item.strategy_type,
+                    firmantes=[asdict(s) for s in item.signatories],
                     creado_por=item.created_by,
                     version=item.version,
                     creado_en=now,
@@ -168,23 +172,31 @@ class SqlAlchemyPoaFormRepository:
             return self._form(model) if model else None
 
     async def update_form(self, item: PoaForm) -> None:
-        async with session_scope(self.session_factory) as session:
-            result = await session.execute(
-                update(PoaFormModel)
-                .where(PoaFormModel.id == item.id, PoaFormModel.version == item.version)
-                .values(
-                    objetivo_numero=item.objective_number,
-                    estrategia_clave=item.strategy_key,
-                    area_responsable_id=item.responsible_area_id,
-                    alcance_efecto_socioeconomico=item.scope_and_socioeconomic_effect,
-                    version=item.version + 1,
-                    actualizado_en=item.updated_at,
+        try:
+            async with session_scope(self.session_factory) as session:
+                result = await session.execute(
+                    update(PoaFormModel)
+                    .where(PoaFormModel.id == item.id, PoaFormModel.version == item.version)
+                    .values(
+                        objetivo_numero=item.objective_number,
+                        estrategia_clave=item.strategy_key,
+                        area_responsable_id=item.responsible_area_id,
+                        alcance_efecto_socioeconomico=item.scope_and_socioeconomic_effect,
+                        tipo_estrategia=item.strategy_type,
+                        firmantes=[asdict(s) for s in item.signatories],
+                        version=item.version + 1,
+                        actualizado_en=item.updated_at,
+                    )
                 )
-            )
-            if result.rowcount != 1:
-                raise ConflictError("La cédula fue modificada por otra solicitud.")
-            await commit_or_flush(session)
-        item.version += 1
+                if result.rowcount != 1:
+                    raise ConflictError("La cédula fue modificada por otra solicitud.")
+                await commit_or_flush(session)
+            item.version += 1
+        except IntegrityError as exc:
+            raise ConflictError(
+                "Ya existe una cédula para la estrategia, área y ejercicio.",
+                details={"reason": "POA_FORM_DUPLICATE", "field": "area_responsable_id"},
+            ) from exc
 
     async def add_form_quarter(self, item: PoaFormQuarter) -> None:
         async with session_scope(self.session_factory) as session:
@@ -493,6 +505,8 @@ class SqlAlchemyPoaFormRepository:
             strategy_key=model.estrategia_clave,
             responsible_area_id=model.area_responsable_id,
             scope_and_socioeconomic_effect=model.alcance_efecto_socioeconomico,
+            strategy_type=model.tipo_estrategia,
+            signatories=tuple(PoaSignatory(**s) for s in model.firmantes),
             created_by=model.creado_por,
             version=model.version,
             created_at=model.creado_en,

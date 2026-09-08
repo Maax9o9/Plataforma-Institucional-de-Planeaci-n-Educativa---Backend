@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from html import escape
 
 from app.shared.application.event_bus import EventBus
 from app.shared.application.ports.email_sender import EmailSender
@@ -30,11 +31,30 @@ class NotificationService:
         self.email_sender = email_sender
         self.indicator_repository = indicator_repository
         self.poa_recipients = poa_recipients
+        self._delivery_tasks: set[asyncio.Task] = set()
 
     def register(self, event_bus: EventBus) -> None:
         event_bus.subscribe(DomainEvent, self.handle_event)
 
     async def handle_event(self, event: DomainEvent) -> None:
+        if event.aggregate_type == "poa_form_activity" and event.data.get("assigned_area_id"):
+            if self.poa_recipients is not None:
+                for user_id in await self.poa_recipients.for_assignment(
+                    event.data["assigned_area_id"]
+                ):
+                    await self.notify_user(
+                        user_id=user_id,
+                        notification_type="poa_actividad_asignada",
+                        message=(
+                            f"Se asignó a tu área la actividad {event.data.get('activity_key')} "
+                            f"de la cédula {event.data.get('form_id')}. "
+                            "Revisa sus fechas y captura el seguimiento con evidencia."
+                        ),
+                        entity="poa_form_activity",
+                        entity_id=event.aggregate_id,
+                        source_event_id=event.event_id,
+                    )
+            return
         event_name = event.__class__.__name__
         notification_type = self._type_for(event_name)
         recipients = await self._recipients_for(event)
@@ -71,10 +91,17 @@ class NotificationService:
             )
         )
         user = await self.user_repository.get_by_id(user_id)
-        if user is not None and user.notify_email and not notification.sent_by_email:
+        if (
+            user is not None
+            and user.is_active
+            and user.notify_email
+            and not notification.sent_by_email
+        ):
 
             async def send_after_commit(notification=notification, email=user.email.value):
-                asyncio.create_task(self._send_email(notification, email))
+                task = asyncio.create_task(self._send_email(notification, email))
+                self._delivery_tasks.add(task)
+                task.add_done_callback(self._delivery_tasks.discard)
 
             await run_after_commit(send_after_commit)
             await asyncio.sleep(0)
@@ -82,15 +109,41 @@ class NotificationService:
 
     async def _send_email(self, notification: Notification, recipient: str) -> None:
         try:
-            await self.email_sender.send(
-                recipient,
-                f"Plataforma de Planeacion: {notification.notification_type}",
-                f"<p>{notification.message}</p>",
-                notification.message,
-            )
+            if not await self.repository.claim_email(notification.id):
+                return
+            async with asyncio.timeout(60):
+                await self.email_sender.send(
+                    recipient,
+                    f"Plataforma de Planeacion: {notification.notification_type}",
+                    f"<p>{escape(notification.message)}</p>",
+                    notification.message,
+                )
             await self.repository.mark_email_sent(notification.id)
         except Exception:
             logger.exception("No se pudo entregar la notificacion por correo")
+            # La reserva vence incluso si tampoco es posible contactar la BD para liberarla.
+            try:
+                await self.repository.release_email(notification.id)
+            except Exception:
+                logger.exception("No se pudo liberar la reserva del correo")
+
+    async def retry_pending(self) -> None:
+        after_id = 0
+        while batch := await self.repository.pending_email(after_id=after_id):
+            for notification in batch:
+                user = await self.user_repository.get_by_id(notification.user_id)
+                if user is not None and user.is_active and user.notify_email:
+                    await self._send_email(notification, user.email.value)
+            # Usuarios sin correo y fallos antiguos no bloquean los siguientes lotes.
+            after_id = batch[-1].id
+
+    async def close(self) -> None:
+        tasks = tuple(self._delivery_tasks)
+        if tasks:
+            _, pending = await asyncio.wait(tasks, timeout=10)
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
 
     async def _recipients_for(self, event: DomainEvent) -> set[int]:
         if event.data.get("capturer_id"):
@@ -99,10 +152,8 @@ class NotificationService:
             return {int(event.data["recipient_id"])}
         if event.__class__.__name__ == "PeriodOpened" and self.indicator_repository:
             if event.data.get("type") == "poa":
-                return (
-                    await self.poa_recipients.for_period(event.aggregate_id)
-                    if self.poa_recipients is not None else set()
-                )
+                # El scheduler avisa según las fechas y sólo a quienes tienen pendientes.
+                return set()
             recipients: set[int] = set()
             for indicator in await self.indicator_repository.list(active_only=True):
                 if event.data.get("periodicity") in {None, indicator.periodicity.value}:

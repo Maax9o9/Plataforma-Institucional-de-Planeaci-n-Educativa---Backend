@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from uuid import NAMESPACE_URL, uuid5
+
+from app.shared.domain.calendar import institutional_today
 
 from ..domain.entities import Notification
 
@@ -27,7 +29,8 @@ class GenerateReminders:
         if period.period_type.value == "poa":
             return (
                 await self.poa_recipients.for_period(period.id)
-                if self.poa_recipients is not None else set()
+                if self.poa_recipients is not None
+                else set()
             )
         return {
             indicator.responsible_id
@@ -36,9 +39,12 @@ class GenerateReminders:
         }
 
     async def execute(self, today: date | None = None) -> int:
-        today = today or date.today()
+        today = today or institutional_today()
         created = 0
         for period in await self.periods.list():
+            if period.period_type.value == "poa":
+                created += await self._poa_reminders(period, today)
+                continue
             if period.status.value != "abierto":
                 continue
             days_left = (period.ends_on - today).days
@@ -76,3 +82,43 @@ class GenerateReminders:
                     )
                 created += 1
         return created
+
+    async def _poa_reminders(self, period, today: date) -> int:
+        if (
+            self.poa_recipients is None
+            or period.status.value == "cerrado"
+            or not period.starts_on <= today <= period.ends_on
+        ):
+            return 0
+        # Ventanas recuperables: una caída en el día exacto no pierde el recordatorio.
+        closing = today >= period.ends_on - timedelta(days=7)
+        kind = "poa_captura_7d" if closing else "poa_captura_inicio"
+        hint = (
+            "Última semana de captura. " if closing else "Inicio de cuatrimestre. "
+        ) + f"Fecha límite: {period.ends_on.isoformat()}. "
+        if period.status.value != "abierto":
+            hint += "El periodo aún requiere apertura por Planeación. "
+        count = 0
+        for pending in await self.poa_recipients.pending_for_period(period.id):
+            notification_type = (
+                kind.replace("captura", "total") if pending.entity == "poa_form_indicator" else kind
+            )
+            for user_id in pending.recipient_ids:
+                event_id = uuid5(
+                    NAMESPACE_URL,
+                    f"poa:{period.id}:{notification_type}:{pending.entity}:{pending.entity_id}:{user_id}",
+                )
+                values = dict(
+                    user_id=user_id,
+                    notification_type=notification_type,
+                    message=hint + pending.message,
+                    entity=pending.entity,
+                    entity_id=pending.entity_id,
+                    source_event_id=event_id,
+                )
+                if self.notification_service is not None:
+                    await self.notification_service.notify_user(**values)
+                else:
+                    await self.notifications.create(Notification(**values))
+                count += 1
+        return count
