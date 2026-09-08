@@ -23,13 +23,13 @@ class NotificationService:
         user_repository,
         email_sender: EmailSender,
         indicator_repository=None,
-        poa_repository=None,
+        poa_recipients=None,
     ) -> None:
         self.repository = repository
         self.user_repository = user_repository
         self.email_sender = email_sender
         self.indicator_repository = indicator_repository
-        self.poa_repository = poa_repository
+        self.poa_recipients = poa_recipients
 
     def register(self, event_bus: EventBus) -> None:
         event_bus.subscribe(DomainEvent, self.handle_event)
@@ -43,7 +43,7 @@ class NotificationService:
                 user_id=user_id,
                 notification_type=notification_type,
                 message=self._message(event),
-                entity=event.aggregate_type,
+                entity="periodo" if event.aggregate_type == "period" else event.aggregate_type,
                 entity_id=event.aggregate_id,
                 source_event_id=event.event_id,
             )
@@ -98,11 +98,11 @@ class NotificationService:
         if event.data.get("recipient_id"):
             return {int(event.data["recipient_id"])}
         if event.__class__.__name__ == "PeriodOpened" and self.indicator_repository:
-            if event.data.get("type") == "poa" and self.poa_repository is not None:
-                return {
-                    item.responsible_id
-                    for item in await self.poa_repository.list_activities(area_id=None)
-                }
+            if event.data.get("type") == "poa":
+                return (
+                    await self.poa_recipients.for_period(event.aggregate_id)
+                    if self.poa_recipients is not None else set()
+                )
             recipients: set[int] = set()
             for indicator in await self.indicator_repository.list(active_only=True):
                 if event.data.get("periodicity") in {None, indicator.periodicity.value}:

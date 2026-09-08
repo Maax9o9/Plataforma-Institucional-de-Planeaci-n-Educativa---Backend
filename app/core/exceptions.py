@@ -33,7 +33,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                         actor_id=user.id if user else None,
                         event_name="ImmutableEditBlocked",
                         aggregate_type=(
-                            "poa_advance" if "/poa/" in request.url.path else "capture"
+                            "poa_form" if "/poa/" in request.url.path else "capture"
                         ),
                         aggregate_id=None,
                         action="edit_blocked",
@@ -66,7 +66,11 @@ def register_exception_handlers(app: FastAPI) -> None:
             content={
                 "code": "REQUEST_VALIDATION_ERROR",
                 "message": "La solicitud contiene datos invalidos.",
-                "details": exc.errors(),
+                # No devolver el cuerpo original: puede contener contraseñas o tokens.
+                "details": [
+                    {"loc": error["loc"], "msg": error["msg"], "type": error["type"]}
+                    for error in exc.errors()
+                ],
                 "request_id": request_id(request),
             },
         )

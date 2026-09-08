@@ -10,7 +10,8 @@ La Fase 0 ya tiene una implementacion ejecutable con fallback sin base de datos:
 - `core.app_factory`, `core.container` y `core.event_handlers`: composición de dependencias y eventos; `main.py` solo expone el entrypoint ASGI.
 - `api/router_registry.py`: registro único y ordenado de routers HTTP.
 - `shared`: entidades base, objetos de valor, paginacion y bus de eventos.
-- `identity_access`: login, refresh rotation, logout, usuario actual y alta de usuarios.
+- `identity_access`: login, rotación de refresh, logout, invitaciones, alta por comando
+  y cambio privado de contraseña administrativa con revocación persistente de sesiones.
 - `institutional_catalogs`: areas e instrumentos con repositorio SQLAlchemy o memoria.
 - `periods`: apertura, cierre y reapertura de periodos con repositorio SQLAlchemy o memoria.
 - `audit`: bitacora inmutable consumiendo eventos sin acoplarse a los emisores.
@@ -20,16 +21,19 @@ La Fase 0 ya tiene una implementacion ejecutable con fallback sin base de datos:
 - `indicators_validation`: validacion, rechazo e historial de estados.
 - `indicators_scoring`: umbrales, porcentaje de avance, semaforo y tendencia.
 - `indicators_reports`: reportes JSON, Excel y PDF con registro de generacion.
-- `poa_planning`: ejercicios, procesos, objetivos y actividades del POA.
-- `poa_tracking`: avances de los tres cuatrimestres, cumplimiento y acumulado.
-- `poa_validation`: validacion/rechazo de avances usando `cambios_estado` compartido.
-- `poa_reports`: reportes cuatrimestrales, anuales, de estatus y ejecutivo.
+- `poa_planning`: ejercicios y cédulas POA divididas en estrategia, indicadores,
+  total alcanzado y calendarización de actividades, con catálogos del formato 2026.
+- `poa_reports`: reportes de las cédulas actuales por periodo, cédula, área y estatus.
 - `dashboards`: vistas ejecutiva, de Planeacion y del area con aislamiento por rol.
 - `notifications`: avisos internos/correo y recordatorios automaticos idempotentes.
 
 Con `DATABASE_URL` configurada se usan adaptadores SQLAlchemy async sobre PostgreSQL. Sin esa variable se usan repositorios en memoria para desarrollo y pruebas; no deben usarse como persistencia de un ambiente compartido.
 
 El alcance funcional actual maneja indicadores PIDE y el flujo POA. Algunas tablas auxiliares del DDL original se conservan para compatibilidad de migraciones, pero no tienen endpoints ni lógica activa en la API.
+
+El POA anterior fue retirado: sólo están activos ejercicios, catálogos, cédulas,
+seguimientos y emisiones del modelo actual. Reportes, dashboards, historial y
+recordatorios consultan ese mismo modelo. Consulta [los cambios para frontend y despliegue](docs/POA_UNICO_Y_CAMBIO_CONTRASENA.md).
 
 ## Ejecucion local
 
@@ -84,7 +88,7 @@ en el repositorio. La matriz de permisos está en `docs/RBAC.md`.
 
 El proveedor predeterminado es `console`: registra los correos simulados y no requiere credenciales. Para una cuenta de prueba SMTP, configura en `.env` `EMAIL_PROVIDER=smtp`, `EMAIL_SENDER`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` y `SMTP_PASSWORD`. No guardes la contraseña en el repositorio; usa una contraseña de aplicación o un servidor local como Mailpit.
 
-Para disponer de un usuario inicial en desarrollo, configura `BOOTSTRAP_ADMIN_EMAIL` y `BOOTSTRAP_ADMIN_PASSWORD` en `.env` antes de iniciar.
+Para crear un administrador en la base de datos, ejecuta `python -m app.scripts.create_admin --correo admin@tu-institucion.mx --nombre "Administrador"`. Solicita la contraseña oculta y su confirmación; no se guarda en `.env` ni se pasa como argumento. Con Docker de producción: `docker compose -f docker-compose.prod.yml exec api python -m app.scripts.create_admin --correo admin@tu-institucion.mx --nombre "Administrador"`. Primero aplica las migraciones (`alembic upgrade head`). `BOOTSTRAP_ADMIN_EMAIL` y `BOOTSTRAP_ADMIN_PASSWORD` ya no crean cuentas al iniciar y pueden eliminarse del `.env`; los usuarios existentes se conservan. `DATABASE_URL` sigue siendo necesaria para la conexión. Consulta [la verificación de flujo y roles](docs/VERIFICACION_POA_Y_ADMIN.md).
 
 Los usuarios administrativos no necesitan capturar una contrasena en `POST /api/v1/usuarios`: reciben un enlace de un solo uso en su correo y establecen la contrasena mediante `POST /api/v1/auth/password-setup`. El token expira y no se almacena en texto plano.
 
@@ -132,6 +136,9 @@ pytest
 
 Los cambios de contrato de la versión `0.2.0` se detallan en
 `docs/CONTRATO_FRONTEND_0.2.md`.
+
+El flujo refactorizado de cédulas y sus endpoints se documenta en
+`docs/CONTRATO_CEDULAS_POA.md`.
 
 Las cuentas y contraseñas de prueba no se incluyen en el repositorio. Deben provisionarse
 en el ambiente correspondiente y compartirse por un canal privado.

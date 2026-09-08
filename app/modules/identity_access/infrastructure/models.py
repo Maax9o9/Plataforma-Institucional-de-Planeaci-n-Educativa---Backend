@@ -34,6 +34,7 @@ class UserModel(Base):
     actualizado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ultimo_acceso: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    password_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class UserRoleModel(Base):
@@ -43,6 +44,9 @@ class UserRoleModel(Base):
     rol: Mapped[str] = mapped_column(
         Enum(
             "planeacion",
+            "planeacion_admin",
+            "capturista_poa",
+            "revisor_poa",
             "responsable_area",
             "rectoria",
             "consulta",

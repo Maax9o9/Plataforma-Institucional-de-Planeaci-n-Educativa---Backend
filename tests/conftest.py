@@ -7,6 +7,35 @@ from app.core.config import Settings
 from app.main import create_app
 
 
+@pytest.fixture(params=["memory", "postgresql"])
+async def backend_client(request, tmp_path):
+    import os
+
+    database_url = None
+    if request.param == "postgresql":
+        database_url = os.getenv("TEST_DATABASE_URL")
+        if not database_url:
+            pytest.skip("TEST_DATABASE_URL no configurada")
+    application = create_app(
+        Settings(
+            environment="testing",
+            database_url=database_url,
+            email_provider="console",
+            secret_key="test-secret-key-with-more-than-32-characters",
+            upload_directory=str(tmp_path),
+        )
+    )
+    try:
+        await application.state.poa_form_repository.ensure_catalogs()
+        async with AsyncClient(
+            transport=ASGITransport(app=application), base_url="http://testserver"
+        ) as client:
+            yield application, client
+    finally:
+        if application.state.db_engine is not None:
+            await application.state.db_engine.dispose()
+
+
 @pytest.fixture
 def app():
     return create_app(

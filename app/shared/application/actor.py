@@ -28,4 +28,4 @@ class ActorContext:
 
     @property
     def is_planning(self) -> bool:
-        return self.has_any_role("planeacion", "admin_sistema")
+        return self.has_any_role("planeacion", "planeacion_admin", "admin_sistema")

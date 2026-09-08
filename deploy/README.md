@@ -23,20 +23,17 @@ EC2_HOST
 EC2_USER
 EC2_SSH_KEY
 EC2_DEPLOY_PATH
-SECRET_KEY
-DATABASE_URL
-CORS_ORIGINS
-FRONTEND_URL
-EMAIL_PROVIDER
-EMAIL_SENDER
-SMTP_HOST
-SMTP_PORT
-SMTP_USER
-SMTP_PASSWORD
-SMTP_START_TLS
-BOOTSTRAP_ADMIN_EMAIL
-BOOTSTRAP_ADMIN_PASSWORD
 ```
+
+Las variables de aplicación se conservan en el `.env` de la VPS; el workflow no lo
+genera ni lo reemplaza. No guardes la contraseña administrativa en ese archivo.
+Después del despliegue, crea la cuenta de forma explícita:
+
+```bash
+docker compose -f docker-compose.prod.yml exec api python -m app.scripts.create_admin --correo admin@tu-institucion.mx --nombre "Administrador"
+```
+
+El comando solicita la contraseña oculta y no sobrescribe usuarios existentes.
 
 `CORS_ORIGINS` debe ser un arreglo JSON, por ejemplo `["https://frontend.example.com"]`. En produccion, `EMAIL_PROVIDER=console` evita enviar correo; cambia a `smtp` unicamente cuando las credenciales esten listas.
 

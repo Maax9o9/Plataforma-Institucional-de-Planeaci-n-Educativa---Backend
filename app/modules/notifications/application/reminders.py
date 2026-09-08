@@ -14,27 +14,21 @@ class GenerateReminders:
         periods,
         indicators,
         notifications,
-        poa=None,
+        poa_recipients=None,
         notification_service=None,
     ) -> None:
         self.periods = periods
         self.indicators = indicators
         self.notifications = notifications
-        self.poa = poa
+        self.poa_recipients = poa_recipients
         self.notification_service = notification_service
 
     async def _responsible_ids(self, period) -> set[int]:
         if period.period_type.value == "poa":
-            if self.poa is None:
-                return set()
-            responsible_ids: set[int] = set()
-            for activity in await self.poa.list_activities(area_id=None):
-                objective = await self.poa.get_objective(activity.objective_id)
-                process = await self.poa.get_process(objective.process_id) if objective else None
-                exercise = await self.poa.get_exercise(process.exercise_id) if process else None
-                if exercise is not None and exercise.year == period.year:
-                    responsible_ids.add(activity.responsible_id)
-            return responsible_ids
+            return (
+                await self.poa_recipients.for_period(period.id)
+                if self.poa_recipients is not None else set()
+            )
         return {
             indicator.responsible_id
             for indicator in await self.indicators.list(active_only=True)

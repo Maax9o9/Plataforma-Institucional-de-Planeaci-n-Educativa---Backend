@@ -109,29 +109,3 @@ class SqlAlchemyStateChangeRepository:
                 ],
                 total,
             )
-
-    async def list_for_poa_advance(self, advance_id: int) -> list[StateChange]:
-        async with session_scope(self.session_factory) as session:
-            models = (
-                await session.scalars(
-                    select(StateChangeModel)
-                    .where(
-                        StateChangeModel.entidad == "poa_avance",
-                        StateChangeModel.entidad_id == advance_id,
-                    )
-                    .order_by(StateChangeModel.fecha, StateChangeModel.id)
-                )
-            ).all()
-            return [
-                StateChange(
-                    id=model.id,
-                    entity_id=model.entidad_id,
-                    from_status=CaptureStatus(model.de_estado) if model.de_estado else None,
-                    to_status=CaptureStatus(model.a_estado),
-                    user_id=model.usuario_id,
-                    comment=model.comentario,
-                    created_at=model.fecha,
-                    entity="poa_avance",
-                )
-                for model in models
-            ]

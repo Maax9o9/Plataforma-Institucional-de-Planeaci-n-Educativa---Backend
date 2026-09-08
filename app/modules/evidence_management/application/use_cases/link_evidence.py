@@ -27,8 +27,6 @@ class LinkExistingEvidence:
         await self.access.ensure_can_view(command.evidence_id, command.actor)
         if await self.repository.get(command.evidence_id) is None:
             raise ResourceNotFoundError("La evidencia no existe.")
-        if command.entity.value == "poa_avance":
-            await self.access.ensure_same_poa_exercise(command.evidence_id, command.entity_id)
         await self.repository.link(
             EvidenceLink(
                 evidence_id=command.evidence_id,

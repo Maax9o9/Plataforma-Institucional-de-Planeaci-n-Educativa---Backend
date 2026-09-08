@@ -18,10 +18,9 @@ from app.modules.institutional_catalogs.api.reference_router import (
 from app.modules.institutional_catalogs.api.router import router as catalogs_router
 from app.modules.notifications.api.router import router as notifications_router
 from app.modules.periods.api.router import router as periods_router
+from app.modules.poa_planning.api.cedula_router import router as poa_cedula_router
 from app.modules.poa_planning.api.router import router as poa_planning_router
 from app.modules.poa_reports.api.router import router as poa_reports_router
-from app.modules.poa_tracking.api.router import router as poa_tracking_router
-from app.modules.poa_validation.api.router import router as poa_validation_router
 
 API_ROUTERS = (
     identity_router,
@@ -36,8 +35,7 @@ API_ROUTERS = (
     scoring_router,
     reports_router,
     poa_planning_router,
-    poa_tracking_router,
-    poa_validation_router,
+    poa_cedula_router,
     poa_reports_router,
     dashboards_router,
     notifications_router,

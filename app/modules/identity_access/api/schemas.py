@@ -5,10 +5,23 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr, model_validator
 
 from ..domain.entities import User
 from ..domain.value_objects import Role
+
+
+class CambiarContrasenaAdminRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    contrasena_actual: SecretStr = Field(min_length=1, max_length=128)
+    contrasena_nueva: SecretStr = Field(min_length=8, max_length=128)
+    confirmar_contrasena: SecretStr = Field(min_length=8, max_length=128)
+
+    @model_validator(mode="after")
+    def matching_passwords(self):
+        if self.contrasena_nueva.get_secret_value() != self.confirmar_contrasena.get_secret_value():
+            raise ValueError("La confirmación de la contraseña no coincide.")
+        return self
 
 
 class LoginRequest(BaseModel):

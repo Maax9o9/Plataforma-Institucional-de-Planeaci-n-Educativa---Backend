@@ -17,6 +17,7 @@ class AccessTokenClaims:
     area_id: int | None
     token_id: UUID
     expires_at: datetime
+    password_version: int = 0
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class RefreshTokenClaims:
     session_id: UUID
     token_id: UUID
     expires_at: datetime
+    password_version: int = 0
 
 
 @dataclass(frozen=True)

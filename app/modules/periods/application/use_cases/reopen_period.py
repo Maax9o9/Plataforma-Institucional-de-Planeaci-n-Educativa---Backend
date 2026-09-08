@@ -18,14 +18,12 @@ class ReopenPeriod:
         repository: PeriodRepository,
         event_bus: EventBus,
         capture_reopener=None,
-        poa_reopener=None,
         state_changes=None,
         unit_of_work=None,
     ) -> None:
         self.repository = repository
         self.event_bus = event_bus
         self.capture_reopener = capture_reopener
-        self.poa_reopener = poa_reopener
         self.state_changes = state_changes
         self.unit_of_work = unit_of_work
 
@@ -50,11 +48,6 @@ class ReopenPeriod:
         entity = "captura"
         if period.period_type.value == "indicadores" and self.capture_reopener is not None:
             reset_ids = await self.capture_reopener.reset_validated_for_period(
-                period.id, command.actor_id
-            )
-        if period.period_type.value == "poa" and self.poa_reopener is not None:
-            entity = "poa_avance"
-            reset_ids = await self.poa_reopener.reset_validated_for_period(
                 period.id, command.actor_id
             )
         if self.state_changes is not None:

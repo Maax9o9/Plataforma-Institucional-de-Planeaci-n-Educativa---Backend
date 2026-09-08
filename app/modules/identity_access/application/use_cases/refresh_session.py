@@ -32,6 +32,8 @@ class RefreshSession:
         user = await self.repository.get_by_id(claims.subject)
         if user is None or not user.is_active:
             raise AuthenticationError("El usuario no esta disponible.")
+        if claims.password_version != user.password_version:
+            raise AuthenticationError("La contraseña cambió. Inicia sesión nuevamente.")
 
         refresh = self.token_service.issue_refresh(user, claims.session_id)
         record = await self.refresh_tokens.rotate(

@@ -36,7 +36,6 @@ def get_reopen_period_use_case(request: Request) -> ReopenPeriod:
         request.app.state.period_repository,
         request.app.state.event_bus,
         request.app.state.capture_repository,
-        request.app.state.poa_advance_repository,
         request.app.state.state_change_repository,
         request.app.state.unit_of_work,
     )
