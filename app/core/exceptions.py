@@ -31,6 +31,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                         id=uuid4(),
                         occurred_at=datetime.now(UTC),
                         actor_id=user.id if user else None,
+                        actor_name=getattr(user, "full_name", None) if user else None,
                         event_name="ImmutableEditBlocked",
                         aggregate_type=(
                             "poa_form" if "/poa/" in request.url.path else "capture"

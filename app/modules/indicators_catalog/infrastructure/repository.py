@@ -7,6 +7,7 @@ from itertools import count
 from app.shared.domain.exceptions import ConflictError
 
 from ..domain.entities import Baseline, Goal, Indicator
+from ..domain.value_objects import IndicatorPeriodicity
 
 
 class InMemoryIndicatorRepository:
@@ -43,6 +44,7 @@ class InMemoryIndicatorRepository:
         responsible_id: int | None,
         instrument_id: int | None,
         criterion_id: int | None,
+        periodicity: IndicatorPeriodicity | None,
         sort: str,
         descending: bool,
         offset: int,
@@ -64,6 +66,8 @@ class InMemoryIndicatorRepository:
             items = [item for item in items if instrument_id in item.instrument_ids]
         if criterion_id is not None:
             items = [item for item in items if criterion_id in item.criteria_ids]
+        if periodicity is not None:
+            items = [item for item in items if item.periodicity == periodicity]
         key = {
             "clave": lambda item: (item.key.casefold(), item.id),
             "nombre": lambda item: (item.name.casefold(), item.id),

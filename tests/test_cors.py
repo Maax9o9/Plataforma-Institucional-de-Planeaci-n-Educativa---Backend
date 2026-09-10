@@ -18,7 +18,13 @@ def make_settings(
     return Settings(
         environment=environment,
         secret_key="test-secret-key-with-more-than-32-characters",
-        database_url=None,
+        # Produccion exige DATABASE_URL: sin ella la API arrancaria con
+        # repositorios en memoria y create_app aborta antes de llegar a CORS.
+        database_url=(
+            "postgresql+asyncpg://planeacion:secreto@localhost:5432/planeacion"
+            if environment in {"staging", "production"}
+            else None
+        ),
         email_provider="console",
         cors_allow_all=allow_all,
         cors_origins=origins if origins is not None else ["http://localhost:5173"],
