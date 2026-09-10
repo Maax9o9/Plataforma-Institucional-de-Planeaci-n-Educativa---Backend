@@ -12,7 +12,7 @@ from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user, require_roles
 from app.shared.domain.exceptions import ForbiddenError, ResourceNotFoundError
 
-from ..application.access_control import can_edit_structure
+from ..application.access_control import can_capture_activity, can_edit_structure
 from ..application.cedula_dto import (
     AddPoaFormActivityCommand,
     AddPoaFormIndicatorCommand,
@@ -80,6 +80,7 @@ from .cedula_schemas import (
     ActualizarJustificacionSeguimientoRequest,
     AgregarActividadCedulaRequest,
     AgregarIndicadorCedulaRequest,
+    AsignarCriterioSeaesRequest,
     CambioEstadoSeguimientoRespuesta,
     CapturarTotalIndicadorRequest,
     CedulaPoaDetalleRespuesta,
@@ -166,6 +167,7 @@ def _activity_response(item: PoaFormActivity, catalog) -> ActividadCedulaRespues
         meta_anual=item.annual_goal,
         area_ejecutora_id=item.executing_area_id,
         observaciones=item.observations,
+        criterio_seaes_id=item.criteria_seaes_id,
     )
 
 
@@ -648,6 +650,37 @@ async def update_form_activity(
     )
     catalog = await request.app.state.poa_form_repository.get_activity_catalog(item.activity_key)
     return _activity_response(item, catalog)
+
+
+@router.patch(
+    "/cedulas/actividades/{form_activity_id}/criterio-seaes",
+    response_model=ActividadCedulaRespuesta,
+    summary="Asignar el criterio SEAES que clasifica la actividad",
+    responses={
+        403: {"model": ErrorResponse, "description": "La actividad no es del área."},
+        404: {"model": ErrorResponse, "description": "La actividad o el criterio no existen."},
+    },
+)
+async def assign_activity_criteria(
+    form_activity_id: int,
+    body: AsignarCriterioSeaesRequest,
+    request: Request,
+    current_user=Depends(require_roles(*FORM_ROLES)),
+):
+    repository = request.app.state.poa_form_repository
+    activity = await repository.get_form_activity(form_activity_id)
+    if activity is None:
+        raise ResourceNotFoundError("La actividad de la cédula no existe.")
+    if not can_capture_activity(actor_from_user(current_user), activity.executing_area_id):
+        raise ForbiddenError("La actividad POA no está asignada al área del usuario.")
+    if body.criterio_seaes_id is not None:
+        criteria = await request.app.state.criteria_repository.get_by_id(body.criterio_seaes_id)
+        if criteria is None:
+            raise ResourceNotFoundError("El criterio SEAES no existe.")
+    activity.criteria_seaes_id = body.criterio_seaes_id
+    await repository.update_form_activity(activity)
+    catalog = await repository.get_activity_catalog(activity.activity_key)
+    return _activity_response(activity, catalog)
 
 
 @router.put(

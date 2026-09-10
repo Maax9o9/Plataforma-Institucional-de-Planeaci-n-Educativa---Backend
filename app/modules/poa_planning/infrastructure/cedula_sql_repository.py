@@ -305,6 +305,7 @@ class SqlAlchemyPoaFormRepository:
                     meta_anual=item.annual_goal,
                     area_ejecutora_id=item.executing_area_id,
                     observaciones=item.observations,
+                    criterio_seaes_id=item.criteria_seaes_id,
                     creado_en=now,
                     actualizado_en=now,
                 )
@@ -332,6 +333,7 @@ class SqlAlchemyPoaFormRepository:
             model.meta_anual = item.annual_goal
             model.area_ejecutora_id = item.executing_area_id
             model.observaciones = item.observations
+            model.criterio_seaes_id = item.criteria_seaes_id
             model.actualizado_en = item.updated_at
             await commit_or_flush(session)
 
@@ -571,6 +573,7 @@ class SqlAlchemyPoaFormRepository:
             annual_goal=model.meta_anual,
             executing_area_id=model.area_ejecutora_id,
             observations=model.observaciones,
+            criteria_seaes_id=model.criterio_seaes_id,
             created_at=model.creado_en,
             updated_at=model.actualizado_en,
         )

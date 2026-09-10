@@ -274,6 +274,7 @@ class PoaFormActivity(BaseEntity):
     annual_goal: Decimal
     executing_area_id: int | None = None
     observations: str | None = None
+    criteria_seaes_id: int | None = None
 
     @classmethod
     def create(

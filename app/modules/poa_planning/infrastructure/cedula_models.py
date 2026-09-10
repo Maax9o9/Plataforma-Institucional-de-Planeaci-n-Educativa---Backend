@@ -117,6 +117,7 @@ class PoaFormActivityModel(Base):
     meta_anual: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     area_ejecutora_id: Mapped[int | None] = mapped_column(Integer)
     observaciones: Mapped[str | None] = mapped_column(Text)
+    criterio_seaes_id: Mapped[int | None] = mapped_column(Integer)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     actualizado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

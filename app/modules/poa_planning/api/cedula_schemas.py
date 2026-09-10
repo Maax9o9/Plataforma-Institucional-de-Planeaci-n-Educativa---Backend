@@ -201,6 +201,14 @@ class ActividadCedulaRespuesta(BaseModel):
     meta_anual: Decimal
     area_ejecutora_id: int | None
     observaciones: str | None
+    criterio_seaes_id: int | None = None
+
+
+class AsignarCriterioSeaesRequest(BaseModel):
+    criterio_seaes_id: int | None = Field(
+        default=None,
+        description="Criterio que clasifica la actividad. Nulo lo desasigna.",
+    )
 
 
 class ActualizarActividadCedulaRequest(PoaRequest):
