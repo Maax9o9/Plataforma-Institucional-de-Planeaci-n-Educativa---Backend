@@ -26,4 +26,5 @@ class StateChangeRepository(Protocol):
         offset: int,
         limit: int,
         descending: bool,
+        entity: str = "captura",
     ) -> tuple[list[StateChange], int]: ...

@@ -6,7 +6,18 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Integer, Numeric, SmallInteger, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    Enum,
+    Integer,
+    Numeric,
+    SmallInteger,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.shared.infrastructure.db.base import Base
@@ -123,6 +134,20 @@ class PoaActivityFollowUpModel(Base):
     justificacion_desviacion: Mapped[str | None] = mapped_column(Text)
     progreso: Mapped[str | None] = mapped_column(Text)
     alcance: Mapped[str | None] = mapped_column(Text)
+    estado: Mapped[str] = mapped_column(
+        Enum(
+            "borrador",
+            "enviado",
+            "validado",
+            "rechazado",
+            name="estado_captura",
+            native_enum=True,
+            create_type=False,
+        ),
+        nullable=False,
+        default="borrador",
+    )
+    comentario_revision: Mapped[str | None] = mapped_column(Text)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     actualizado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

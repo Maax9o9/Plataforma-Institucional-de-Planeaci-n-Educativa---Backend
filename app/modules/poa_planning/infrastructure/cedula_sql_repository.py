@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.modules.indicators_capture.domain.value_objects import CaptureStatus
 from app.shared.domain.exceptions import ConflictError
 from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
 
@@ -339,12 +340,28 @@ class SqlAlchemyPoaFormRepository:
             model = await session.get(PoaActivityFollowUpModel, item_id)
             return self._follow_up(model) if model else None
 
+    async def get_follow_up_by_quarter(
+        self, form_activity_id: int, quarter: int
+    ) -> PoaActivityFollowUp | None:
+        async with session_scope(self.session_factory) as session:
+            model = (
+                await session.execute(
+                    select(PoaActivityFollowUpModel).where(
+                        PoaActivityFollowUpModel.cedula_actividad_id == form_activity_id,
+                        PoaActivityFollowUpModel.cuatrimestre == quarter,
+                    )
+                )
+            ).scalar_one_or_none()
+            return self._follow_up(model) if model else None
+
     async def update_follow_up(self, item: PoaActivityFollowUp) -> None:
         async with session_scope(self.session_factory) as session:
             model = await session.get(PoaActivityFollowUpModel, item.id)
             if model is None:
                 return
             model.justificacion_desviacion = item.deviation_justification
+            model.estado = item.status.value
+            model.comentario_revision = item.review_comment
             model.actualizado_en = item.updated_at
             await commit_or_flush(session)
 
@@ -374,6 +391,8 @@ class SqlAlchemyPoaFormRepository:
             model.justificacion_desviacion = item.deviation_justification
             model.progreso = item.progress
             model.alcance = item.scope
+            model.estado = item.status.value
+            model.comentario_revision = item.review_comment
             model.actualizado_en = now
             await session.flush()
             await commit_or_flush(session)
@@ -569,6 +588,8 @@ class SqlAlchemyPoaFormRepository:
             deviation_justification=model.justificacion_desviacion,
             progress=model.progreso,
             scope=model.alcance,
+            status=CaptureStatus(model.estado),
+            review_comment=model.comentario_revision,
             created_at=model.creado_en,
             updated_at=model.actualizado_en,
         )
