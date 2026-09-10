@@ -42,6 +42,14 @@ def _validate_security_settings(settings: Settings) -> None:
         )
     if settings.refresh_cookie_samesite == "none" and not settings.refresh_cookie_secure:
         raise RuntimeError("SameSite=None requiere REFRESH_COOKIE_SECURE=true.")
+    if settings.environment in {"staging", "production"} and not settings.database_url:
+        # Sin DATABASE_URL el contenedor selecciona repositorios en memoria. En un
+        # ambiente compartido eso arranca sano, responde 200 y pierde toda la
+        # informacion al reiniciar: debe fallar aqui, no descubrirse despues.
+        raise RuntimeError(
+            "DATABASE_URL debe estar configurada en staging y produccion: "
+            "sin ella la API arrancaria con repositorios en memoria."
+        )
 
 
 def _bind_resources(app: FastAPI, resources: Resources) -> None:

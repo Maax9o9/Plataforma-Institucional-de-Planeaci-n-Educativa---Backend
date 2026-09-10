@@ -27,6 +27,7 @@ from ..application.use_cases.manage_indicator import (
     UpdateIndicator,
 )
 from ..application.use_cases.register_indicator import RegisterIndicator
+from ..domain.value_objects import IndicatorPeriodicity
 from .dependencies import (
     get_change_periodicity_use_case,
     get_create_baseline_use_case,
@@ -70,6 +71,7 @@ async def list_indicators(
     responsable_id: int | None = Query(default=None),
     instrumento_id: int | None = Query(default=None),
     criterio_seaes_id: int | None = Query(default=None),
+    periodicidad: IndicatorPeriodicity | None = Query(default=None),
     sort: Literal["clave", "nombre", "periodicidad", "actualizado_en"] = Query(
         default="clave"
     ),
@@ -85,6 +87,7 @@ async def list_indicators(
         responsible_id=responsable_id,
         instrument_id=instrumento_id,
         criterion_id=criterio_seaes_id,
+        periodicity=periodicidad,
         sort=sort,
         descending=order == "desc",
         offset=offset,

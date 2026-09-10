@@ -18,7 +18,9 @@ from .container import Resources
 
 
 def register_event_handlers(event_bus: EventBus, resources: Resources, email_sender):
-    register_audit_subscriber(event_bus, resources.audit_repository)
+    register_audit_subscriber(
+        event_bus, resources.audit_repository, resources.user_repository
+    )
     notification_service = NotificationService(
         resources.notification_repository,
         resources.user_repository,

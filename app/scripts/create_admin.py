@@ -30,7 +30,9 @@ async def provision_admin(settings: Settings, *, email: str, name: str, password
     assert engine is not None and factory is not None
     try:
         events = InMemoryEventBus()
-        register_audit_subscriber(events, SqlAlchemyAuditRepository(factory))
+        register_audit_subscriber(
+            events, SqlAlchemyAuditRepository(factory), SqlAlchemyUserRepository(factory)
+        )
         async with SqlAlchemyUnitOfWorkFactory(factory)():
             user = await CreateUser(
                 SqlAlchemyUserRepository(factory), Argon2PasswordHasher(), events
