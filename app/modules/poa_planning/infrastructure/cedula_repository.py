@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
 from itertools import count
 
 from app.shared.domain.exceptions import ConflictError
@@ -241,25 +240,19 @@ class InMemoryPoaFormRepository:
                 continue
             if status is not None and follow_up.status.value != status:
                 continue
-            # Cuatro decimales, igual que la columna NUMERIC(18,4) del adaptador SQL:
-            # ambas implementaciones deben devolver la misma representación.
-            scale = Decimal("0.0001")
-            achieved = follow_up.achieved
-            if achieved is not None:
-                achieved = achieved.quantize(scale)
             cards.append(PoaFollowUpCard(
                 id=follow_up.id,
                 form_id=form.id,
                 activity_id=activity.id,
                 activity_key=activity.activity_key,
                 unit=activity.unit,
-                annual_goal=activity.annual_goal.quantize(scale),
+                annual_goal=activity.annual_goal,
                 executing_area_id=activity.executing_area_id,
                 criteria_seaes_id=activity.criteria_seaes_id,
                 quarter=follow_up.quarter,
                 period_id=follow_up.period_id,
-                scheduled=follow_up.scheduled.quantize(scale),
-                achieved=achieved,
+                scheduled=follow_up.scheduled,
+                achieved=follow_up.achieved,
                 status=follow_up.status,
                 review_comment=follow_up.review_comment,
                 updated_at=follow_up.updated_at,

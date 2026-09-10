@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -73,7 +74,7 @@ async def test_el_listado_devuelve_la_tarjeta_completa(backend_client):
     assert fila["evidencias"] == 1
     assert fila["actividad"]["clave"] == "6.1.1"
     assert fila["actividad"]["unidad_medida"] == "Eventos"
-    assert fila["programado"] == "40.0000"
+    assert Decimal(fila["programado"]) == Decimal("40")
     assert fila["criterio_seaes_id"] is None
 
 
@@ -129,8 +130,15 @@ async def test_area_sin_asignar_no_ve_nada(backend_client):
     """Un capturista sin área asignada no debe ver la lista completa: en el
     repositorio, `executing_area_id=None` significa "sin filtro", así que el
     endpoint debe reconocer este caso y devolver la página vacía sin consultar.
+
+    El escenario ajeno se monta aquí mismo, con su propia área y su propio
+    seguimiento, para que la prueba no dependa de datos que hayan dejado otras
+    pruebas: así falla si se quita el centinela, sea cual sea la variante o el
+    orden de ejecución.
     """
     app, client = backend_client
+    ajeno = await _escenario(app, client)
+    await _capturar(client, ajeno)
     suffix = uuid4().hex[:8]
     _, sin_area_headers = await _account(app, client, Role.CAPTURISTA_POA, suffix)
 
