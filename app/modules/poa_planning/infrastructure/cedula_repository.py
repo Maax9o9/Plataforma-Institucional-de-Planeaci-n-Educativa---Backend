@@ -198,6 +198,18 @@ class InMemoryPoaFormRepository:
     async def get_follow_up(self, item_id: int) -> PoaActivityFollowUp | None:
         return self.follow_ups.get(item_id)
 
+    async def get_follow_up_by_quarter(
+        self, form_activity_id: int, quarter: int
+    ) -> PoaActivityFollowUp | None:
+        return next(
+            (
+                current
+                for current in self.follow_ups.values()
+                if current.form_activity_id == form_activity_id and current.quarter == quarter
+            ),
+            None,
+        )
+
     async def update_follow_up(self, item: PoaActivityFollowUp) -> None:
         self.follow_ups[item.id] = item
 

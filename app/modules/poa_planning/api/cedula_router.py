@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.core.authorization import actor_from_user
+from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user, require_roles
 from app.shared.domain.exceptions import ForbiddenError, ResourceNotFoundError
 
@@ -35,6 +37,16 @@ from ..application.use_cases.manage_cedula import (
     UpdatePoaForm,
     UpdatePoaFormActivity,
     UpdatePoaFormIndicator,
+)
+from ..application.use_cases.review_follow_up import (
+    ENTITY as FOLLOW_UP_ENTITY,
+)
+from ..application.use_cases.review_follow_up import (
+    REVIEW_ROLES,
+    RejectPoaFollowUp,
+    ReviewFollowUpCommand,
+    SendPoaFollowUp,
+    ValidatePoaFollowUp,
 )
 from ..domain.cedula_entities import (
     PoaActivityFollowUp,
@@ -66,6 +78,7 @@ from .cedula_schemas import (
     ActualizarJustificacionSeguimientoRequest,
     AgregarActividadCedulaRequest,
     AgregarIndicadorCedulaRequest,
+    CambioEstadoSeguimientoRespuesta,
     CapturarTotalIndicadorRequest,
     CedulaPoaDetalleRespuesta,
     CedulaPoaRespuesta,
@@ -76,6 +89,8 @@ from .cedula_schemas import (
     IndicadorCedulaRespuesta,
     IndicadorPoaCatalogoRespuesta,
     ObjetivoPoaCatalogoRespuesta,
+    PaginaHistorialSeguimientoRespuesta,
+    RechazarSeguimientoRequest,
     RegistrarSeguimientoCedulaRequest,
     SeguimientoCedulaRespuesta,
 )
@@ -166,6 +181,8 @@ def _follow_up_response(
         justificacion_desviacion=item.deviation_justification,
         progreso=item.progress,
         alcance=item.scope,
+        estado=item.status.value,
+        comentario_revision=item.review_comment,
     )
 
 
@@ -701,3 +718,124 @@ async def list_form_issues(
     )
     items = await request.app.state.poa_form_repository.list_issues(form_id)
     return [_issue_response(item) for item in items]
+
+
+# --- Revision del seguimiento cuatrimestral (EP-08) -------------------------
+
+
+def _revision_dependencias(request: Request):
+    """Piezas compartidas por los tres casos de uso de revision."""
+    return {
+        "repository": request.app.state.poa_form_repository,
+        "state_changes": request.app.state.state_change_repository,
+        "event_bus": request.app.state.event_bus,
+        "evidences": request.app.state.evidence_repository,
+        "notifications": getattr(request.app.state, "notification_service", None),
+    }
+
+
+@router.post(
+    "/cedulas/seguimientos/{follow_up_id}/enviar",
+    response_model=SeguimientoCedulaRespuesta,
+    summary="Enviar el seguimiento cuatrimestral a revisión",
+    responses={
+        403: {"model": ErrorResponse, "description": "La actividad no es del área."},
+        422: {"model": ErrorResponse, "description": "Falta avance, progreso o evidencia."},
+    },
+)
+async def send_follow_up(
+    follow_up_id: int,
+    request: Request,
+    current_user=Depends(require_roles(*FORM_ROLES)),
+):
+    item = await SendPoaFollowUp(**_revision_dependencias(request)).execute(
+        ReviewFollowUpCommand(follow_up_id=follow_up_id, actor=actor_from_user(current_user))
+    )
+    activity = await request.app.state.poa_form_repository.get_form_activity(
+        item.form_activity_id
+    )
+    return _follow_up_response(item, activity.annual_goal)
+
+
+@router.post(
+    "/cedulas/seguimientos/{follow_up_id}/validar",
+    response_model=SeguimientoCedulaRespuesta,
+    summary="Validar el seguimiento cuatrimestral",
+    responses={403: {"model": ErrorResponse, "description": "Rol insuficiente."}},
+)
+async def validate_follow_up(
+    follow_up_id: int,
+    request: Request,
+    current_user=Depends(require_roles(*REVIEW_ROLES)),
+):
+    item = await ValidatePoaFollowUp(**_revision_dependencias(request)).execute(
+        ReviewFollowUpCommand(follow_up_id=follow_up_id, actor=actor_from_user(current_user))
+    )
+    activity = await request.app.state.poa_form_repository.get_form_activity(
+        item.form_activity_id
+    )
+    return _follow_up_response(item, activity.annual_goal)
+
+
+@router.post(
+    "/cedulas/seguimientos/{follow_up_id}/rechazar",
+    response_model=SeguimientoCedulaRespuesta,
+    summary="Devolver el seguimiento al área con un motivo",
+    responses={422: {"model": ErrorResponse, "description": "El comentario es obligatorio."}},
+)
+async def reject_follow_up(
+    follow_up_id: int,
+    body: RechazarSeguimientoRequest,
+    request: Request,
+    current_user=Depends(require_roles(*REVIEW_ROLES)),
+):
+    item = await RejectPoaFollowUp(**_revision_dependencias(request)).execute(
+        ReviewFollowUpCommand(
+            follow_up_id=follow_up_id,
+            actor=actor_from_user(current_user),
+            comment=body.comentario,
+        )
+    )
+    activity = await request.app.state.poa_form_repository.get_form_activity(
+        item.form_activity_id
+    )
+    return _follow_up_response(item, activity.annual_goal)
+
+
+@router.get(
+    "/cedulas/seguimientos/{follow_up_id}/historial",
+    response_model=PaginaHistorialSeguimientoRespuesta,
+    summary="Consultar el historial de estados del seguimiento",
+)
+async def follow_up_history(
+    follow_up_id: int,
+    request: Request,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=100),
+    order: Literal["asc", "desc"] = Query(default="desc"),
+    _current_user=Depends(require_roles(*FORM_ROLES)),
+):
+    changes, total = await request.app.state.state_change_repository.list_for_capture_page(
+        follow_up_id,
+        offset=offset,
+        limit=limit,
+        descending=order == "desc",
+        entity=FOLLOW_UP_ENTITY,
+    )
+    return PaginaHistorialSeguimientoRespuesta(
+        items=[
+            CambioEstadoSeguimientoRespuesta(
+                id=change.id,
+                seguimiento_id=change.entity_id,
+                de_estado=change.from_status.value if change.from_status else None,
+                a_estado=change.to_status.value,
+                usuario_id=change.user_id,
+                fecha=change.created_at,
+                comentario=change.comment,
+            )
+            for change in changes
+        ],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )

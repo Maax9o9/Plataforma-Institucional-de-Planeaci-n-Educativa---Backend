@@ -540,6 +540,12 @@ class RecordPoaFollowUp:
             period_id=command.period_id,
             quarter=command.quarter,
         )
+        # HU-08.01 y HU-08.04: una vez enviado, el seguimiento sale de las manos
+        # del area; validado, sólo vuelve por reapertura formal.
+        existente = await self.repository.get_follow_up_by_quarter(activity.id, command.quarter)
+        if existente is not None:
+            existente.ensure_editable()
+
         item = PoaActivityFollowUp.create(
             form_activity_id=activity.id,
             quarter=command.quarter,
@@ -551,6 +557,11 @@ class RecordPoaFollowUp:
             progress=command.progress,
             scope=command.scope,
         )
+        if existente is not None:
+            # HU-08.03: corregir un seguimiento devuelto no lo regresa a borrador;
+            # el motivo del rechazo sigue a la vista hasta que se reenvia.
+            item.status = existente.status
+            item.review_comment = existente.review_comment
         item = await self.repository.upsert_follow_up(item)
         await _publish(
             self.event_bus,

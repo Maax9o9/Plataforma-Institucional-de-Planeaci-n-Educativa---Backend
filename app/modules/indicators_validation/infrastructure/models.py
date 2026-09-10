@@ -15,7 +15,14 @@ class StateChangeModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     entidad: Mapped[str] = mapped_column(
-        Enum("captura", "poa_avance", name="entidad_flujo", native_enum=True, create_type=False),
+        Enum(
+            "captura",
+            "poa_avance",
+            "poa_cedula_seguimiento",
+            name="entidad_flujo",
+            native_enum=True,
+            create_type=False,
+        ),
         nullable=False,
     )
     entidad_id: Mapped[int] = mapped_column(Integer, nullable=False)

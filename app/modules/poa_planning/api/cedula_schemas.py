@@ -212,6 +212,8 @@ class SeguimientoCedulaRespuesta(BaseModel):
     justificacion_desviacion: str | None
     progreso: str | None
     alcance: str | None
+    estado: str
+    comentario_revision: str | None
 
 
 class ActualizarJustificacionSeguimientoRequest(BaseModel):
@@ -240,3 +242,27 @@ class EmisionCedulaPoaRespuesta(BaseModel):
     snapshot: dict[str, Any]
     emitido_por: int
     emitido_en: datetime
+
+
+class RechazarSeguimientoRequest(BaseModel):
+    comentario: str = Field(
+        min_length=1,
+        description="Obligatorio: el area debe saber qué corregir.",
+    )
+
+
+class CambioEstadoSeguimientoRespuesta(BaseModel):
+    id: int
+    seguimiento_id: int
+    de_estado: str | None
+    a_estado: str
+    usuario_id: int
+    fecha: datetime
+    comentario: str | None
+
+
+class PaginaHistorialSeguimientoRespuesta(BaseModel):
+    items: list[CambioEstadoSeguimientoRespuesta]
+    total: int
+    offset: int
+    limit: int

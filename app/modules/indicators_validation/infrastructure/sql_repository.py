@@ -63,9 +63,12 @@ class SqlAlchemyStateChangeRepository:
         offset: int,
         limit: int,
         descending: bool,
+        entity: str = "captura",
     ) -> tuple[list[StateChange], int]:
+        # `cambios_estado` ya admite la entidad `poa_cedula_seguimiento` desde la
+        # migracion 0023; la lectura estaba fijada a capturas sin necesidad.
         filters = (
-            StateChangeModel.entidad == "captura",
+            StateChangeModel.entidad == entity,
             StateChangeModel.entidad_id == capture_id,
         )
         async with session_scope(self.session_factory) as session:

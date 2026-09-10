@@ -7,8 +7,9 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from app.modules.indicators_capture.domain.value_objects import CaptureStatus
 from app.shared.domain.base_entity import BaseEntity, utc_now
-from app.shared.domain.exceptions import ValidationError
+from app.shared.domain.exceptions import InvalidStateError, ValidationError
 
 FOUR_MONTH_LABELS = {
     1: "Enero-Abril",
@@ -291,6 +292,10 @@ class PoaActivityFollowUp(BaseEntity):
     deviation_justification: str | None = None
     progress: str | None = None
     scope: str | None = None
+    #: Mismo ciclo que la captura de indicadores, para que el area y Planeacion
+    #: no tengan que aprender dos flujos distintos.
+    status: CaptureStatus = CaptureStatus.DRAFT
+    review_comment: str | None = None
 
     @classmethod
     def create(
@@ -328,6 +333,50 @@ class PoaActivityFollowUp(BaseEntity):
         if not normalized:
             raise ValidationError("La justificación de desviaciones es obligatoria.")
         self.deviation_justification = normalized
+        self.touch()
+
+    def ensure_editable(self) -> None:
+        """Un seguimiento enviado o validado deja de ser del area (HU-08.01, HU-08.04)."""
+        if self.status is CaptureStatus.VALIDATED:
+            raise InvalidStateError(
+                "Un seguimiento validado no puede modificarse; requiere reapertura formal."
+            )
+        if self.status is CaptureStatus.SENT:
+            raise InvalidStateError("Un seguimiento enviado a revisión no puede editarse.")
+
+    def send(self, *, has_evidence: bool) -> None:
+        """HU-08.01: el area lo manda a revision."""
+        if self.status not in {CaptureStatus.DRAFT, CaptureStatus.REJECTED}:
+            raise InvalidStateError(
+                "Sólo un seguimiento en borrador o rechazado puede enviarse a revisión."
+            )
+        if self.achieved is None:
+            raise ValidationError("El valor alcanzado es obligatorio para enviar a revisión.")
+        if not (self.progress or "").strip():
+            raise ValidationError("El progreso es obligatorio para enviar a revisión.")
+        if not has_evidence:
+            raise ValidationError("El seguimiento debe tener al menos una evidencia.")
+        self.status = CaptureStatus.SENT
+        self.review_comment = None
+        self.touch()
+
+    def validate(self) -> None:
+        """HU-08.02: Planeacion lo aprueba."""
+        if self.status is not CaptureStatus.SENT:
+            raise InvalidStateError("Sólo un seguimiento enviado puede validarse.")
+        self.status = CaptureStatus.VALIDATED
+        self.review_comment = None
+        self.touch()
+
+    def reject(self, comment: str) -> None:
+        """HU-08.02 y HU-08.03: vuelve al area con el motivo visible."""
+        if self.status is not CaptureStatus.SENT:
+            raise InvalidStateError("Sólo un seguimiento enviado puede rechazarse.")
+        normalized = comment.strip()
+        if not normalized:
+            raise ValidationError("El comentario es obligatorio al rechazar un seguimiento.")
+        self.status = CaptureStatus.REJECTED
+        self.review_comment = normalized
         self.touch()
 
 
