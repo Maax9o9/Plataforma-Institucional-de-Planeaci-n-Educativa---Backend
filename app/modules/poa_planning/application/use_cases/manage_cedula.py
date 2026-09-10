@@ -20,7 +20,10 @@ from app.shared.domain.exceptions import (
 
 from ....evidence_management.domain.ports.repositories import EvidenceRepository
 from ....evidence_management.domain.value_objects import FlowEntity
-from ....institutional_catalogs.domain.ports.repositories import AreaRepository
+from ....institutional_catalogs.domain.ports.repositories import (
+    AreaRepository,
+    ReferenceRepository,
+)
 from ....periods.domain.entities import Period
 from ....periods.domain.ports.repository import PeriodRepository
 from ....periods.domain.value_objects import PeriodStatus, PeriodType
@@ -42,6 +45,7 @@ from ..access_control import can_capture_activity, ensure_planning, ensure_struc
 from ..cedula_dto import (
     AddPoaFormActivityCommand,
     AddPoaFormIndicatorCommand,
+    AssignPoaActivityCriteriaCommand,
     CapturePoaIndicatorTotalCommand,
     CreatePoaFormCommand,
     IssuePoaFormCommand,
@@ -608,6 +612,50 @@ class UpdatePoaFormActivity:
                     ),
                 },
             )
+        return item
+
+
+class AssignPoaActivityCriteria:
+    """Asigna el criterio SEAES que clasifica una actividad de la cédula.
+
+    Es una escritura del área ejecutora (o de Planeación), no de la estructura
+    de la cédula: la clasificación le toca a quien recibe la actividad. Pasa por
+    la capa de casos de uso —y no por el router— para que mueva la marca de
+    tiempo y publique el evento que alimenta la bitácora: la cobertura SEAES es
+    lo que va a medir el semáforo institucional y su asignación debe quedar
+    auditada.
+    """
+
+    def __init__(
+        self,
+        repository: PoaFormRepository,
+        criteria: ReferenceRepository,
+        event_bus: EventBus,
+    ) -> None:
+        self.repository = repository
+        self.criteria = criteria
+        self.event_bus = event_bus
+
+    async def execute(self, command: AssignPoaActivityCriteriaCommand) -> PoaFormActivity:
+        item = await self.repository.get_form_activity(command.form_activity_id)
+        if item is None:
+            raise ResourceNotFoundError("La actividad de la cédula no existe.")
+        if not can_capture_activity(command.actor, item.executing_area_id):
+            raise ForbiddenError("La actividad POA no está asignada al área del usuario.")
+        if command.criteria_seaes_id is not None:
+            criteria = await self.criteria.get_by_id(command.criteria_seaes_id)
+            if criteria is None:
+                raise ResourceNotFoundError("El criterio SEAES no existe.")
+        item.assign_criteria(command.criteria_seaes_id)
+        await self.repository.update_form_activity(item)
+        await _publish(
+            self.event_bus,
+            actor_id=command.actor.id,
+            aggregate_type="poa_form_activity",
+            aggregate_id=item.id,
+            action="criteria_assigned",
+            data={"form_id": item.form_id, "criteria_seaes_id": command.criteria_seaes_id},
+        )
         return item
 
 

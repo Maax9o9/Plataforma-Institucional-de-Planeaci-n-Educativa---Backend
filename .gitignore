@@ -6,3 +6,9 @@ __pycache__/
 .ruff_cache/
 var/uploads/
 *.egg-info/
+
+# Respaldo del .env: contiene secretos, nunca debe versionarse
+.env.bak-*
+
+# Entorno virtual de Python 3.9, sustituido por .venv
+.venv-py39-unused/

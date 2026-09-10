@@ -5,6 +5,7 @@ from fastapi import Request
 from ..application.use_cases.manage_cedula import (
     AddPoaFormActivity,
     AddPoaFormIndicator,
+    AssignPoaActivityCriteria,
     CapturePoaIndicatorTotal,
     CreatePoaForm,
     IssuePoaForm,
@@ -76,6 +77,14 @@ def get_update_form_activity_use_case(request: Request) -> UpdatePoaFormActivity
         request.app.state.area_repository,
         request.app.state.event_bus,
         request.app.state.unit_of_work,
+    )
+
+
+def get_assign_activity_criteria_use_case(request: Request) -> AssignPoaActivityCriteria:
+    return AssignPoaActivityCriteria(
+        request.app.state.poa_form_repository,
+        request.app.state.criteria_repository,
+        request.app.state.event_bus,
     )
 
 

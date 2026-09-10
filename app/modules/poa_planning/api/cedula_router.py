@@ -17,6 +17,7 @@ from ..application.access_control import can_capture_activity, can_edit_structur
 from ..application.cedula_dto import (
     AddPoaFormActivityCommand,
     AddPoaFormIndicatorCommand,
+    AssignPoaActivityCriteriaCommand,
     CapturePoaIndicatorTotalCommand,
     CreatePoaFormCommand,
     IssuePoaFormCommand,
@@ -30,6 +31,7 @@ from ..application.cedula_dto import (
 from ..application.use_cases.manage_cedula import (
     AddPoaFormActivity,
     AddPoaFormIndicator,
+    AssignPoaActivityCriteria,
     CapturePoaIndicatorTotal,
     CreatePoaForm,
     IssuePoaForm,
@@ -63,6 +65,7 @@ from ..domain.cedula_entities import (
 from .cedula_dependencies import (
     get_add_form_activity_use_case,
     get_add_form_indicator_use_case,
+    get_assign_activity_criteria_use_case,
     get_capture_indicator_total_use_case,
     get_create_form_use_case,
     get_issue_form_use_case,
@@ -749,21 +752,17 @@ async def assign_activity_criteria(
     body: AsignarCriterioSeaesRequest,
     request: Request,
     current_user=Depends(require_roles(*FORM_ROLES)),
+    use_case: AssignPoaActivityCriteria = Depends(get_assign_activity_criteria_use_case),
 ):
-    repository = request.app.state.poa_form_repository
-    activity = await repository.get_form_activity(form_activity_id)
-    if activity is None:
-        raise ResourceNotFoundError("La actividad de la cédula no existe.")
-    if not can_capture_activity(actor_from_user(current_user), activity.executing_area_id):
-        raise ForbiddenError("La actividad POA no está asignada al área del usuario.")
-    if body.criterio_seaes_id is not None:
-        criteria = await request.app.state.criteria_repository.get_by_id(body.criterio_seaes_id)
-        if criteria is None:
-            raise ResourceNotFoundError("El criterio SEAES no existe.")
-    activity.criteria_seaes_id = body.criterio_seaes_id
-    await repository.update_form_activity(activity)
-    catalog = await repository.get_activity_catalog(activity.activity_key)
-    return _activity_response(activity, catalog)
+    item = await use_case.execute(
+        AssignPoaActivityCriteriaCommand(
+            form_activity_id=form_activity_id,
+            criteria_seaes_id=body.criterio_seaes_id,
+            actor=actor_from_user(current_user),
+        )
+    )
+    catalog = await request.app.state.poa_form_repository.get_activity_catalog(item.activity_key)
+    return _activity_response(item, catalog)
 
 
 @router.put(
@@ -958,8 +957,20 @@ async def follow_up_history(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=10, ge=1, le=100),
     order: Literal["asc", "desc"] = Query(default="desc"),
-    _current_user=Depends(require_roles(*FORM_ROLES)),
+    current_user=Depends(require_roles(*FORM_ROLES)),
 ):
+    # El historial trae los comentarios de revisión, que son datos del área:
+    # sin esta comprobación cualquier capturista los leería con sólo conocer
+    # el id del seguimiento. Un área nunca ve datos de otra.
+    repository = request.app.state.poa_form_repository
+    follow_up = await repository.get_follow_up(follow_up_id)
+    if follow_up is None:
+        raise ResourceNotFoundError("El seguimiento del POA no existe.")
+    activity = await repository.get_form_activity(follow_up.form_activity_id)
+    executing_area_id = activity.executing_area_id if activity else None
+    if not can_capture_activity(actor_from_user(current_user), executing_area_id):
+        raise ForbiddenError("La actividad POA no está asignada al área del usuario.")
+
     changes, total = await request.app.state.state_change_repository.list_for_capture_page(
         follow_up_id,
         offset=offset,

@@ -320,6 +320,16 @@ class PoaFormActivity(BaseEntity):
             self.observations = observations.strip() or None
         self.touch()
 
+    def assign_criteria(self, criteria_seaes_id: int | None) -> None:
+        """Clasifica la actividad con un criterio SEAES, o lo retira con None.
+
+        Va aparte de `update_details` porque ahí `None` significa "no tocar
+        este campo", y desasignar el criterio es una intención legítima que
+        el sentinel no puede expresar.
+        """
+        self.criteria_seaes_id = criteria_seaes_id
+        self.touch()
+
 
 @dataclass(kw_only=True)
 class PoaActivityFollowUp(BaseEntity):

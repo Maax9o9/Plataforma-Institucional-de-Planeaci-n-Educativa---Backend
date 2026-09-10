@@ -36,6 +36,45 @@ async def test_el_area_asigna_el_criterio_seaes_de_su_actividad(backend_client):
 
 
 @pytest.mark.asyncio
+async def test_asignar_el_criterio_deja_bitacora_y_mueve_la_marca_de_tiempo(backend_client):
+    """La cobertura SEAES es lo que mide el semáforo institucional: quién la
+    asignó y cuándo tiene que quedar auditado. La marca de tiempo se compara
+    contra la que dejó el alta de la actividad, así que la prueba falla si la
+    asignación vuelve a saltarse la capa de casos de uso.
+    """
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+    repositorio = app.state.poa_form_repository
+    antes = (await repositorio.get_form_activity(escenario["activity_id"])).updated_at
+
+    criterio = await client.post(
+        "/api/v1/catalogos/criterios-seaes",
+        headers=escenario["admin_headers"],
+        json={"clave": f"C-{uuid4().hex[:6]}", "nombre": "Cobertura y equidad"},
+    )
+    assert criterio.status_code == 201, criterio.text
+
+    asignado = await client.patch(
+        f"/api/v1/poa/cedulas/actividades/{escenario['activity_id']}/criterio-seaes",
+        headers=escenario["capturer_headers"],
+        json={"criterio_seaes_id": criterio.json()["id"]},
+    )
+    assert asignado.status_code == 200, asignado.text
+
+    bitacora = await client.get(
+        "/api/v1/bitacora",
+        headers=escenario["admin_headers"],
+        params={"entidad": "poa_form_activity", "entidad_id": escenario["activity_id"]},
+    )
+    assert bitacora.status_code == 200, bitacora.text
+    acciones = [item["accion"] for item in bitacora.json()["items"]]
+    assert "criteria_assigned" in acciones, bitacora.text
+
+    despues = (await repositorio.get_form_activity(escenario["activity_id"])).updated_at
+    assert despues > antes, (antes, despues)
+
+
+@pytest.mark.asyncio
 async def test_el_criterio_debe_existir(backend_client):
     app, client = backend_client
     escenario = await _escenario(app, client)
@@ -151,6 +190,51 @@ async def test_area_sin_asignar_no_ve_nada(backend_client):
     cuerpo = listado.json()
     assert cuerpo["items"] == []
     assert cuerpo["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_un_capturista_no_lee_el_historial_de_otra_area(backend_client):
+    """El historial trae los comentarios de revisión: son datos del área. Un
+    capturista de otra área que conozca el id del seguimiento debe recibir 403,
+    y el dueño debe seguir leyendo el suyo — si no, la comprobación sería un
+    portazo indiscriminado en vez de un filtro por área.
+    """
+    app, client = backend_client
+    ajeno = await _escenario(app, client)
+    seguimiento = await _capturar(client, ajeno)
+    await _attach_follow_up_file(
+        client,
+        ajeno["capturer_headers"],
+        seguimiento["id"],
+        "historial",
+        ajeno["cierre_q1"],
+    )
+    await client.post(
+        f"/api/v1/poa/cedulas/seguimientos/{seguimiento['id']}/enviar",
+        headers=ajeno["capturer_headers"],
+    )
+    await client.post(
+        f"/api/v1/poa/cedulas/seguimientos/{seguimiento['id']}/rechazar",
+        headers=ajeno["planner_headers"],
+        json={"comentario": "El acta no corresponde al cuatrimestre."},
+    )
+    intruso = await _escenario(app, client)
+
+    denegado = await client.get(
+        f"/api/v1/poa/cedulas/seguimientos/{seguimiento['id']}/historial",
+        headers=intruso["capturer_headers"],
+    )
+
+    assert denegado.status_code == 403, denegado.text
+
+    propio = await client.get(
+        f"/api/v1/poa/cedulas/seguimientos/{seguimiento['id']}/historial",
+        headers=ajeno["capturer_headers"],
+    )
+
+    assert propio.status_code == 200, propio.text
+    comentarios = [item["comentario"] for item in propio.json()["items"]]
+    assert "El acta no corresponde al cuatrimestre." in comentarios
 
 
 @pytest.mark.asyncio

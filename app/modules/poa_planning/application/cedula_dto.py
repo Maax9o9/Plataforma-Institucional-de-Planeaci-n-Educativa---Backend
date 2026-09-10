@@ -95,6 +95,13 @@ class UpdatePoaFormActivityCommand:
 
 
 @dataclass(frozen=True)
+class AssignPoaActivityCriteriaCommand:
+    form_activity_id: int
+    criteria_seaes_id: int | None
+    actor: ActorContext
+
+
+@dataclass(frozen=True)
 class RecordPoaFollowUpCommand:
     form_activity_id: int
     quarter: int
