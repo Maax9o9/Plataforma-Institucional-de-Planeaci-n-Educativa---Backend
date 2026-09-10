@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from app.core.authorization import actor_from_user
 from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user, require_roles
+from app.modules.evidence_management.domain.value_objects import FlowEntity
 from app.shared.domain.exceptions import ForbiddenError, ResourceNotFoundError
 
 from ..application.access_control import can_capture_activity, can_edit_structure
@@ -74,6 +75,7 @@ from .cedula_dependencies import (
 from .cedula_schemas import (
     ActividadCedulaRespuesta,
     ActividadPoaCatalogoRespuesta,
+    ActividadTarjetaRespuesta,
     ActualizarActividadCedulaRequest,
     ActualizarCedulaPoaRequest,
     ActualizarIndicadorCedulaRequest,
@@ -93,15 +95,23 @@ from .cedula_schemas import (
     IndicadorPoaCatalogoRespuesta,
     ObjetivoPoaCatalogoRespuesta,
     PaginaHistorialSeguimientoRespuesta,
+    PaginaSeguimientosRespuesta,
     RechazarSeguimientoRequest,
     RegistrarSeguimientoCedulaRequest,
     SeguimientoCedulaRespuesta,
+    SeguimientoTarjetaRespuesta,
 )
 
 router = APIRouter(prefix="/poa", tags=["Cédulas POA"])
 FORM_ROLES = ("planeacion", "planeacion_admin", "admin_sistema", "capturista_poa")
 PLANNING_ROLES = ("planeacion", "planeacion_admin", "admin_sistema")
 STRUCTURE_ROLES = (*PLANNING_ROLES, "capturista_poa")
+#: Rectoría también consulta el tablero, sólo lectura: no se agrega a FORM_ROLES
+#: porque esa tupla habilita acciones de escritura en toda la cédula.
+FOLLOW_UP_LIST_ROLES = (*FORM_ROLES, "rectoria")
+#: Igual que PLANNING_ROLES, pero para decidir si se fuerza el filtro de área:
+#: rectoría ve todas las áreas, como Planeación, aunque no puede escribir.
+UNRESTRICTED_FOLLOW_UP_ROLES = {"planeacion", "planeacion_admin", "admin_sistema", "rectoria"}
 
 
 def _form_response(
@@ -433,6 +443,79 @@ async def list_forms(
         )
         for item in items
     ]
+
+
+@router.get(
+    "/seguimientos",
+    response_model=PaginaSeguimientosRespuesta,
+    summary="Listar los seguimientos del tablero",
+)
+async def list_follow_ups(
+    request: Request,
+    ejercicio_id: int | None = Query(default=None),
+    cuatrimestre: int | None = Query(default=None, ge=1, le=3),
+    area_id: int | None = Query(default=None),
+    estado: str | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=500),
+    current_user=Depends(require_roles(*FOLLOW_UP_LIST_ROLES)),
+):
+    # Un área sólo ve lo suyo: el filtro se fuerza para quien no es de
+    # planeación ni de rectoría (ambas ven todas las áreas, igual que en los
+    # reportes del POA). `executing_area_id=None` significa "sin filtro" en el
+    # repositorio, así que a un usuario de área sin área asignada no se le
+    # puede forzar ese None: se le devuelve la página vacía sin consultar.
+    if not current_user.has_any_role(UNRESTRICTED_FOLLOW_UP_ROLES):
+        if current_user.area_id is None:
+            return PaginaSeguimientosRespuesta(items=[], total=0, offset=offset, limit=limit)
+        area_id = current_user.area_id
+    cards, total = await request.app.state.poa_form_repository.list_follow_up_cards(
+        exercise_id=ejercicio_id,
+        quarter=cuatrimestre,
+        executing_area_id=area_id,
+        status=estado,
+        offset=offset,
+        limit=limit,
+    )
+    evidences = await request.app.state.evidence_repository.count_by_entity(
+        FlowEntity.POA_FORM_FOLLOW_UP, [card.id for card in cards]
+    )
+    # Una sola consulta al catálogo para todas las tarjetas: pedirlo por
+    # actividad dentro de la comprensión sería N+1, justo lo que este
+    # endpoint existe para evitar.
+    descriptions: dict[str, str] = {}
+    if cards:
+        catalog_items = await request.app.state.poa_form_repository.list_activity_catalog()
+        descriptions = {item.key: item.description for item in catalog_items}
+    return PaginaSeguimientosRespuesta(
+        items=[
+            SeguimientoTarjetaRespuesta(
+                id=card.id,
+                cedula_id=card.form_id,
+                actividad=ActividadTarjetaRespuesta(
+                    id=card.activity_id,
+                    clave=card.activity_key,
+                    descripcion=descriptions.get(card.activity_key, card.activity_key),
+                    unidad_medida=card.unit,
+                    meta_anual=card.annual_goal,
+                ),
+                area_ejecutora_id=card.executing_area_id,
+                criterio_seaes_id=card.criteria_seaes_id,
+                cuatrimestre=card.quarter,
+                periodo_id=card.period_id,
+                programado=card.scheduled,
+                alcanzado=card.achieved,
+                estado=card.status.value,
+                comentario_revision=card.review_comment,
+                evidencias=evidences.get(card.id, 0),
+                actualizado_en=card.updated_at,
+            )
+            for card in cards
+        ],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.get(

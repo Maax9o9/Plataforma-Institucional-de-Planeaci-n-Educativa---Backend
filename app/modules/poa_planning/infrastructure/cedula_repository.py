@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from itertools import count
 
 from app.shared.domain.exceptions import ConflictError
@@ -9,6 +10,7 @@ from app.shared.domain.exceptions import ConflictError
 from ..domain.cedula_entities import (
     PoaActivityCatalog,
     PoaActivityFollowUp,
+    PoaFollowUpCard,
     PoaForm,
     PoaFormActivity,
     PoaFormDetail,
@@ -212,6 +214,58 @@ class InMemoryPoaFormRepository:
 
     async def update_follow_up(self, item: PoaActivityFollowUp) -> None:
         self.follow_ups[item.id] = item
+
+    async def list_follow_up_cards(
+        self,
+        *,
+        exercise_id: int | None = None,
+        quarter: int | None = None,
+        executing_area_id: int | None = None,
+        status: str | None = None,
+        offset: int = 0,
+        limit: int = 200,
+    ) -> tuple[list[PoaFollowUpCard], int]:
+        cards = []
+        for follow_up in self.follow_ups.values():
+            activity = self.form_activities.get(follow_up.form_activity_id)
+            if activity is None:
+                continue
+            form = self.forms.get(activity.form_id)
+            if form is None:
+                continue
+            if exercise_id is not None and form.exercise_id != exercise_id:
+                continue
+            if quarter is not None and follow_up.quarter != quarter:
+                continue
+            if executing_area_id is not None and activity.executing_area_id != executing_area_id:
+                continue
+            if status is not None and follow_up.status.value != status:
+                continue
+            # Cuatro decimales, igual que la columna NUMERIC(18,4) del adaptador SQL:
+            # ambas implementaciones deben devolver la misma representación.
+            scale = Decimal("0.0001")
+            achieved = follow_up.achieved
+            if achieved is not None:
+                achieved = achieved.quantize(scale)
+            cards.append(PoaFollowUpCard(
+                id=follow_up.id,
+                form_id=form.id,
+                activity_id=activity.id,
+                activity_key=activity.activity_key,
+                unit=activity.unit,
+                annual_goal=activity.annual_goal.quantize(scale),
+                executing_area_id=activity.executing_area_id,
+                criteria_seaes_id=activity.criteria_seaes_id,
+                quarter=follow_up.quarter,
+                period_id=follow_up.period_id,
+                scheduled=follow_up.scheduled.quantize(scale),
+                achieved=achieved,
+                status=follow_up.status,
+                review_comment=follow_up.review_comment,
+                updated_at=follow_up.updated_at,
+            ))
+        cards.sort(key=lambda card: (card.activity_key, card.quarter))
+        return cards[offset:offset + limit], len(cards)
 
     async def upsert_follow_up(self, item: PoaActivityFollowUp) -> PoaActivityFollowUp:
         existing = next(

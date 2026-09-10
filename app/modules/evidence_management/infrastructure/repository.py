@@ -37,6 +37,18 @@ class InMemoryEvidenceRepository:
             for _, item_entity, item_id in self._links
         )
 
+    async def count_by_entity(
+        self, entity: FlowEntity, entity_ids: list[int]
+    ) -> dict[int, int]:
+        if not entity_ids:
+            return {}
+        buscados = set(entity_ids)
+        conteo: dict[int, int] = {}
+        for _, item_entity, item_id in self._links:
+            if item_entity == entity and item_id in buscados:
+                conteo[item_id] = conteo.get(item_id, 0) + 1
+        return conteo
+
     async def get(self, evidence_id: int) -> Evidence | None:
         return self._evidences.get(evidence_id)
 

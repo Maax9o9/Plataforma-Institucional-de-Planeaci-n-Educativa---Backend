@@ -438,3 +438,25 @@ class PoaFormIssue(BaseEntity):
     snapshot: dict[str, Any]
     issued_by: int
     issued_at: datetime = field(default_factory=utc_now)
+
+
+@dataclass
+class PoaFollowUpCard:
+    """Una tarjeta del tablero: el seguimiento con lo que hace falta para decidir
+    sin abrirlo. Es un modelo de lectura, no un agregado: no tiene reglas."""
+
+    id: int
+    form_id: int
+    activity_id: int
+    activity_key: str
+    unit: str
+    annual_goal: Decimal
+    executing_area_id: int | None
+    criteria_seaes_id: int | None
+    quarter: int
+    period_id: int
+    scheduled: Decimal
+    achieved: Decimal | None
+    status: CaptureStatus
+    review_comment: str | None
+    updated_at: datetime

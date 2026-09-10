@@ -7,6 +7,7 @@ from typing import Protocol
 from ..cedula_entities import (
     PoaActivityCatalog,
     PoaActivityFollowUp,
+    PoaFollowUpCard,
     PoaForm,
     PoaFormActivity,
     PoaFormDetail,
@@ -77,6 +78,17 @@ class PoaFormRepository(Protocol):
     async def get_follow_up_by_quarter(
         self, form_activity_id: int, quarter: int
     ) -> PoaActivityFollowUp | None: ...
+
+    async def list_follow_up_cards(
+        self,
+        *,
+        exercise_id: int | None = None,
+        quarter: int | None = None,
+        executing_area_id: int | None = None,
+        status: str | None = None,
+        offset: int = 0,
+        limit: int = 200,
+    ) -> tuple[list[PoaFollowUpCard], int]: ...
 
     async def update_follow_up(self, item: PoaActivityFollowUp) -> None: ...
 

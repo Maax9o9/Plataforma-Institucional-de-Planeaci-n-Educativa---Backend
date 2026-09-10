@@ -313,3 +313,34 @@ class PaginaHistorialSeguimientoRespuesta(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+class ActividadTarjetaRespuesta(BaseModel):
+    id: int
+    clave: str
+    descripcion: str
+    unidad_medida: str
+    meta_anual: Decimal
+
+
+class SeguimientoTarjetaRespuesta(BaseModel):
+    id: int
+    cedula_id: int
+    actividad: ActividadTarjetaRespuesta
+    area_ejecutora_id: int | None
+    criterio_seaes_id: int | None
+    cuatrimestre: int
+    periodo_id: int
+    programado: Decimal
+    alcanzado: Decimal | None
+    estado: str
+    comentario_revision: str | None
+    evidencias: int
+    actualizado_en: datetime
+
+
+class PaginaSeguimientosRespuesta(BaseModel):
+    items: list[SeguimientoTarjetaRespuesta]
+    total: int
+    offset: int
+    limit: int

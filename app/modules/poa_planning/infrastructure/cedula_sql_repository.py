@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import UTC, datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -17,6 +17,7 @@ from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_s
 from ..domain.cedula_entities import (
     PoaActivityCatalog,
     PoaActivityFollowUp,
+    PoaFollowUpCard,
     PoaForm,
     PoaFormActivity,
     PoaFormDetail,
@@ -402,6 +403,65 @@ class SqlAlchemyPoaFormRepository:
         item.created_at = model.creado_en
         item.updated_at = now
         return item
+
+    async def list_follow_up_cards(
+        self,
+        *,
+        exercise_id: int | None = None,
+        quarter: int | None = None,
+        executing_area_id: int | None = None,
+        status: str | None = None,
+        offset: int = 0,
+        limit: int = 200,
+    ) -> tuple[list[PoaFollowUpCard], int]:
+        async with session_scope(self.session_factory) as session:
+            statement = (
+                select(PoaActivityFollowUpModel, PoaFormActivityModel, PoaFormModel)
+                .join(
+                    PoaFormActivityModel,
+                    PoaActivityFollowUpModel.cedula_actividad_id == PoaFormActivityModel.id,
+                )
+                .join(PoaFormModel, PoaFormActivityModel.cedula_id == PoaFormModel.id)
+            )
+            if exercise_id is not None:
+                statement = statement.where(PoaFormModel.ejercicio_id == exercise_id)
+            if quarter is not None:
+                statement = statement.where(PoaActivityFollowUpModel.cuatrimestre == quarter)
+            if executing_area_id is not None:
+                statement = statement.where(
+                    PoaFormActivityModel.area_ejecutora_id == executing_area_id
+                )
+            if status is not None:
+                statement = statement.where(PoaActivityFollowUpModel.estado == status)
+            total = await session.scalar(
+                select(func.count()).select_from(statement.subquery())
+            )
+            rows = await session.execute(
+                statement.order_by(
+                    PoaFormActivityModel.actividad_clave,
+                    PoaActivityFollowUpModel.cuatrimestre,
+                ).offset(offset).limit(limit)
+            )
+            return [
+                PoaFollowUpCard(
+                    id=follow_up.id,
+                    form_id=form.id,
+                    activity_id=activity.id,
+                    activity_key=activity.actividad_clave,
+                    unit=activity.unidad_medida,
+                    annual_goal=activity.meta_anual,
+                    executing_area_id=activity.area_ejecutora_id,
+                    criteria_seaes_id=activity.criterio_seaes_id,
+                    quarter=follow_up.cuatrimestre,
+                    period_id=follow_up.periodo_id,
+                    scheduled=follow_up.programado,
+                    achieved=follow_up.alcanzado,
+                    status=CaptureStatus(follow_up.estado),
+                    review_comment=follow_up.comentario_revision,
+                    updated_at=follow_up.actualizado_en,
+                )
+                for follow_up, activity, form in rows.all()
+            ], total or 0
 
     async def get_detail(self, form_id: int) -> PoaFormDetail | None:
         async with session_scope(self.session_factory) as session:
