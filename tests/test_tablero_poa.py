@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 
 from test_ep08_revision_poa import _escenario
@@ -15,7 +17,7 @@ async def test_el_area_asigna_el_criterio_seaes_de_su_actividad(backend_client):
     criterio = await client.post(
         "/api/v1/catalogos/criterios-seaes",
         headers=escenario["admin_headers"],
-        json={"clave": f"C-{escenario['anio']}", "nombre": "Pertinencia de los programas"},
+        json={"clave": f"C-{uuid4().hex[:6]}", "nombre": "Pertinencia de los programas"},
     )
     assert criterio.status_code == 201, criterio.text
     criterio_id = criterio.json()["id"]
