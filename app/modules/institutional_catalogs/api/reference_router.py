@@ -8,7 +8,13 @@ from pydantic import BaseModel, Field
 from app.core.security import get_current_user, require_roles
 
 from ..application.use_cases.manage_reference import DeactivateReference, UpdateReference
+from ..application.use_cases.manage_unit_of_measure import (
+    CreateUnitOfMeasure,
+    DeactivateUnitOfMeasure,
+    UpdateUnitOfMeasure,
+)
 from ..domain.reference_entities import ReferenceItem
+from ..domain.unit_of_measure_entities import UnitOfMeasure
 
 router = APIRouter(prefix="/catalogos", tags=["Catalogos institucionales"])
 
@@ -181,3 +187,104 @@ async def deactivate_indicator_type(
         request.app.state.event_bus,
     ).execute(item_id, current_user.id, version)
     return ReferenciaRespuesta.from_domain(item)
+
+
+class CrearUnidadMedidaRequest(BaseModel):
+    clave: str = Field(min_length=1, max_length=50)
+    nombre: str = Field(min_length=1, max_length=100)
+    plural: str = Field(min_length=1, max_length=100)
+    version: int | None = Field(default=None, ge=1)
+
+
+class UnidadMedidaRespuesta(BaseModel):
+    id: int
+    clave: str
+    nombre: str
+    plural: str
+    activo: bool
+    version: int
+
+    @classmethod
+    def from_domain(cls, item: UnitOfMeasure) -> UnidadMedidaRespuesta:
+        return cls(
+            id=item.id,
+            clave=item.key,
+            nombre=item.name,
+            plural=item.plural,
+            activo=item.is_active,
+            version=item.version,
+        )
+
+
+@router.get(
+    "/unidades-medida",
+    response_model=list[UnidadMedidaRespuesta],
+    summary="Consultar unidades de medida",
+)
+async def list_units_of_measure(
+    request: Request,
+    activo: bool | None = Query(default=True),
+    _user=Depends(get_current_user),
+):
+    # A diferencia de `_list`, aqui se trae el catalogo completo y se filtra
+    # despues: la actividad puede necesitar ver una unidad ya desactivada
+    # (`?activo=false`) para no perder lo que ya tenia guardado como texto.
+    items = await request.app.state.unit_of_measure_repository.list(active_only=False)
+    if activo is not None:
+        items = [item for item in items if item.is_active is activo]
+    return [UnidadMedidaRespuesta.from_domain(item) for item in items]
+
+
+@router.post(
+    "/unidades-medida",
+    response_model=UnidadMedidaRespuesta,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar unidad de medida",
+)
+async def create_unit_of_measure(
+    body: CrearUnidadMedidaRequest,
+    request: Request,
+    _user=Depends(require_roles("planeacion", "admin_sistema")),
+):
+    item = await CreateUnitOfMeasure(request.app.state.unit_of_measure_repository).execute(
+        key=body.clave, name=body.nombre, plural=body.plural
+    )
+    return UnidadMedidaRespuesta.from_domain(item)
+
+
+@router.patch(
+    "/unidades-medida/{item_id}",
+    response_model=UnidadMedidaRespuesta,
+    summary="Editar unidad de medida",
+)
+async def update_unit_of_measure(
+    item_id: int,
+    body: CrearUnidadMedidaRequest,
+    request: Request,
+    _user=Depends(require_roles("planeacion", "admin_sistema")),
+):
+    item = await UpdateUnitOfMeasure(request.app.state.unit_of_measure_repository).execute(
+        item_id,
+        key=body.clave,
+        name=body.nombre,
+        plural=body.plural,
+        expected_version=body.version,
+    )
+    return UnidadMedidaRespuesta.from_domain(item)
+
+
+@router.post(
+    "/unidades-medida/{item_id}/desactivar",
+    response_model=UnidadMedidaRespuesta,
+    summary="Desactivar unidad de medida",
+)
+async def deactivate_unit_of_measure(
+    item_id: int,
+    request: Request,
+    version: int | None = Query(default=None, ge=1),
+    _user=Depends(require_roles("planeacion", "admin_sistema")),
+):
+    item = await DeactivateUnitOfMeasure(request.app.state.unit_of_measure_repository).execute(
+        item_id, version
+    )
+    return UnidadMedidaRespuesta.from_domain(item)

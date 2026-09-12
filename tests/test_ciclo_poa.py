@@ -564,3 +564,111 @@ async def test_migracion_0031_conserva_los_criterios_de_la_columna_singular():
         async with engine.begin() as connection:
             await connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         await engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Tarea 3: catalogo de unidades de medida (migracion 0032). La unidad la
+# define la institucion, no el PSE: la actividad sigue guardando su unidad
+# como texto libre, el catalogo solo existe para ofrecerla y evitar que
+# "Informe" e "Informes" convivan como si fueran cosas distintas.
+# ---------------------------------------------------------------------------
+
+_CLAVES_SEMBRADAS = {
+    "porcentaje",
+    "informe",
+    "alumno",
+    "curso",
+    "documento",
+    "estudiante",
+    "evento",
+    "profesor",
+    "certificacion",
+    "campana",
+    "certificado",
+    "convenio",
+    "educando-alfabetizado",
+    "equipo",
+    "espacio",
+    "mujer-atendida",
+    "mujer-becada",
+    "nodess-registrado",
+    "personal",
+    "proyecto",
+}
+
+
+@pytest.mark.asyncio
+async def test_catalogo_unidades_medida_trae_las_veinte_sembradas(backend_client):
+    app, client = backend_client
+    _, headers = await _account(app, client, Role.ADMIN_SISTEMA, uuid4().hex[:8])
+
+    respuesta = await client.get("/api/v1/catalogos/unidades-medida", headers=headers)
+    assert respuesta.status_code == 200, respuesta.text
+    unidades = respuesta.json()
+
+    # La base de pruebas persiste entre corridas de este archivo: se
+    # comprueba que las 20 sembradas por la migracion 0032 esten, no que
+    # sean las unicas (esta suite tambien crea unidades con clave al azar).
+    claves = {item["clave"] for item in unidades}
+    assert _CLAVES_SEMBRADAS <= claves
+
+    porcentaje = next(item for item in unidades if item["clave"] == "porcentaje")
+    assert porcentaje["nombre"] == "Porcentaje"
+    assert porcentaje["plural"] == "Porcentaje"
+    assert porcentaje["activo"] is True
+
+    informe = next(item for item in unidades if item["clave"] == "informe")
+    assert informe["nombre"] == "Informe"
+    assert informe["plural"] == "Informes"
+
+
+@pytest.mark.asyncio
+async def test_crear_y_desactivar_unidad_de_medida(backend_client):
+    app, client = backend_client
+    _, admin_headers = await _account(app, client, Role.ADMIN_SISTEMA, uuid4().hex[:8])
+    # El anio y el correo del escenario no sirven de nada aqui: lo unico que
+    # necesita ser unico es la clave, y la base de pruebas persiste.
+    clave = f"prueba-{uuid4().hex[:8]}"
+
+    creada = await client.post(
+        "/api/v1/catalogos/unidades-medida",
+        headers=admin_headers,
+        json={"clave": clave, "nombre": "Unidad de prueba", "plural": "Unidades de prueba"},
+    )
+    assert creada.status_code == 201, creada.text
+    cuerpo = creada.json()
+    assert cuerpo["clave"] == clave
+    assert cuerpo["nombre"] == "Unidad de prueba"
+    assert cuerpo["plural"] == "Unidades de prueba"
+    assert cuerpo["activo"] is True
+
+    listado_activo = await client.get(
+        "/api/v1/catalogos/unidades-medida",
+        headers=admin_headers,
+        params={"activo": "true"},
+    )
+    assert clave in {item["clave"] for item in listado_activo.json()}
+
+    desactivada = await client.post(
+        f"/api/v1/catalogos/unidades-medida/{cuerpo['id']}/desactivar",
+        headers=admin_headers,
+    )
+    assert desactivada.status_code == 200, desactivada.text
+    assert desactivada.json()["activo"] is False
+
+    # El filtro ?activo=true (que tambien es el default) debe excluir la que
+    # se acaba de desactivar.
+    listado_tras_desactivar = await client.get(
+        "/api/v1/catalogos/unidades-medida",
+        headers=admin_headers,
+        params={"activo": "true"},
+    )
+    assert clave not in {item["clave"] for item in listado_tras_desactivar.json()}
+
+    # Pero sigue existiendo: se recupera pidiendo explicitamente las inactivas.
+    listado_inactivo = await client.get(
+        "/api/v1/catalogos/unidades-medida",
+        headers=admin_headers,
+        params={"activo": "false"},
+    )
+    assert clave in {item["clave"] for item in listado_inactivo.json()}
