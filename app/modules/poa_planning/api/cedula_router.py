@@ -11,7 +11,7 @@ from app.core.authorization import actor_from_user
 from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user, require_roles
 from app.modules.evidence_management.domain.value_objects import FlowEntity
-from app.shared.domain.exceptions import ForbiddenError, ResourceNotFoundError
+from app.shared.domain.exceptions import ForbiddenError, GoneError, ResourceNotFoundError
 
 from ..application.access_control import can_capture_activity, can_edit_structure
 from ..application.cedula_dto import (
@@ -85,7 +85,7 @@ from .cedula_schemas import (
     ActualizarJustificacionSeguimientoRequest,
     AgregarActividadCedulaRequest,
     AgregarIndicadorCedulaRequest,
-    AsignarCriterioSeaesRequest,
+    AsignarCriteriosSeaesRequest,
     CambioEstadoSeguimientoRespuesta,
     CapturarTotalIndicadorRequest,
     CedulaPoaDetalleRespuesta,
@@ -180,7 +180,8 @@ def _activity_response(item: PoaFormActivity, catalog) -> ActividadCedulaRespues
         meta_anual=item.annual_goal,
         area_ejecutora_id=item.executing_area_id,
         observaciones=item.observations,
-        criterio_seaes_id=item.criteria_seaes_id,
+        actividad_upe=item.upe_description,
+        criterio_seaes_ids=list(item.criteria_seaes_ids),
     )
 
 
@@ -503,7 +504,7 @@ async def list_follow_ups(
                     meta_anual=card.annual_goal,
                 ),
                 area_ejecutora_id=card.executing_area_id,
-                criterio_seaes_id=card.criteria_seaes_id,
+                criterio_seaes_ids=list(card.criteria_seaes_ids),
                 cuatrimestre=card.quarter,
                 periodo_id=card.period_id,
                 programado=card.scheduled,
@@ -731,6 +732,7 @@ async def update_form_activity(
             annual_goal=body.meta_anual,
             executing_area_id=body.area_ejecutora_id,
             observations=body.observaciones,
+            upe_description=body.actividad_upe,
             actor=actor_from_user(current_user),
         )
     )
@@ -740,16 +742,40 @@ async def update_form_activity(
 
 @router.patch(
     "/cedulas/actividades/{form_activity_id}/criterio-seaes",
+    summary="Retirado: un criterio SEAES ya no es único por actividad",
+    include_in_schema=False,
+    status_code=status.HTTP_410_GONE,
+    responses={410: {"model": ErrorResponse, "description": "La ruta fue retirada."}},
+)
+async def assign_activity_criteria_retirada(
+    form_activity_id: int,
+    _user=Depends(get_current_user),
+):
+    # SEAES define siete criterios indicativos: una actividad puede caer en
+    # varios a la vez, así que esta ruta singular (migración 0028) ya no
+    # puede representar el dato. Se conserva sólo para no romper en
+    # silencio a quien todavía le apunte: responde 410 con la ruta nueva en
+    # vez de un 404 que no explica nada.
+    raise GoneError(
+        "Esta ruta fue retirada: un criterio SEAES ya no es único por actividad. Use "
+        "PATCH /poa/cedulas/actividades/{id}/criterios-seaes con 'criterio_seaes_ids' "
+        "(lista).",
+        details={"reason": "POA_CRITERIA_ROUTE_RETIRED", "form_activity_id": form_activity_id},
+    )
+
+
+@router.patch(
+    "/cedulas/actividades/{form_activity_id}/criterios-seaes",
     response_model=ActividadCedulaRespuesta,
-    summary="Asignar el criterio SEAES que clasifica la actividad",
+    summary="Asignar los criterios SEAES que clasifican la actividad",
     responses={
         403: {"model": ErrorResponse, "description": "La actividad no es del área."},
-        404: {"model": ErrorResponse, "description": "La actividad o el criterio no existen."},
+        404: {"model": ErrorResponse, "description": "La actividad o algún criterio no existen."},
     },
 )
 async def assign_activity_criteria(
     form_activity_id: int,
-    body: AsignarCriterioSeaesRequest,
+    body: AsignarCriteriosSeaesRequest,
     request: Request,
     current_user=Depends(require_roles(*FORM_ROLES)),
     use_case: AssignPoaActivityCriteria = Depends(get_assign_activity_criteria_use_case),
@@ -757,7 +783,7 @@ async def assign_activity_criteria(
     item = await use_case.execute(
         AssignPoaActivityCriteriaCommand(
             form_activity_id=form_activity_id,
-            criteria_seaes_id=body.criterio_seaes_id,
+            criteria_seaes_ids=tuple(body.criterio_seaes_ids),
             actor=actor_from_user(current_user),
         )
     )

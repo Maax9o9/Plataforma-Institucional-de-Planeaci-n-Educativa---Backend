@@ -593,6 +593,7 @@ class UpdatePoaFormActivity:
             annual_goal=command.annual_goal,
             executing_area_id=command.executing_area_id,
             observations=command.observations,
+            upe_description=command.upe_description,
         )
         async with self.unit_of_work():
             await self.repository.update_form_activity(item)
@@ -616,7 +617,7 @@ class UpdatePoaFormActivity:
 
 
 class AssignPoaActivityCriteria:
-    """Asigna el criterio SEAES que clasifica una actividad de la cédula.
+    """Asigna los criterios SEAES que clasifican una actividad de la cédula.
 
     Es una escritura del área ejecutora (o de Planeación), no de la estructura
     de la cédula: la clasificación le toca a quien recibe la actividad. Pasa por
@@ -624,6 +625,11 @@ class AssignPoaActivityCriteria:
     tiempo y publique el evento que alimenta la bitácora: la cobertura SEAES es
     lo que va a medir el semáforo institucional y su asignación debe quedar
     auditada.
+
+    SEAES define siete criterios indicativos y una actividad puede caer en
+    varios a la vez, así que el comando reemplaza el conjunto completo en vez
+    de agregar uno solo (la columna singular que existía se retiró en la
+    migración 0031).
     """
 
     def __init__(
@@ -642,19 +648,22 @@ class AssignPoaActivityCriteria:
             raise ResourceNotFoundError("La actividad de la cédula no existe.")
         if not can_capture_activity(command.actor, item.executing_area_id):
             raise ForbiddenError("La actividad POA no está asignada al área del usuario.")
-        if command.criteria_seaes_id is not None:
-            criteria = await self.criteria.get_by_id(command.criteria_seaes_id)
+        unique_ids = sorted(set(command.criteria_seaes_ids))
+        for criteria_id in unique_ids:
+            criteria = await self.criteria.get_by_id(criteria_id)
             if criteria is None:
-                raise ResourceNotFoundError("El criterio SEAES no existe.")
-        item.assign_criteria(command.criteria_seaes_id)
-        await self.repository.update_form_activity(item)
+                raise ResourceNotFoundError(f"El criterio SEAES {criteria_id} no existe.")
+        item.assign_criteria(unique_ids)
+        await self.repository.replace_activity_criteria(
+            item.id, item.criteria_seaes_ids, item.updated_at
+        )
         await _publish(
             self.event_bus,
             actor_id=command.actor.id,
             aggregate_type="poa_form_activity",
             aggregate_id=item.id,
             action="criteria_assigned",
-            data={"form_id": item.form_id, "criteria_seaes_id": command.criteria_seaes_id},
+            data={"form_id": item.form_id, "criteria_seaes_ids": list(item.criteria_seaes_ids)},
         )
         return item
 

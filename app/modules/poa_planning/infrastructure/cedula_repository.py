@@ -196,6 +196,16 @@ class InMemoryPoaFormRepository:
     async def update_form_activity(self, item: PoaFormActivity) -> None:
         self.form_activities[item.id] = item
 
+    async def replace_activity_criteria(
+        self, form_activity_id: int, criteria_seaes_ids: tuple[int, ...], updated_at
+    ) -> None:
+        item = self.form_activities.get(form_activity_id)
+        if item is None:
+            return
+        item.criteria_seaes_ids = tuple(sorted(set(criteria_seaes_ids)))
+        item.updated_at = updated_at
+        self.form_activities[form_activity_id] = item
+
     async def get_follow_up(self, item_id: int) -> PoaActivityFollowUp | None:
         return self.follow_ups.get(item_id)
 
@@ -248,7 +258,7 @@ class InMemoryPoaFormRepository:
                 unit=activity.unit,
                 annual_goal=activity.annual_goal,
                 executing_area_id=activity.executing_area_id,
-                criteria_seaes_id=activity.criteria_seaes_id,
+                criteria_seaes_ids=tuple(activity.criteria_seaes_ids),
                 quarter=follow_up.quarter,
                 period_id=follow_up.period_id,
                 scheduled=follow_up.scheduled,

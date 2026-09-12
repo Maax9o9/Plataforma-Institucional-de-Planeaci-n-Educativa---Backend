@@ -13,26 +13,51 @@ from test_poa_cedula_flow import _attach_follow_up_file
 
 
 @pytest.mark.asyncio
-async def test_el_area_asigna_el_criterio_seaes_de_su_actividad(backend_client):
+async def test_la_ruta_singular_de_criterio_fue_retirada(backend_client):
+    """SEAES admite varios criterios por actividad desde la migración 0031:
+    la ruta vieja en singular ya no puede representar el dato y responde 410
+    señalando la ruta plural, en vez de fallar en silencio con un 404.
+    """
     app, client = backend_client
     escenario = await _escenario(app, client)
 
-    criterio = await client.post(
+    retirada = await client.patch(
+        f"/api/v1/poa/cedulas/actividades/{escenario['activity_id']}/criterio-seaes",
+        headers=escenario["capturer_headers"],
+        json={"criterio_seaes_id": 1},
+    )
+
+    assert retirada.status_code == 410, retirada.text
+    assert "criterios-seaes" in retirada.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_el_area_asigna_los_criterios_seaes_de_su_actividad(backend_client):
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+
+    criterio_uno = await client.post(
         "/api/v1/catalogos/criterios-seaes",
         headers=escenario["admin_headers"],
         json={"clave": f"C-{uuid4().hex[:6]}", "nombre": "Pertinencia de los programas"},
     )
-    assert criterio.status_code == 201, criterio.text
-    criterio_id = criterio.json()["id"]
+    assert criterio_uno.status_code == 201, criterio_uno.text
+    criterio_dos = await client.post(
+        "/api/v1/catalogos/criterios-seaes",
+        headers=escenario["admin_headers"],
+        json={"clave": f"C-{uuid4().hex[:6]}", "nombre": "Cobertura y equidad"},
+    )
+    assert criterio_dos.status_code == 201, criterio_dos.text
+    id_uno, id_dos = criterio_uno.json()["id"], criterio_dos.json()["id"]
 
     asignado = await client.patch(
-        f"/api/v1/poa/cedulas/actividades/{escenario['activity_id']}/criterio-seaes",
+        f"/api/v1/poa/cedulas/actividades/{escenario['activity_id']}/criterios-seaes",
         headers=escenario["capturer_headers"],
-        json={"criterio_seaes_id": criterio_id},
+        json={"criterio_seaes_ids": [max(id_uno, id_dos), min(id_uno, id_dos)]},
     )
 
     assert asignado.status_code == 200, asignado.text
-    assert asignado.json()["criterio_seaes_id"] == criterio_id
+    assert asignado.json()["criterio_seaes_ids"] == sorted([id_uno, id_dos])
 
 
 @pytest.mark.asyncio
@@ -55,9 +80,9 @@ async def test_asignar_el_criterio_deja_bitacora_y_mueve_la_marca_de_tiempo(back
     assert criterio.status_code == 201, criterio.text
 
     asignado = await client.patch(
-        f"/api/v1/poa/cedulas/actividades/{escenario['activity_id']}/criterio-seaes",
+        f"/api/v1/poa/cedulas/actividades/{escenario['activity_id']}/criterios-seaes",
         headers=escenario["capturer_headers"],
-        json={"criterio_seaes_id": criterio.json()["id"]},
+        json={"criterio_seaes_ids": [criterio.json()["id"]]},
     )
     assert asignado.status_code == 200, asignado.text
 
@@ -80,12 +105,13 @@ async def test_el_criterio_debe_existir(backend_client):
     escenario = await _escenario(app, client)
 
     fallido = await client.patch(
-        f"/api/v1/poa/cedulas/actividades/{escenario['activity_id']}/criterio-seaes",
+        f"/api/v1/poa/cedulas/actividades/{escenario['activity_id']}/criterios-seaes",
         headers=escenario["capturer_headers"],
-        json={"criterio_seaes_id": 999999},
+        json={"criterio_seaes_ids": [999999]},
     )
 
     assert fallido.status_code == 404, fallido.text
+    assert "999999" in fallido.json()["message"]
 
 
 @pytest.mark.asyncio
@@ -114,7 +140,7 @@ async def test_el_listado_devuelve_la_tarjeta_completa(backend_client):
     assert fila["actividad"]["clave"] == "6.1.1"
     assert fila["actividad"]["unidad_medida"] == "Eventos"
     assert Decimal(fila["programado"]) == Decimal("40")
-    assert fila["criterio_seaes_id"] is None
+    assert fila["criterio_seaes_ids"] == []
 
 
 @pytest.mark.asyncio

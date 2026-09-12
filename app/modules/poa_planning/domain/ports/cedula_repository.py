@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from ..cedula_entities import (
@@ -72,6 +73,10 @@ class PoaFormRepository(Protocol):
     async def get_form_activity(self, item_id: int) -> PoaFormActivity | None: ...
 
     async def update_form_activity(self, item: PoaFormActivity) -> None: ...
+
+    async def replace_activity_criteria(
+        self, form_activity_id: int, criteria_seaes_ids: tuple[int, ...], updated_at: datetime
+    ) -> None: ...
 
     async def get_follow_up(self, item_id: int) -> PoaActivityFollowUp | None: ...
 

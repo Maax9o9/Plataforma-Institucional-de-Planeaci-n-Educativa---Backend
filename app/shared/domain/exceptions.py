@@ -36,6 +36,12 @@ class ResourceNotFoundError(AppError):
     default_message = "El recurso solicitado no existe."
 
 
+class GoneError(AppError):
+    code = "GONE"
+    status_code = 410
+    default_message = "Este recurso ya no está disponible."
+
+
 class ConflictError(AppError):
     code = "CONFLICT"
     status_code = 409

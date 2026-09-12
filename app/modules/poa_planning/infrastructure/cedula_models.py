@@ -117,9 +117,24 @@ class PoaFormActivityModel(Base):
     meta_anual: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     area_ejecutora_id: Mapped[int | None] = mapped_column(Integer)
     observaciones: Mapped[str | None] = mapped_column(Text)
-    criterio_seaes_id: Mapped[int | None] = mapped_column(Integer)
+    #: Explicacion concreta de la actividad para el area ejecutora ("actividad
+    #: UPE Chiapas"): el texto oficial del POA federal es generico.
+    actividad_upe: Mapped[str | None] = mapped_column(Text)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     actualizado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PoaFormActivityCriteriaModel(Base):
+    """Criterios SEAES que clasifican una actividad: relacion muchos a muchos.
+
+    Reemplaza la columna singular `criterio_seaes_id` (migracion 0028): SEAES
+    define siete criterios indicativos y una actividad puede caer en varios.
+    """
+
+    __tablename__ = "poa_cedula_actividad_criterios"
+
+    cedula_actividad_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    criterio_seaes_id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
 
 class PoaActivityFollowUpModel(Base):

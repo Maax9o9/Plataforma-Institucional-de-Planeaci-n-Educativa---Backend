@@ -91,13 +91,14 @@ class UpdatePoaFormActivityCommand:
     annual_goal: Decimal | None
     executing_area_id: int | None
     observations: str | None
+    upe_description: str | None
     actor: ActorContext
 
 
 @dataclass(frozen=True)
 class AssignPoaActivityCriteriaCommand:
     form_activity_id: int
-    criteria_seaes_id: int | None
+    criteria_seaes_ids: tuple[int, ...]
     actor: ActorContext
 
 

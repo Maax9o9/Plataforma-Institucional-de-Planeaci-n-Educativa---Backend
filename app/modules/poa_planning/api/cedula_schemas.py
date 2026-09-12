@@ -201,13 +201,20 @@ class ActividadCedulaRespuesta(BaseModel):
     meta_anual: Decimal
     area_ejecutora_id: int | None
     observaciones: str | None
-    criterio_seaes_id: int | None = None
-
-
-class AsignarCriterioSeaesRequest(BaseModel):
-    criterio_seaes_id: int | None = Field(
+    actividad_upe: str | None = Field(
         default=None,
-        description="Criterio que clasifica la actividad. Nulo lo desasigna.",
+        description="Qué significa la actividad en concreto para el área que la ejecuta.",
+    )
+    criterio_seaes_ids: list[int] = Field(default_factory=list)
+
+
+class AsignarCriteriosSeaesRequest(BaseModel):
+    criterio_seaes_ids: list[int] = Field(
+        default_factory=list,
+        description=(
+            "Criterios que clasifican la actividad. SEAES admite varios por "
+            "actividad; una lista vacía los retira todos."
+        ),
     )
 
 
@@ -216,6 +223,7 @@ class ActualizarActividadCedulaRequest(PoaRequest):
     meta_anual: NonNegativeInstitutionalDecimal | None = None
     area_ejecutora_id: int | None = None
     observaciones: str | None = None
+    actividad_upe: str | None = None
 
     @model_validator(mode="after")
     def require_change(self):
@@ -226,6 +234,7 @@ class ActualizarActividadCedulaRequest(PoaRequest):
                 self.meta_anual,
                 self.area_ejecutora_id,
                 self.observaciones,
+                self.actividad_upe,
             )
         ):
             raise ValueError("Debe indicar al menos un campo para actualizar.")
@@ -328,7 +337,7 @@ class SeguimientoTarjetaRespuesta(BaseModel):
     cedula_id: int
     actividad: ActividadTarjetaRespuesta
     area_ejecutora_id: int | None
-    criterio_seaes_id: int | None
+    criterio_seaes_ids: list[int]
     cuatrimestre: int
     periodo_id: int
     programado: Decimal

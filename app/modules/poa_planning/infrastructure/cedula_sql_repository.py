@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -32,6 +32,7 @@ from ..domain.cedula_entities import (
 from .cedula_models import (
     PoaActivityCatalogModel,
     PoaActivityFollowUpModel,
+    PoaFormActivityCriteriaModel,
     PoaFormActivityModel,
     PoaFormIndicatorModel,
     PoaFormIssueModel,
@@ -51,6 +52,32 @@ from .reference_data import (
 
 def _catalog_key(item) -> tuple[int, ...]:
     return tuple(int(part) for part in item.key.split("."))
+
+
+async def _load_activity_criteria(
+    session: AsyncSession, activity_ids: list[int]
+) -> dict[int, list[int]]:
+    """Trae, en una sola consulta, los criterios SEAES de varias actividades.
+
+    Pedirlos actividad por actividad dentro de una comprensión sería N+1.
+    """
+    if not activity_ids:
+        return {}
+    rows = await session.execute(
+        select(
+            PoaFormActivityCriteriaModel.cedula_actividad_id,
+            PoaFormActivityCriteriaModel.criterio_seaes_id,
+        )
+        .where(PoaFormActivityCriteriaModel.cedula_actividad_id.in_(activity_ids))
+        .order_by(
+            PoaFormActivityCriteriaModel.cedula_actividad_id,
+            PoaFormActivityCriteriaModel.criterio_seaes_id,
+        )
+    )
+    grouped: dict[int, list[int]] = {}
+    for activity_id, criterio_id in rows.all():
+        grouped.setdefault(activity_id, []).append(criterio_id)
+    return grouped
 
 
 class SqlAlchemyPoaFormRepository:
@@ -306,7 +333,7 @@ class SqlAlchemyPoaFormRepository:
                     meta_anual=item.annual_goal,
                     area_ejecutora_id=item.executing_area_id,
                     observaciones=item.observations,
-                    criterio_seaes_id=item.criteria_seaes_id,
+                    actividad_upe=item.upe_description,
                     creado_en=now,
                     actualizado_en=now,
                 )
@@ -323,7 +350,10 @@ class SqlAlchemyPoaFormRepository:
     async def get_form_activity(self, item_id: int) -> PoaFormActivity | None:
         async with session_scope(self.session_factory) as session:
             model = await session.get(PoaFormActivityModel, item_id)
-            return self._form_activity(model) if model else None
+            if model is None:
+                return None
+            criteria = await _load_activity_criteria(session, [item_id])
+            return self._form_activity(model, criteria.get(item_id, []))
 
     async def update_form_activity(self, item: PoaFormActivity) -> None:
         async with session_scope(self.session_factory) as session:
@@ -334,8 +364,42 @@ class SqlAlchemyPoaFormRepository:
             model.meta_anual = item.annual_goal
             model.area_ejecutora_id = item.executing_area_id
             model.observaciones = item.observations
-            model.criterio_seaes_id = item.criteria_seaes_id
+            model.actividad_upe = item.upe_description
             model.actualizado_en = item.updated_at
+            await commit_or_flush(session)
+
+    async def replace_activity_criteria(
+        self, form_activity_id: int, criteria_seaes_ids: tuple[int, ...], updated_at: datetime
+    ) -> None:
+        """Reemplaza el conjunto completo de criterios: borra y vuelve a insertar.
+
+        Va aparte de `update_form_activity` porque es una tabla distinta
+        (muchos a muchos) y una acción auditable propia, no un campo más de
+        la actividad.
+        """
+        async with session_scope(self.session_factory) as session:
+            await session.execute(
+                delete(PoaFormActivityCriteriaModel).where(
+                    PoaFormActivityCriteriaModel.cedula_actividad_id == form_activity_id
+                )
+            )
+            if criteria_seaes_ids:
+                await session.execute(
+                    pg_insert(PoaFormActivityCriteriaModel).values(
+                        [
+                            {
+                                "cedula_actividad_id": form_activity_id,
+                                "criterio_seaes_id": criterio_id,
+                            }
+                            for criterio_id in criteria_seaes_ids
+                        ]
+                    )
+                )
+            await session.execute(
+                update(PoaFormActivityModel)
+                .where(PoaFormActivityModel.id == form_activity_id)
+                .values(actualizado_en=updated_at)
+            )
             await commit_or_flush(session)
 
     async def get_follow_up(self, item_id: int) -> PoaActivityFollowUp | None:
@@ -436,11 +500,16 @@ class SqlAlchemyPoaFormRepository:
             total = await session.scalar(
                 select(func.count()).select_from(statement.subquery())
             )
-            rows = await session.execute(
-                statement.order_by(
-                    PoaFormActivityModel.actividad_clave,
-                    PoaActivityFollowUpModel.cuatrimestre,
-                ).offset(offset).limit(limit)
+            rows = (
+                await session.execute(
+                    statement.order_by(
+                        PoaFormActivityModel.actividad_clave,
+                        PoaActivityFollowUpModel.cuatrimestre,
+                    ).offset(offset).limit(limit)
+                )
+            ).all()
+            criteria_by_activity = await _load_activity_criteria(
+                session, [activity.id for _, activity, _ in rows]
             )
             return [
                 PoaFollowUpCard(
@@ -451,7 +520,7 @@ class SqlAlchemyPoaFormRepository:
                     unit=activity.unidad_medida,
                     annual_goal=activity.meta_anual,
                     executing_area_id=activity.area_ejecutora_id,
-                    criteria_seaes_id=activity.criterio_seaes_id,
+                    criteria_seaes_ids=tuple(criteria_by_activity.get(activity.id, [])),
                     quarter=follow_up.cuatrimestre,
                     period_id=follow_up.periodo_id,
                     scheduled=follow_up.programado,
@@ -460,7 +529,7 @@ class SqlAlchemyPoaFormRepository:
                     review_comment=follow_up.comentario_revision,
                     updated_at=follow_up.actualizado_en,
                 )
-                for follow_up, activity, form in rows.all()
+                for follow_up, activity, form in rows
             ], total or 0
 
     async def get_detail(self, form_id: int) -> PoaFormDetail | None:
@@ -483,6 +552,7 @@ class SqlAlchemyPoaFormRepository:
                 )
             ).all()
             activity_ids = [model.id for model in activity_models]
+            criteria_by_activity = await _load_activity_criteria(session, activity_ids)
             follow_up_models = []
             if activity_ids:
                 follow_up_models = (
@@ -499,7 +569,10 @@ class SqlAlchemyPoaFormRepository:
                 form=self._form(form_model),
                 quarters=await self.list_form_quarters(form_id),
                 indicators=[self._form_indicator(model) for model in indicator_models],
-                activities=[self._form_activity(model) for model in activity_models],
+                activities=[
+                    self._form_activity(model, criteria_by_activity.get(model.id, []))
+                    for model in activity_models
+                ],
                 follow_ups=[self._follow_up(model) for model in follow_up_models],
             )
 
@@ -624,7 +697,9 @@ class SqlAlchemyPoaFormRepository:
         )
 
     @staticmethod
-    def _form_activity(model: PoaFormActivityModel) -> PoaFormActivity:
+    def _form_activity(
+        model: PoaFormActivityModel, criteria_ids: list[int] | None = None
+    ) -> PoaFormActivity:
         return PoaFormActivity(
             id=model.id,
             form_id=model.cedula_id,
@@ -633,7 +708,8 @@ class SqlAlchemyPoaFormRepository:
             annual_goal=model.meta_anual,
             executing_area_id=model.area_ejecutora_id,
             observations=model.observaciones,
-            criteria_seaes_id=model.criterio_seaes_id,
+            upe_description=model.actividad_upe,
+            criteria_seaes_ids=tuple(criteria_ids or ()),
             created_at=model.creado_en,
             updated_at=model.actualizado_en,
         )
