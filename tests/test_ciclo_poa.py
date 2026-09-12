@@ -256,6 +256,13 @@ async def test_cerrar_solo_procede_desde_vigente(backend_client):
 
 @pytest.mark.asyncio
 async def test_historial_queda_en_cambios_estado_con_entidad_poa_ejercicio(backend_client):
+    # El ejercicio no reutiliza el vocabulario de la captura (`CaptureStatus`):
+    # "vigente" y "cerrado" son estados propios de `PoaExerciseStatus`. Si la
+    # lectura del historial siguiera asumiendo siempre `CaptureStatus`, leer de
+    # vuelta la fila que deja `aprobar` o `cerrar` lanzaria
+    # `ValueError: 'vigente' is not a valid CaptureStatus`. Por eso esta prueba
+    # no se detiene en `enviar` (borrador -> enviado son validos en ambos
+    # vocabularios y no habrian detectado el bug).
     app, client = backend_client
     escenario = await _scenario(app, client)
     await _add_cedula(client, escenario)
@@ -266,6 +273,18 @@ async def test_historial_queda_en_cambios_estado_con_entidad_poa_ejercicio(backe
     )
     assert enviado.status_code == 200, enviado.text
 
+    aprobado = await client.post(
+        f"/api/v1/poa/ejercicios/{escenario['exercise_id']}/aprobar",
+        headers=escenario["rectoria_headers"],
+    )
+    assert aprobado.status_code == 200, aprobado.text
+
+    cerrado = await client.post(
+        f"/api/v1/poa/ejercicios/{escenario['exercise_id']}/cerrar",
+        headers=escenario["admin_headers"],
+    )
+    assert cerrado.status_code == 200, cerrado.text
+
     # El ejercicio recien creado tiene un id nuevo: el historial de este
     # entity_id no puede traer nada de corridas anteriores de la suite.
     historial, total = await app.state.state_change_repository.list_for_capture_page(
@@ -275,11 +294,15 @@ async def test_historial_queda_en_cambios_estado_con_entidad_poa_ejercicio(backe
         descending=False,
         entity="poa_ejercicio",
     )
-    assert total == 1
-    assert historial[0].entity == "poa_ejercicio"
-    assert historial[0].entity_id == escenario["exercise_id"]
+    assert total == 3
+    assert [cambio.entity for cambio in historial] == ["poa_ejercicio"] * 3
+    assert [cambio.entity_id for cambio in historial] == [escenario["exercise_id"]] * 3
     assert historial[0].from_status.value == "borrador"
     assert historial[0].to_status.value == "enviado"
+    assert historial[1].from_status.value == "enviado"
+    assert historial[1].to_status.value == "vigente"
+    assert historial[2].from_status.value == "vigente"
+    assert historial[2].to_status.value == "cerrado"
 
 
 def test_ensure_editable_bloquea_fuera_de_borrador_o_tras_la_fecha_limite():
