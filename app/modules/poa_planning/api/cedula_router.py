@@ -749,7 +749,7 @@ async def update_form_activity(
 )
 async def assign_activity_criteria_retirada(
     form_activity_id: int,
-    _user=Depends(get_current_user),
+    _user=Depends(require_roles(*FORM_ROLES)),
 ):
     # SEAES define siete criterios indicativos: una actividad puede caer en
     # varios a la vez, así que esta ruta singular (migración 0028) ya no

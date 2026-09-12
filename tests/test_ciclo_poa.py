@@ -508,6 +508,59 @@ async def test_un_criterio_inexistente_en_la_lista_responde_404_nombrandolo(back
 
 
 @pytest.mark.asyncio
+async def test_asignar_criterios_a_actividad_de_otra_area_responde_403(backend_client):
+    # La restriccion central del proyecto: un area nunca toca datos de otra.
+    # `_new_activity_scenario` crea la actividad en el area ejecutora "A" y
+    # un capturista atado a esa misma area; aqui se crea una segunda area "B"
+    # con su propio capturista, que no tiene por que poder clasificar una
+    # actividad que no es suya. Si `can_capture_activity` dejara de filtrar
+    # por area (o el router dejara de invocarlo), esto pasaria de 403 a 200.
+    app, client = backend_client
+    escenario = await _new_activity_scenario(app, client)
+    criterio = await _new_criterio(client, escenario["admin_headers"])
+
+    otra_area = await client.post(
+        "/api/v1/catalogos/areas",
+        headers=escenario["admin_headers"],
+        json={
+            "codigo": f"OTRA-{uuid4().hex[:8]}",
+            "nombre": f"Otra area ejecutora {uuid4().hex[:8]}",
+        },
+    )
+    assert otra_area.status_code == 201, otra_area.text
+    _, capturista_de_otra_area = await _account(
+        app, client, Role.CAPTURISTA_POA, uuid4().hex[:8], otra_area.json()["id"]
+    )
+
+    denegado = await client.patch(
+        f"/api/v1/poa/cedulas/actividades/{escenario['activity_id']}/criterios-seaes",
+        headers=capturista_de_otra_area,
+        json={"criterio_seaes_ids": [criterio]},
+    )
+    assert denegado.status_code == 403, denegado.text
+
+
+@pytest.mark.asyncio
+async def test_asignar_criterios_con_ids_repetidos_los_deduplica(backend_client):
+    # El comando reemplaza el conjunto completo con `sorted(set(...))` tanto
+    # en el caso de uso como en la entidad. Si alguno de los dos dejara de
+    # deduplicar, la tabla muchos a muchos (llave primaria compuesta) fallaria
+    # al insertar la misma pareja dos veces, o la respuesta traeria el id
+    # repetido: cualquiera de los dos rompe esta prueba.
+    app, client = backend_client
+    escenario = await _new_activity_scenario(app, client)
+    criterio = await _new_criterio(client, escenario["admin_headers"])
+
+    asignado = await client.patch(
+        f"/api/v1/poa/cedulas/actividades/{escenario['activity_id']}/criterios-seaes",
+        headers=escenario["admin_headers"],
+        json={"criterio_seaes_ids": [criterio, criterio, criterio]},
+    )
+    assert asignado.status_code == 200, asignado.text
+    assert asignado.json()["criterio_seaes_ids"] == [criterio]
+
+
+@pytest.mark.asyncio
 async def test_la_explicacion_upe_se_guarda_y_el_area_ejecutora_la_ve(backend_client):
     app, client = backend_client
     escenario = await _new_activity_scenario(app, client)

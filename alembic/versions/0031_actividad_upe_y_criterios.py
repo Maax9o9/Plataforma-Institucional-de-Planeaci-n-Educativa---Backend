@@ -26,7 +26,10 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Restaura la columna singular tomando el criterio de menor id de cada
     # actividad: si una actividad tenía más de uno, el downgrade sólo puede
-    # conservar uno. Es pérdida de datos documentada, no un error.
+    # conservar uno. Además, al soltar `actividad_upe` se pierde por completo
+    # la explicación UPE que Planeación le hubiera capturado a la actividad:
+    # no hay a dónde restaurarla, no existía antes de esta migración. Es
+    # pérdida de datos documentada en ambos casos, no un error.
     op.execute("ALTER TABLE poa_cedula_actividades ADD COLUMN criterio_seaes_id INTEGER")
     op.execute(
         """
