@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Request, status
 from app.core.authorization import actor_from_user
 from app.core.security import require_roles
 
+from ..application.access_control import APPROVAL_ROLES
 from ..application.dto import CreateExerciseCommand
 from ..application.use_cases.create_structure import CreateExercise
 from ..application.use_cases.manage_exercise import (
@@ -28,16 +29,10 @@ router = APIRouter(prefix="/poa", tags=["Cédulas POA"])
 #: Quien arma y administra el ejercicio: Planeación.
 PLANNING_ROLES = ("planeacion", "planeacion_admin", "admin_sistema")
 #: Quien lo aprueba o lo devuelve: sólo Rectoría, sin atajos administrativos.
-#:
-#: Este paso existe para que Planeación no apruebe su propio trabajo -es
-#: separación de responsabilidades, no un trámite-. `admin_sistema` no entra
-#: aquí a propósito: `require_roles` expande `planeacion_admin` a
-#: `planeacion` + `admin_sistema` (ver `app/core/security.py`), así que
-#: admitir `admin_sistema` dejaría aprobar a una cuenta de Planeación y el
-#: control quedaría decorativo. Si algún día Rectoría necesita delegar la
-#: aprobación a alguien más, que sea un rol propio de Rectoría, no el
-#: comodín de sistema. No "arreglar" agregando `admin_sistema` de vuelta.
-APPROVAL_ROLES = ("rectoria",)
+#: Fuente de verdad en `application/access_control.py` -la comparte con los
+#: casos de uso `ApproveExercise`/`RejectExercise`, que la vuelven a exigir
+#: como defensa en profundidad si algún día algo llega a ellos sin pasar por
+#: esta puerta HTTP-.
 
 
 @router.post(

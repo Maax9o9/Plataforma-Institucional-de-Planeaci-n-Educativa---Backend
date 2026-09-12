@@ -199,10 +199,15 @@ class InMemoryPoaFormRepository:
     async def replace_activity_criteria(
         self, form_activity_id: int, criteria_seaes_ids: tuple[int, ...], updated_at
     ) -> None:
+        # No deduplica: igual que el repositorio SQL (que inserta tal cual,
+        # sin ON CONFLICT), confía en que quien llama -la entidad, vía el
+        # caso de uso- ya entregó el conjunto sin repetidos. Si volviera a
+        # deduplicar aquí, esta implementación taparía una regresión en esa
+        # capa y la prueba de la variante "memory" pasaría por construcción.
         item = self.form_activities.get(form_activity_id)
         if item is None:
             return
-        item.criteria_seaes_ids = tuple(sorted(set(criteria_seaes_ids)))
+        item.criteria_seaes_ids = tuple(criteria_seaes_ids)
         item.updated_at = updated_at
         self.form_activities[form_activity_id] = item
 

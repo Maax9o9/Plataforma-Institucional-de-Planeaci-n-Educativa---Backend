@@ -6,6 +6,27 @@ from app.shared.domain.exceptions import ForbiddenError
 
 PLANNING_AREA_NAME = "Dirección de Planeación Educativa"
 
+#: Quien aprueba o devuelve el ejercicio POA: sólo Rectoría, sin atajos
+#: administrativos.
+#:
+#: Este paso existe para que Planeación no apruebe su propio trabajo -es
+#: separación de responsabilidades, no un trámite-. `admin_sistema` y
+#: `planeacion_admin` no entran aquí a propósito: son roles de soporte de
+#: Planeación (por eso `ActorContext.is_planning` los incluye), así que
+#: admitirlos aquí dejaría aprobar a una cuenta de Planeación y el control
+#: quedaría decorativo. Si algún día Rectoría necesita delegar la
+#: aprobación a alguien más, que sea un rol propio de Rectoría, no el
+#: comodín de sistema. No "arreglar" agregando esos roles de vuelta.
+#:
+#: Única fuente de verdad: la usan tanto el router (para bloquear la
+#: petición HTTP) como los casos de uso `ApproveExercise`/`RejectExercise`
+#: (para no depender únicamente de esa puerta de entrada).
+APPROVAL_ROLES = ("rectoria",)
+
+
+def can_approve_exercise(actor: ActorContext) -> bool:
+    return actor.has_any_role(*APPROVAL_ROLES)
+
 
 def ensure_planning(actor: ActorContext) -> None:
     if not actor.is_planning:

@@ -25,17 +25,10 @@ from ...domain.entities import PoaExercise
 from ...domain.ports.cedula_repository import PoaFormRepository
 from ...domain.ports.repositories import PoaRepository
 from ...domain.value_objects import PoaExerciseStatus
+from ..access_control import can_approve_exercise
 
 #: Entidad con la que el ejercicio se registra en `cambios_estado`.
 ENTITY = "poa_ejercicio"
-
-#: Quien puede aprobar o devolver el ejercicio. Planeación lo arma y lo manda,
-#: pero no se aprueba a sí misma: eso le corresponde a Rectoría.
-APPROVAL_ROLES = ("rectoria", "admin_sistema")
-
-
-def _can_approve(actor: ActorContext) -> bool:
-    return actor.has_any_role(*APPROVAL_ROLES)
 
 
 @dataclass(frozen=True)
@@ -111,7 +104,7 @@ class ApproveExercise(_BaseExerciseAction):
     """Rectoría aprueba el ejercicio: entra en vigor."""
 
     async def execute(self, command: ExerciseActionCommand) -> PoaExercise:
-        if not _can_approve(command.actor):
+        if not can_approve_exercise(command.actor):
             raise ForbiddenError("Tu rol no permite aprobar el ejercicio POA.")
         item = await self._load(command.exercise_id)
 
@@ -125,7 +118,7 @@ class RejectExercise(_BaseExerciseAction):
     """Rectoría devuelve el ejercicio con un motivo visible para Planeación."""
 
     async def execute(self, command: ExerciseActionCommand) -> PoaExercise:
-        if not _can_approve(command.actor):
+        if not can_approve_exercise(command.actor):
             raise ForbiddenError("Tu rol no permite devolver el ejercicio POA.")
         item = await self._load(command.exercise_id)
 

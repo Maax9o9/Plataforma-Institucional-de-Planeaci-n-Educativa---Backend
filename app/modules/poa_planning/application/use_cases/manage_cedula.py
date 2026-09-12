@@ -648,12 +648,16 @@ class AssignPoaActivityCriteria:
             raise ResourceNotFoundError("La actividad de la cédula no existe.")
         if not can_capture_activity(command.actor, item.executing_area_id):
             raise ForbiddenError("La actividad POA no está asignada al área del usuario.")
-        unique_ids = sorted(set(command.criteria_seaes_ids))
-        for criteria_id in unique_ids:
+        # Se valida cada id tal cual llegó -sin deduplicar aquí-: la entidad es
+        # la única dueña de esa regla (`PoaFormActivity.assign_criteria`) y la
+        # aplica más abajo. Repetir un id sólo repite una consulta barata de
+        # catálogo; no vale la pena reimplementar el mismo `sorted(set(...))`
+        # en esta capa nada más para ahorrarla.
+        for criteria_id in command.criteria_seaes_ids:
             criteria = await self.criteria.get_by_id(criteria_id)
             if criteria is None:
                 raise ResourceNotFoundError(f"El criterio SEAES {criteria_id} no existe.")
-        item.assign_criteria(unique_ids)
+        item.assign_criteria(command.criteria_seaes_ids)
         await self.repository.replace_activity_criteria(
             item.id, item.criteria_seaes_ids, item.updated_at
         )

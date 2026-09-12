@@ -20,8 +20,14 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.modules.identity_access.application.dto import RegisterUserCommand
 from app.modules.identity_access.application.use_cases.create_user import CreateUser
 from app.modules.identity_access.domain.value_objects import Role
+from app.modules.poa_planning.application.use_cases.manage_exercise import (
+    ApproveExercise,
+    ExerciseActionCommand,
+    RejectExercise,
+)
 from app.modules.poa_planning.domain.entities import PoaExercise
-from app.shared.domain.exceptions import InvalidStateError
+from app.shared.application.actor import ActorContext
+from app.shared.domain.exceptions import ForbiddenError, InvalidStateError
 from app.shared.infrastructure.db.sql_loader import split_sql
 
 
@@ -228,6 +234,41 @@ async def test_admin_sistema_y_planeacion_admin_no_aprueban_ni_devuelven(backend
     )
     assert aprobado.status_code == 200, aprobado.text
     assert aprobado.json()["estado"] == "vigente"
+
+
+class _ColaboradorQueNoDeberiaTocarse:
+    """Falla si algo lo invoca.
+
+    `ApproveExercise`/`RejectExercise` deben rechazar por rol *antes* de tocar
+    repositorio, cédulas, historial o bus de eventos. Si el chequeo de
+    permisos se corriera o desapareciera, cualquiera de estos métodos se
+    llamaría y la prueba fallaría por la razón equivocada (un error de
+    `AssertionError` en vez de un `ForbiddenError`), delatando el problema.
+    """
+
+    def __getattr__(self, name: str):
+        raise AssertionError(f"no debería llamarse a '{name}': el rol no aprueba")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rol_sin_permiso", ["admin_sistema", "planeacion_admin"])
+@pytest.mark.parametrize("caso_de_uso", [ApproveExercise, RejectExercise])
+async def test_admin_sistema_y_planeacion_admin_no_aprueban_ni_devuelven_en_el_caso_de_uso(
+    caso_de_uso, rol_sin_permiso
+):
+    # Cubre la capa que la prueba HTTP de arriba no puede ver: el caso de uso
+    # es el dueño real de la regla de negocio en arquitectura hexagonal, y
+    # antes tenia su propia copia -mas permisiva- de APPROVAL_ROLES: el mismo
+    # atajo que se suponia ya quitado del router. Si alguien vuelve a
+    # bifurcar la constante, esta prueba revienta sin pasar por HTTP, que es
+    # justo el camino que dejaba pasar el hueco desapercibido.
+    colaborador = _ColaboradorQueNoDeberiaTocarse()
+    use_case = caso_de_uso(colaborador, colaborador, colaborador, colaborador)
+    actor = ActorContext(id=1, roles=frozenset({rol_sin_permiso}), area_id=None)
+    comando = ExerciseActionCommand(exercise_id=1, actor=actor, comment="Un motivo cualquiera")
+
+    with pytest.raises(ForbiddenError):
+        await use_case.execute(comando)
 
 
 @pytest.mark.asyncio
@@ -542,11 +583,15 @@ async def test_asignar_criterios_a_actividad_de_otra_area_responde_403(backend_c
 
 @pytest.mark.asyncio
 async def test_asignar_criterios_con_ids_repetidos_los_deduplica(backend_client):
-    # El comando reemplaza el conjunto completo con `sorted(set(...))` tanto
-    # en el caso de uso como en la entidad. Si alguno de los dos dejara de
-    # deduplicar, la tabla muchos a muchos (llave primaria compuesta) fallaria
-    # al insertar la misma pareja dos veces, o la respuesta traeria el id
-    # repetido: cualquiera de los dos rompe esta prueba.
+    # El comando reemplaza el conjunto completo de criterios; la unica dueña
+    # de deduplicarlo y ordenarlo es la entidad (`PoaFormActivity.assign_
+    # criteria`). El caso de uso y los repositorios (memoria y SQL) confian
+    # en ese resultado sin volver a aplicar `sorted(set(...))` por su cuenta
+    # -si lo hicieran, tapando una regresion en la entidad, esta prueba
+    # pasaria en la variante "memory" aunque la deduplicacion real estuviera
+    # rota-. En la variante "postgresql" la tabla muchos a muchos (llave
+    # primaria compuesta) ademas fallaria al insertar la misma pareja dos
+    # veces si algo mandara ids repetidos.
     app, client = backend_client
     escenario = await _new_activity_scenario(app, client)
     criterio = await _new_criterio(client, escenario["admin_headers"])
