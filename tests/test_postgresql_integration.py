@@ -162,6 +162,7 @@ async def test_postgresql_seed_and_frontend_read_contracts(monkeypatch):
     application = create_app(
         Settings(
             environment="testing",
+            indicators_module_enabled=True,
             secret_key="test-secret-key-with-more-than-32-characters",
             database_url=TEST_DATABASE_URL,
             email_provider="console",
@@ -224,6 +225,7 @@ async def test_postgresql_directory_roles_and_form_quarter_transaction():
     application = create_app(
         Settings(
             environment="testing",
+            indicators_module_enabled=True,
             secret_key="test-secret-key-with-more-than-32-characters",
             database_url=TEST_DATABASE_URL,
             email_provider="console",

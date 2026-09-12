@@ -22,27 +22,40 @@ from app.modules.poa_planning.api.cedula_router import router as poa_cedula_rout
 from app.modules.poa_planning.api.router import router as poa_planning_router
 from app.modules.poa_reports.api.router import router as poa_reports_router
 
-API_ROUTERS = (
+#: Routers que siempre se registran: identidad, catalogos institucionales,
+#: periodos, evidencias, POA, notificaciones y bitacora.
+CORE_ROUTERS = (
     identity_router,
     uploads_router,
     catalogs_router,
     reference_catalogs_router,
     periods_router,
-    indicators_catalog_router,
     evidence_router,
-    captures_router,
-    validation_router,
-    scoring_router,
-    reports_router,
     poa_planning_router,
     poa_cedula_router,
     poa_reports_router,
-    dashboards_router,
     notifications_router,
     audit_router,
 )
 
+#: Routers del modulo de indicadores del PIDE. Duermen mientras el trabajo se
+#: concentra en el POA. Los modulos NO se borran: el POA importa de ellos
+#: (CaptureStatus, StateChange y los exportadores de reportes), asi que lo unico
+#: que se apaga es su superficie HTTP.
+INDICATORS_ROUTERS = (
+    indicators_catalog_router,
+    captures_router,
+    validation_router,
+    scoring_router,
+    reports_router,
+    dashboards_router,
+)
 
-def include_api_routers(app: FastAPI, prefix: str) -> None:
-    for router in API_ROUTERS:
+#: Se conserva por compatibilidad con lo que ya importaba el registro completo.
+API_ROUTERS = CORE_ROUTERS + INDICATORS_ROUTERS
+
+
+def include_api_routers(app: FastAPI, prefix: str, *, incluir_indicadores: bool = False) -> None:
+    routers = CORE_ROUTERS + (INDICATORS_ROUTERS if incluir_indicadores else ())
+    for router in routers:
         app.include_router(router, prefix=prefix)

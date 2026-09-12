@@ -94,7 +94,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(CORSMiddleware, **build_cors_options(settings))
     register_exception_handlers(app)
     app.include_router(system_router)
-    include_api_routers(app, settings.api_v1_prefix)
+    include_api_routers(
+        app,
+        settings.api_v1_prefix,
+        incluir_indicadores=settings.indicators_module_enabled,
+    )
     app.openapi = lambda: custom_openapi(app)
     return app
 
