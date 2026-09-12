@@ -27,8 +27,17 @@ router = APIRouter(prefix="/poa", tags=["Cédulas POA"])
 
 #: Quien arma y administra el ejercicio: Planeación.
 PLANNING_ROLES = ("planeacion", "planeacion_admin", "admin_sistema")
-#: Quien lo aprueba o lo devuelve: Rectoría, no Planeación.
-APPROVAL_ROLES = ("rectoria", "admin_sistema")
+#: Quien lo aprueba o lo devuelve: sólo Rectoría, sin atajos administrativos.
+#:
+#: Este paso existe para que Planeación no apruebe su propio trabajo -es
+#: separación de responsabilidades, no un trámite-. `admin_sistema` no entra
+#: aquí a propósito: `require_roles` expande `planeacion_admin` a
+#: `planeacion` + `admin_sistema` (ver `app/core/security.py`), así que
+#: admitir `admin_sistema` dejaría aprobar a una cuenta de Planeación y el
+#: control quedaría decorativo. Si algún día Rectoría necesita delegar la
+#: aprobación a alguien más, que sea un rol propio de Rectoría, no el
+#: comodín de sistema. No "arreglar" agregando `admin_sistema` de vuelta.
+APPROVAL_ROLES = ("rectoria",)
 
 
 @router.post(

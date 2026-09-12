@@ -184,6 +184,53 @@ async def test_solo_rectoria_aprueba_y_lo_deja_vigente(backend_client):
 
 
 @pytest.mark.asyncio
+async def test_admin_sistema_y_planeacion_admin_no_aprueban_ni_devuelven(backend_client):
+    # La aprobacion existe para que Planeacion no apruebe su propio trabajo.
+    # `admin_sistema` queda fuera a proposito, y `planeacion_admin` tambien:
+    # `require_roles` lo expande a `planeacion` + `admin_sistema`, asi que si
+    # `admin_sistema` colara aqui, una cuenta de Planeacion terminaria
+    # aprobando su propio ejercicio por la puerta de atras.
+    app, client = backend_client
+    escenario = await _scenario(app, client)
+    await _add_cedula(client, escenario)
+    _, planeacion_admin_headers = await _account(
+        app, client, Role.PLANEACION_ADMIN, escenario["suffix"]
+    )
+
+    enviado = await client.post(
+        f"/api/v1/poa/ejercicios/{escenario['exercise_id']}/enviar",
+        headers=escenario["admin_headers"],
+    )
+    assert enviado.status_code == 200, enviado.text
+
+    for etiqueta, headers in (
+        ("admin_sistema", escenario["admin_headers"]),
+        ("planeacion_admin", planeacion_admin_headers),
+    ):
+        denegado_aprobar = await client.post(
+            f"/api/v1/poa/ejercicios/{escenario['exercise_id']}/aprobar",
+            headers=headers,
+        )
+        assert denegado_aprobar.status_code == 403, (etiqueta, denegado_aprobar.text)
+
+        denegado_devolver = await client.post(
+            f"/api/v1/poa/ejercicios/{escenario['exercise_id']}/devolver",
+            headers=headers,
+            json={"comentario": "Un motivo cualquiera"},
+        )
+        assert denegado_devolver.status_code == 403, (etiqueta, denegado_devolver.text)
+
+    # Rectoria, en cambio, si puede: el ejercicio sigue intacto (nadie lo
+    # movio de "enviado" en los intentos denegados de arriba).
+    aprobado = await client.post(
+        f"/api/v1/poa/ejercicios/{escenario['exercise_id']}/aprobar",
+        headers=escenario["rectoria_headers"],
+    )
+    assert aprobado.status_code == 200, aprobado.text
+    assert aprobado.json()["estado"] == "vigente"
+
+
+@pytest.mark.asyncio
 async def test_devolver_exige_comentario_y_regresa_a_borrador(backend_client):
     app, client = backend_client
     escenario = await _scenario(app, client)
