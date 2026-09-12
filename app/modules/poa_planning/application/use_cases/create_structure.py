@@ -14,7 +14,9 @@ class CreateExercise:
         self.event_bus = event_bus
 
     async def execute(self, command: CreateExerciseCommand) -> PoaExercise:
-        item = PoaExercise.create(command.year)
+        item = PoaExercise.create(
+            command.year, formulation_deadline=command.formulation_deadline
+        )
         await self.repository.add_exercise(item)
         await self.event_bus.publish(
             PoaStructureChanged(

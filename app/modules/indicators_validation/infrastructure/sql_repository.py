@@ -99,6 +99,7 @@ class SqlAlchemyStateChangeRepository:
                 [
                     StateChange(
                         id=model.id,
+                        entity=model.entidad,
                         entity_id=model.entidad_id,
                         from_status=(
                             CaptureStatus(model.de_estado) if model.de_estado else None
