@@ -227,6 +227,27 @@ class SqlAlchemyPoaFormRepository:
                 details={"reason": "POA_FORM_DUPLICATE", "field": "area_responsable_id"},
             ) from exc
 
+    async def delete_form(self, item_id: int) -> None:
+        # `poa_cedula_indicadores`, `poa_cedula_actividades` y
+        # `poa_cedula_cuatrimestres` tienen ON DELETE CASCADE hacia esta tabla
+        # (migraciones 0022 y 0023), y a su vez arrastran seguimientos y
+        # criterios SEAES de cada actividad. `poa_cedula_emisiones` es la
+        # excepción a propósito -no tiene cascada-: el caso de uso ya comprobó
+        # que no hay emisiones antes de llamar aquí, pero si algo se le
+        # adelantara (una emisión creada justo entre la comprobación y este
+        # DELETE), Postgres frena el borrado con un IntegrityError en vez de
+        # dejar un respaldo institucional sin cédula.
+        async with session_scope(self.session_factory) as session:
+            try:
+                await session.execute(delete(PoaFormModel).where(PoaFormModel.id == item_id))
+                await commit_or_flush(session)
+            except IntegrityError as exc:
+                await session.rollback()
+                raise ConflictError(
+                    "La cédula ya fue emitida en algún cuatrimestre; no puede eliminarse.",
+                    details={"reason": "POA_FORM_HAS_ISSUES", "cedula_id": item_id},
+                ) from exc
+
     async def add_form_quarter(self, item: PoaFormQuarter) -> None:
         async with session_scope(self.session_factory) as session:
             try:
@@ -322,6 +343,13 @@ class SqlAlchemyPoaFormRepository:
             model.actualizado_en = item.updated_at
             await commit_or_flush(session)
 
+    async def delete_form_indicator(self, item_id: int) -> None:
+        async with session_scope(self.session_factory) as session:
+            await session.execute(
+                delete(PoaFormIndicatorModel).where(PoaFormIndicatorModel.id == item_id)
+            )
+            await commit_or_flush(session)
+
     async def add_form_activity(self, item: PoaFormActivity) -> None:
         now = datetime.now(UTC)
         async with session_scope(self.session_factory) as session:
@@ -366,6 +394,17 @@ class SqlAlchemyPoaFormRepository:
             model.observaciones = item.observations
             model.actividad_upe = item.upe_description
             model.actualizado_en = item.updated_at
+            await commit_or_flush(session)
+
+    async def delete_form_activity(self, item_id: int) -> None:
+        # `poa_cedula_seguimientos` y `poa_cedula_actividad_criterios` tienen
+        # ON DELETE CASCADE hacia esta tabla (migraciones 0022, 0023 y 0031):
+        # borran sus seguimientos y criterios SEAES solos. El caso de uso ya
+        # comprobó que la actividad no tiene seguimientos capturados.
+        async with session_scope(self.session_factory) as session:
+            await session.execute(
+                delete(PoaFormActivityModel).where(PoaFormActivityModel.id == item_id)
+            )
             await commit_or_flush(session)
 
     async def replace_activity_criteria(

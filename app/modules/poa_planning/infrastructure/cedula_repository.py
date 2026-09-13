@@ -135,6 +135,35 @@ class InMemoryPoaFormRepository:
         item.version += 1
         self.forms[item.id] = item
 
+    async def delete_form(self, item_id: int) -> None:
+        # El caso de uso ya comprobó que no hay seguimientos ni emisiones antes
+        # de llegar aquí; de todas formas se limpia cada colección hija -igual
+        # que haría el ON DELETE CASCADE de Postgres- para que esta variante en
+        # memoria no se quede con datos huérfanos si algún día alguien la llama
+        # sin pasar por esa comprobación.
+        self.forms.pop(item_id, None)
+        activity_ids = {
+            activity.id for activity in self.form_activities.values() if activity.form_id == item_id
+        }
+        for activity_id in activity_ids:
+            self.form_activities.pop(activity_id, None)
+        for follow_up_id in [
+            follow_up.id
+            for follow_up in self.follow_ups.values()
+            if follow_up.form_activity_id in activity_ids
+        ]:
+            self.follow_ups.pop(follow_up_id, None)
+        for indicator_id in [
+            indicator.id
+            for indicator in self.form_indicators.values()
+            if indicator.form_id == item_id
+        ]:
+            self.form_indicators.pop(indicator_id, None)
+        for quarter_id in [
+            quarter.id for quarter in self.form_quarters.values() if quarter.form_id == item_id
+        ]:
+            self.form_quarters.pop(quarter_id, None)
+
     async def add_form_quarter(self, item: PoaFormQuarter) -> None:
         if any(
             current.form_id == item.form_id and current.quarter == item.quarter
@@ -181,6 +210,9 @@ class InMemoryPoaFormRepository:
     async def update_form_indicator(self, item: PoaFormIndicator) -> None:
         self.form_indicators[item.id] = item
 
+    async def delete_form_indicator(self, item_id: int) -> None:
+        self.form_indicators.pop(item_id, None)
+
     async def add_form_activity(self, item: PoaFormActivity) -> None:
         if any(
             existing.form_id == item.form_id and existing.activity_key == item.activity_key
@@ -195,6 +227,15 @@ class InMemoryPoaFormRepository:
 
     async def update_form_activity(self, item: PoaFormActivity) -> None:
         self.form_activities[item.id] = item
+
+    async def delete_form_activity(self, item_id: int) -> None:
+        self.form_activities.pop(item_id, None)
+        for follow_up_id in [
+            follow_up.id
+            for follow_up in self.follow_ups.values()
+            if follow_up.form_activity_id == item_id
+        ]:
+            self.follow_ups.pop(follow_up_id, None)
 
     async def replace_activity_criteria(
         self, form_activity_id: int, criteria_seaes_ids: tuple[int, ...], updated_at

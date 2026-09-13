@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.core.authorization import actor_from_user
 from app.core.schemas import ErrorResponse
@@ -20,6 +20,9 @@ from ..application.cedula_dto import (
     AssignPoaActivityCriteriaCommand,
     CapturePoaIndicatorTotalCommand,
     CreatePoaFormCommand,
+    DeletePoaFormActivityCommand,
+    DeletePoaFormCommand,
+    DeletePoaFormIndicatorCommand,
     IssuePoaFormCommand,
     PoaQuarterRangeInput,
     RecordPoaFollowUpCommand,
@@ -34,6 +37,9 @@ from ..application.use_cases.manage_cedula import (
     AssignPoaActivityCriteria,
     CapturePoaIndicatorTotal,
     CreatePoaForm,
+    DeletePoaForm,
+    DeletePoaFormActivity,
+    DeletePoaFormIndicator,
     IssuePoaForm,
     RecordPoaFollowUp,
     UpdatePoaFollowUpJustification,
@@ -68,6 +74,9 @@ from .cedula_dependencies import (
     get_assign_activity_criteria_use_case,
     get_capture_indicator_total_use_case,
     get_create_form_use_case,
+    get_delete_form_activity_use_case,
+    get_delete_form_indicator_use_case,
+    get_delete_form_use_case,
     get_issue_form_use_case,
     get_record_follow_up_use_case,
     get_update_follow_up_justification_use_case,
@@ -602,6 +611,26 @@ async def update_form(
     return _form_response(item, quarters)
 
 
+@router.delete(
+    "/cedulas/{form_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Eliminar una cédula agregada por error, mientras el POA esté en borrador",
+    responses={
+        409: {"model": ErrorResponse, "description": "Tiene seguimientos o emisiones."},
+        422: {"model": ErrorResponse, "description": "El POA ya no está en borrador."},
+    },
+)
+async def delete_form(
+    form_id: int,
+    current_user=Depends(require_roles(*STRUCTURE_ROLES)),
+    use_case: DeletePoaForm = Depends(get_delete_form_use_case),
+) -> Response:
+    await use_case.execute(
+        DeletePoaFormCommand(form_id=form_id, actor=actor_from_user(current_user))
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post(
     "/cedulas/{form_id}/indicadores",
     response_model=IndicadorCedulaRespuesta,
@@ -658,6 +687,25 @@ async def update_form_indicator(
     )
     catalog = await request.app.state.poa_form_repository.get_indicator(item.indicator_key)
     return _indicator_response(item, catalog)
+
+
+@router.delete(
+    "/cedulas/indicadores/{form_indicator_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Eliminar un indicador agregado por error, mientras el POA esté en borrador",
+    responses={422: {"model": ErrorResponse, "description": "El POA ya no está en borrador."}},
+)
+async def delete_form_indicator(
+    form_indicator_id: int,
+    current_user=Depends(require_roles(*STRUCTURE_ROLES)),
+    use_case: DeletePoaFormIndicator = Depends(get_delete_form_indicator_use_case),
+) -> Response:
+    await use_case.execute(
+        DeletePoaFormIndicatorCommand(
+            form_indicator_id=form_indicator_id, actor=actor_from_user(current_user)
+        )
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch(
@@ -738,6 +786,28 @@ async def update_form_activity(
     )
     catalog = await request.app.state.poa_form_repository.get_activity_catalog(item.activity_key)
     return _activity_response(item, catalog)
+
+
+@router.delete(
+    "/cedulas/actividades/{form_activity_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Eliminar una actividad agregada por error, mientras el POA esté en borrador",
+    responses={
+        409: {"model": ErrorResponse, "description": "La actividad tiene seguimientos."},
+        422: {"model": ErrorResponse, "description": "El POA ya no está en borrador."},
+    },
+)
+async def delete_form_activity(
+    form_activity_id: int,
+    current_user=Depends(require_roles(*STRUCTURE_ROLES)),
+    use_case: DeletePoaFormActivity = Depends(get_delete_form_activity_use_case),
+) -> Response:
+    await use_case.execute(
+        DeletePoaFormActivityCommand(
+            form_activity_id=form_activity_id, actor=actor_from_user(current_user)
+        )
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch(

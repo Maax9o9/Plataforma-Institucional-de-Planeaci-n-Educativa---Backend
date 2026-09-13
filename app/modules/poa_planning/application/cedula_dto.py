@@ -40,6 +40,12 @@ class UpdatePoaFormCommand:
 
 
 @dataclass(frozen=True)
+class DeletePoaFormCommand:
+    form_id: int
+    actor: ActorContext
+
+
+@dataclass(frozen=True)
 class AddPoaFormIndicatorCommand:
     form_id: int
     indicator_key: str
@@ -61,6 +67,12 @@ class UpdatePoaFormIndicatorCommand:
     current_percentage: Decimal | None
     target_value: Decimal | None
     target_percentage: Decimal | None
+    actor: ActorContext
+
+
+@dataclass(frozen=True)
+class DeletePoaFormIndicatorCommand:
+    form_indicator_id: int
     actor: ActorContext
 
 
@@ -92,6 +104,12 @@ class UpdatePoaFormActivityCommand:
     executing_area_id: int | None
     observations: str | None
     upe_description: str | None
+    actor: ActorContext
+
+
+@dataclass(frozen=True)
+class DeletePoaFormActivityCommand:
+    form_activity_id: int
     actor: ActorContext
 
 
