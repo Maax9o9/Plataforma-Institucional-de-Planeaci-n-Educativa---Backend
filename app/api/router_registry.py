@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.api.uploads_router import router as uploads_router
 from app.modules.audit.api.router import router as audit_router
 from app.modules.dashboards.api.router import router as dashboards_router
+from app.modules.email_templates.api.router import router as email_templates_router
 from app.modules.evidence_management.api.router import router as evidence_router
 from app.modules.identity_access.api.router import router as identity_router
 from app.modules.indicators_capture.api.router import router as captures_router
@@ -23,6 +24,7 @@ from app.modules.poa_planning.api.router import router as poa_planning_router
 from app.modules.poa_reports.api.router import router as poa_reports_router
 
 API_ROUTERS = (
+    email_templates_router,
     identity_router,
     uploads_router,
     catalogs_router,

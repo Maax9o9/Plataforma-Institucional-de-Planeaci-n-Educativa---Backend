@@ -1,0 +1,9 @@
+{
+  "etiqueta": "Corrección de captura",
+  "contenido": {
+    "asunto": "Tu registro requiere correcciones",
+    "titulo": "Revisemos tu captura",
+    "cuerpo": "Tu registro requiere atención. Consulta los comentarios de revisión, realiza los ajustes solicitados y continúa el flujo correspondiente.",
+    "texto_boton": "Revisar observaciones"
+  }
+}

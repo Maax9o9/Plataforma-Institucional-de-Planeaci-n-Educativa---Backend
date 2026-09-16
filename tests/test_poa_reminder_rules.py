@@ -155,7 +155,12 @@ async def test_notification_delivery_retry_and_atomic_claim(backend_client):
     await repository.release_email(notification.id)
     sender = AsyncMock()
     sender.send.side_effect = RuntimeError("SMTP temporalmente no disponible")
-    service = NotificationService(repository, app.state.user_repository, sender)
+    service = NotificationService(
+        repository,
+        app.state.user_repository,
+        sender,
+        email_composer=app.state.email_template_service,
+    )
     await service._send_email(notification, user.email.value)
     assert not (await repository.list_for_user(user.id))[0].sent_by_email
     sender.send.side_effect = None

@@ -7,13 +7,11 @@ from .console_email_sender import ConsoleEmailSender
 from .smtp_email_sender import SmtpEmailSender
 
 
-def create_email_sender(settings: Settings) -> EmailSender:
+def create_email_sender(settings: Settings, *, inline_assets=None) -> EmailSender:
     if settings.email_provider == "console":
         return ConsoleEmailSender()
     if not settings.smtp_host or not settings.smtp_user or not settings.smtp_password:
-        raise RuntimeError(
-            "EMAIL_PROVIDER=smtp requiere SMTP_HOST, SMTP_USER y SMTP_PASSWORD."
-        )
+        raise RuntimeError("EMAIL_PROVIDER=smtp requiere SMTP_HOST, SMTP_USER y SMTP_PASSWORD.")
     return SmtpEmailSender(
         host=settings.smtp_host,
         port=settings.smtp_port,
@@ -21,4 +19,5 @@ def create_email_sender(settings: Settings) -> EmailSender:
         password=settings.smtp_password.get_secret_value(),
         sender=settings.email_sender,
         start_tls=settings.smtp_start_tls,
+        inline_assets=inline_assets,
     )

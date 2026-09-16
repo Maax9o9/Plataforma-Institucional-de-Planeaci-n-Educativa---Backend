@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from email.message import EmailMessage
+from pathlib import Path
 
 import aiosmtplib
 
@@ -19,6 +20,7 @@ class SmtpEmailSender:
         password: str,
         sender: str,
         start_tls: bool = True,
+        inline_assets: dict[str, Path] | None = None,
     ) -> None:
         self.host = host
         self.port = port
@@ -26,6 +28,7 @@ class SmtpEmailSender:
         self.password = password
         self.sender = sender
         self.start_tls = start_tls
+        self.inline_assets = inline_assets or {}
 
     async def send(
         self,
@@ -40,6 +43,17 @@ class SmtpEmailSender:
         message["Subject"] = subject
         message.set_content(text_body or "Este mensaje requiere un cliente compatible con HTML.")
         message.add_alternative(html_body, subtype="html")
+        html_part = message.get_payload()[-1]
+        for cid, path in self.inline_assets.items():
+            if f"cid:{cid}" in html_body:
+                html_part.add_related(
+                    path.read_bytes(),
+                    maintype="image",
+                    subtype="png",
+                    cid=f"<{cid}>",
+                    filename=path.name,
+                    disposition="inline",
+                )
         try:
             await aiosmtplib.send(
                 message,

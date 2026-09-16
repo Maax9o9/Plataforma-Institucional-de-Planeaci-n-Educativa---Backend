@@ -11,6 +11,8 @@ from app.modules.dashboards.application.service import (
     InMemoryDashboardService,
     SqlAlchemyDashboardService,
 )
+from app.modules.email_templates.infrastructure.repository import InMemoryTemplateRepository
+from app.modules.email_templates.infrastructure.sql_repository import SqlAlchemyTemplateRepository
 from app.modules.evidence_management.infrastructure.repository import InMemoryEvidenceRepository
 from app.modules.evidence_management.infrastructure.sql_repository import (
     SqlAlchemyEvidenceRepository,
@@ -124,11 +126,13 @@ class Resources:
     notification_repository: object
     password_setup_token_store: object
     institutional_directory: object
+    email_template_repository: object
 
 
 def create_resources(settings: Settings) -> Resources:
     db_engine, db_session_factory = create_database(settings)
     if db_session_factory is None:
+        email_template_repository = InMemoryTemplateRepository()
         unit_of_work = NoOpUnitOfWorkFactory()
         user_repository = InMemoryUserRepository()
         refresh_token_store = InMemoryRefreshTokenStore()
@@ -164,6 +168,7 @@ def create_resources(settings: Settings) -> Resources:
         notification_repository = InMemoryNotificationRepository()
         password_setup_token_store = InMemoryPasswordSetupTokenStore()
     else:
+        email_template_repository = SqlAlchemyTemplateRepository(db_session_factory)
         unit_of_work = SqlAlchemyUnitOfWorkFactory(db_session_factory)
         user_repository = SqlAlchemyUserRepository(db_session_factory)
         refresh_token_store = SqlAlchemyRefreshTokenStore(db_session_factory)
@@ -194,6 +199,7 @@ def create_resources(settings: Settings) -> Resources:
         password_setup_token_store = SqlAlchemyPasswordSetupTokenStore(db_session_factory)
 
     return Resources(
+        email_template_repository=email_template_repository,
         db_engine=db_engine,
         db_session_factory=db_session_factory,
         unit_of_work=unit_of_work,

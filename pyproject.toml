@@ -52,3 +52,10 @@ known-first-party = ["app"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
+
+[tool.setuptools.package-data]
+"app.modules.email_templates.infrastructure" = [
+    "templates/*.html",
+    "templates/messages/*.json",
+    "templates/assets/*.png",
+]

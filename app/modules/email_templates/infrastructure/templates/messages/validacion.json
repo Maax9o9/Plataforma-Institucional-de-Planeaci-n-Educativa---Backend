@@ -1,0 +1,9 @@
+{
+  "etiqueta": "Seguimiento de captura",
+  "contenido": {
+    "asunto": "Tu registro cambió de estado",
+    "titulo": "Hay novedades en tu registro",
+    "cuerpo": "Consulta el estado de tu captura y revisa si hay acciones pendientes. El detalle y los comentarios de revisión están disponibles dentro de la plataforma.",
+    "texto_boton": "Revisar mi registro"
+  }
+}
