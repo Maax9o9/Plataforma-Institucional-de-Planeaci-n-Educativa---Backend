@@ -36,9 +36,9 @@ class FileTemplateCatalog:
         return self.definitions[key]
 
 
-def paragraphs(text, *, color="#EDEFF9"):
+def paragraphs(text, *, color="#FFFFFF"):
     return "".join(
-        f'<p style="margin:0 0 16px;font-size:16px;line-height:1.65;color:{color};'
+        f'<p class="copy" style="margin:0 0 16px;font-size:16px;line-height:1.65;color:{color};'
         'overflow-wrap:anywhere;word-break:break-word;">'
         + escape(part).replace("\n", "<br>")
         + "</p>"
@@ -70,13 +70,19 @@ class HtmlEmailRenderer:
             url = escape(action_url, quote=True)
             button = (
                 '<table role="presentation" cellpadding="0" cellspacing="0" border="0">'
-                '<tr><td bgcolor="#00CEBA" style="border-radius:8px;text-align:center;">'
-                f'<a href="{url}" style="display:inline-block;padding:16px 22px;'
+                '<tr><td class="cta-cell" bgcolor="#00CEBA" '
+                'style="background-color:#00CEBA;border-radius:8px;text-align:center;">'
+                f'<a class="cta-link" href="{url}" '
+                'style="display:inline-block;padding:16px 22px;'
+                'overflow-wrap:anywhere;word-break:break-word;'
                 "font-size:16px;line-height:1.4;font-weight:bold;color:#10165F;"
                 'text-decoration:none;">' + escape(values["texto_boton"]) + "</a></td></tr></table>"
-                '<p style="font-size:12px;line-height:1.6;color:#C7CCEE;word-break:break-all;'
+                '<div class="gmail-screen"><div class="gmail-difference">'
+                '<p class="fallback" style="font-size:12px;line-height:1.6;'
+                'color:#FFFFFF;word-break:break-all;'
                 'overflow-wrap:anywhere;">Si el botón no funciona, copia este enlace:<br>'
-                f'<a href="{url}" style="color:#C7CCEE;word-break:break-all;">{url}</a></p>'
+                f'<a href="{url}" style="color:#FFFFFF;word-break:break-all;">{url}</a></p>'
+                '</div></div>'
             )
         html = self.base.substitute(
             subject=escape(values["asunto"]),

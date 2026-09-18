@@ -233,7 +233,7 @@ guardar con la versión consultada → reemplazar el formulario con la respuesta
 
 ## Compatibilidad visual y entrega
 
-- Diseño fluido de hasta 600 px, tablas de presentación, estilos principales inline,
+- Diseño fluido de hasta 720 px (antes 600 px), tablas de presentación, estilos principales inline,
   tipografía de sistema, botones amplios, altura variable y reglas para móvil.
 - Logos con texto alternativo y fondo azul sólido como respaldo si se ignoran
   gradientes, imágenes de fondo o decoraciones. La información no depende del dragón.
@@ -241,10 +241,40 @@ guardar con la versión consultada → reemplazar el formulario con la respuesta
   al HTML, no URLs locales ni imágenes base64 dentro del HTML enviado.
 - Algunos clientes pueden ocultar imágenes, eliminar fondos, omitir bordes redondeados
   o aplicar sus propios colores. No se garantiza una representación idéntica en todos.
-- La comprobación automatizada usa Edge/Chromium a 320, 375, 600 y 1024 px; no sustituye
+- La comprobación automatizada usa Edge/Chromium a 320, 375, 600, 720, 1024 y 1440 px,
+  tanto en claro como en oscuro; no sustituye
   probar envíos reales en Gmail, Outlook y Apple Mail con la cuenta SMTP final.
-- `EMAIL_PROVIDER=console` continúa simulando; no se cambió el proveedor, el `.env`
-  ni se enviaron correos reales durante las pruebas.
+- `EMAIL_PROVIDER=console` sólo simula; las comprobaciones visuales no cambian el
+  proveedor ni el `.env` y no envían correos reales.
+
+### Ajustes de modo oscuro y escritorio (17 de septiembre de 2026)
+
+La tarjeta aprovecha hasta 720 px en escritorio, incluido el contenedor de respaldo
+de Outlook. Por debajo de ese ancho sigue siendo fluida, sin altura fija. El texto
+permanece limitado para no producir líneas demasiado largas en monitores grandes.
+
+Se declaran los temas `light dark` y se definen colores de texto, enlaces, botones,
+separadores y pie mediante `prefers-color-scheme`. El logo conserva una placa blanca
+independiente: no se recolorea la imagen institucional. El dragón tiene menor
+intensidad para mantener contraste con el texto.
+
+Outlook tiene reglas específicas con `data-ogsc`/`data-ogsb`. Para Gmail se añaden
+capas de mezcla limitadas a ese cliente, destinadas a conservar texto blanco sobre
+el fondo azul cuando el cliente invierte los colores. El botón queda fuera de esas
+capas para que su fondo y texto puedan ajustarse juntos.
+
+Referencias técnicas: [compatibilidad de temas en clientes de correo](https://www.caniemail.com/features/css-at-media-prefers-color-scheme/)
+y [técnica de contraste en Gmail de Rémi Parmentier](https://www.hteumeuleu.com/2021/fixing-gmail-dark-mode-css-blend-modes/).
+
+No es posible imponer colores idénticos en todos los clientes. El verificador local
+prueba ambos temas y simula los selectores de Outlook y la inversión de texto de
+Gmail; no ejecuta las aplicaciones ni sus motores reales de procesamiento de correo.
+Conviene confirmar esta revisión con un nuevo envío visto en el cliente y dispositivo
+donde se detectó el problema. Los mensajes ya recibidos no cambian al editar el backend.
+
+Este ajuste no cambia endpoints, textos personalizados, SMTP ni esquema de base de
+datos. No requiere una migración adicional ni cambios en `.env`: basta desplegar la
+imagen nueva de la API. La vista previa usa automáticamente el diseño actualizado.
 
 Vistas de prueba locales, sin base ni envío:
 
@@ -288,8 +318,12 @@ base al componer cada envío y no necesitan reiniciar contenedores.
 - 96 pruebas aprobadas; 17 pruebas dependientes de PostgreSQL omitidas porque Docker
   estaba apagado. La ejecución real de la migración y las pruebas SQL siguen pendientes.
 - Ruff y verificación de espacios de Git sin errores.
-- 56 comprobaciones de presentación (14 plantillas por cuatro anchos), sin
-  desplazamiento horizontal ni logos rotos; inspección visual de móvil y escritorio.
+- 168 comprobaciones de presentación (14 plantillas por seis anchos y dos temas),
+  sin desplazamiento horizontal ni logos rotos; ancho de escritorio verificado y
+  contraste mínimo de 4.5:1 en los pares de colores comprobados. Incluye texto
+  principal sobre el tono más claro previsto del fondo, etiqueta, pie, enlace y botón.
+- Dos simulaciones adicionales de selectores de Outlook e inversión de Gmail,
+  con inspección de capturas. No representan certificación en esos clientes reales.
 - Generación SQL de la cadena completa de Alembic correcta y un único head `0028`.
   La generación offline no demuestra la ejecución en una base real.
 - Distribución wheel construida y verificada: incluye base HTML, 14 JSON y tres PNG.

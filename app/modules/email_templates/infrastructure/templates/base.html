@@ -3,12 +3,46 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
   <title>$subject</title>
   <style>
+    :root { color-scheme:light dark; supported-color-schemes:light dark; }
     body, table, td, a { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
     table, td { mso-table-lspace:0pt; mso-table-rspace:0pt; }
     img { border:0; outline:none; text-decoration:none; }
+    /* Gmail rewrites the doctype as a sibling <u>. Keep these guards Gmail-only.
+       White text on preserved gradient backgrounds: screen + difference.
+       Reference: hteumeuleu.com/2021/fixing-gmail-dark-mode-css-blend-modes/ */
+    u + .email-body .gmail-screen { background:#000; mix-blend-mode:screen; }
+    u + .email-body .gmail-difference { background:#000; mix-blend-mode:difference; }
+    u + .email-body .label { color:#FFFFFF !important; }
+    @media (prefers-color-scheme:dark) {
+      .email-body, .canvas { background-color:#0D1220 !important; }
+      .content { background-color:#18204F !important; }
+      .greeting, .title, .copy, .fallback, .fallback a { color:#FFFFFF !important; }
+      .label { color:#56E7D5 !important; }
+      .footer { background-color:#181E32 !important; }
+      .footer-copy { color:#D1D8EB !important; }
+      .footer-link { color:#91EDE0 !important; }
+      .divider { border-color:#485471 !important; }
+      .cta-cell { background-color:#56E7D5 !important; }
+      .cta-link { color:#10165F !important; }
+      .logo-plate { background-color:#FFFFFF !important; }
+    }
+    /* Outlook variants expose these attributes instead of the media query. */
+    [data-ogsc] .canvas, [data-ogsb] .canvas { background-color:#0D1220 !important; }
+    [data-ogsc] .content, [data-ogsb] .content { background-color:#18204F !important; }
+    [data-ogsc] .footer, [data-ogsb] .footer { background-color:#181E32 !important; }
+    [data-ogsc] .footer-copy { color:#D1D8EB !important; }
+    [data-ogsc] .footer-link { color:#91EDE0 !important; }
+    [data-ogsc] .greeting, [data-ogsc] .title, [data-ogsc] .copy,
+    [data-ogsc] .fallback, [data-ogsc] .fallback a { color:#FFFFFF !important; }
+    [data-ogsc] .label { color:#56E7D5 !important; }
+    [data-ogsc] .divider { border-color:#485471 !important; }
+    [data-ogsc] .cta-cell, [data-ogsb] .cta-cell { background-color:#56E7D5 !important; }
+    [data-ogsc] .cta-link { color:#10165F !important; }
+    [data-ogsc] .logo-plate, [data-ogsb] .logo-plate { background-color:#FFFFFF !important; }
     @media screen and (max-width:620px) {
       .outer { padding:16px 8px !important; }
       .content { padding:32px 24px !important; }
@@ -17,26 +51,32 @@
     }
   </style>
 </head>
-<body style="margin:0;padding:0;background:#E7E9F3;font-family:Arial,Helvetica,sans-serif;">
+<body class="email-body" style="margin:0;padding:0;background-color:#E7E9F3;font-family:Arial,Helvetica,sans-serif;">
   <div style="display:none;font-size:1px;line-height:1px;color:#E7E9F3;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">$title</div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#E7E9F3">
+  <table class="canvas" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#E7E9F3" style="background-color:#E7E9F3;">
     <tr><td class="outer" align="center" style="padding:40px 12px;">
-      <!--[if mso]><table role="presentation" width="600" align="center"><tr><td><![endif]-->
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;table-layout:fixed;border-radius:18px;overflow:hidden;box-shadow:0 18px 40px rgba(11,15,64,0.25);">
-        <tr><td class="content" bgcolor="#1C258E" style="background-color:#1C258E;background-image:linear-gradient(135deg,rgba(22,28,114,0.91),rgba(35,48,152,0.87)),url('cid:upchiapas-dragon');background-position:center;background-size:cover;background-repeat:no-repeat;padding:52px 40px 40px;">
-          <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#C7CCEE;overflow-wrap:anywhere;word-break:break-word;">Hola $name,</p>
-          <p style="margin:0 0 10px;font-size:12px;line-height:1.5;letter-spacing:2.5px;font-weight:700;color:#00CEBA;text-transform:uppercase;">$label</p>
-          <h1 class="title" style="margin:0 0 22px;font-size:30px;line-height:1.25;font-weight:800;color:#FFFFFF;overflow-wrap:anywhere;word-break:break-word;">$title</h1>
-          $body
-          <div style="border-top:1px solid #6068B2;padding-top:20px;margin-top:22px;">$detail</div>
+      <!--[if mso]><table role="presentation" width="720" align="center"><tr><td><![endif]-->
+      <table class="email-card" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:720px;table-layout:fixed;border-radius:18px;overflow:hidden;box-shadow:0 18px 40px rgba(11,15,64,0.25);">
+        <tr><td class="content" bgcolor="#1C258E" style="background-color:#1C258E;background-image:linear-gradient(135deg,rgba(22,28,114,0.95),rgba(35,48,152,0.93)),url('cid:upchiapas-dragon');background-position:center;background-size:cover;background-repeat:no-repeat;padding:52px 48px 40px;">
+          <div class="gmail-screen"><div class="gmail-difference">
+            <p class="greeting" style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#FFFFFF;overflow-wrap:anywhere;word-break:break-word;">Hola $name,</p>
+            <p class="label" style="margin:0 0 10px;font-size:12px;line-height:1.5;letter-spacing:2.5px;font-weight:700;color:#00CEBA;text-transform:uppercase;">$label</p>
+            <h1 class="title" style="margin:0 0 22px;font-size:32px;line-height:1.25;font-weight:800;color:#FFFFFF;overflow-wrap:anywhere;word-break:break-word;">$title</h1>
+            $body
+            <div class="divider" style="border-top:1px solid #6068B2;padding-top:20px;margin-top:22px;">$detail</div>
+          </div></div>
           $button
         </td></tr>
         <tr><td class="footer" bgcolor="#F4F6FC" align="center" style="padding:28px 34px 30px;">
-          <img src="cid:upchiapas-horizontal" width="300" alt="Universidad Politécnica de Chiapas — Tecnología para el buen vivir" style="display:block;width:100%;max-width:300px;height:auto;margin:0 auto 22px;">
-          <p style="margin:0 0 16px;font-size:12px;line-height:1.6;color:#6B7290;">Plataforma Institucional de Planeación Educativa</p>
-          <div style="border-top:1px solid #D7DCF0;padding-top:16px;">
-            <p style="margin:0 0 6px;font-size:12px;line-height:1.6;color:#6B7290;">Mensaje institucional. No compartas tus enlaces de acceso.</p>
-            <a href="https://www.upchiapas.edu.mx/media/1348/files/Aviso%20de%20privacidad%20UPChiapas%202024.pdf" style="font-size:12px;line-height:1.6;color:#1C258E;">Aviso de privacidad</a>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:380px;margin:0 auto 22px;">
+            <tr><td class="logo-plate" bgcolor="#FFFFFF" style="padding:16px;background-color:#FFFFFF;background-image:linear-gradient(#FFFFFF,#FFFFFF);border-radius:10px;">
+              <img src="cid:upchiapas-horizontal" width="348" alt="Universidad Politécnica de Chiapas — Tecnología para el buen vivir" style="display:block;width:100%;max-width:348px;height:auto;margin:0 auto;color:#202887;">
+            </td></tr>
+          </table>
+          <p class="footer-copy" style="margin:0 0 16px;font-size:12px;line-height:1.6;color:#59617C;">Plataforma Institucional de Planeación Educativa</p>
+          <div class="divider" style="border-top:1px solid #D7DCF0;padding-top:16px;">
+            <p class="footer-copy" style="margin:0 0 6px;font-size:12px;line-height:1.6;color:#59617C;">Mensaje institucional. No compartas tus enlaces de acceso.</p>
+            <a class="footer-link" href="https://www.upchiapas.edu.mx/media/1348/files/Aviso%20de%20privacidad%20UPChiapas%202024.pdf" style="font-size:12px;line-height:1.6;color:#1C258E;">Aviso de privacidad</a>
           </div>
         </td></tr>
       </table>

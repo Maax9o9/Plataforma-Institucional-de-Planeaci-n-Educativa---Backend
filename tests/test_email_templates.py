@@ -213,6 +213,15 @@ def test_all_templates_render_secure_multipart_content(definition):
     assert "https://example.com/?a=1&amp;b=2" in result.html
     assert 'name="viewport"' in result.html
     assert "@media screen" in result.html
+    assert 'name="color-scheme" content="light dark"' in result.html
+    assert "prefers-color-scheme:dark" in result.html
+    assert "max-width:720px" in result.html
+    assert 'width="720"' in result.html  # Outlook's fixed-width fallback must agree.
+    assert "[data-ogsc] .footer-copy" in result.html
+    assert "u + .email-body .gmail-screen" in result.html
+    assert 'class="logo-plate"' in result.html
+    assert 'class="copy"' in result.html
+    assert 'class="cta-cell"' in result.html
     assert "height:600px" not in result.html
     assert "data:image" not in result.html
     assert "cid:upchiapas-horizontal" in result.html
