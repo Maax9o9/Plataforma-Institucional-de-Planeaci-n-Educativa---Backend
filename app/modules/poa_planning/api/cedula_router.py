@@ -60,6 +60,7 @@ from ..application.use_cases.review_follow_up import (
 from ..domain.cedula_entities import (
     STRATEGY_TYPES,
     PoaActivityFollowUp,
+    PoaFollowUpCard,
     PoaForm,
     PoaFormActivity,
     PoaFormDetail,
@@ -502,35 +503,114 @@ async def list_follow_ups(
         descriptions = {item.key: item.description for item in catalog_items}
     return PaginaSeguimientosRespuesta(
         items=[
-            SeguimientoTarjetaRespuesta(
-                id=card.id,
-                cedula_id=card.form_id,
-                actividad=ActividadTarjetaRespuesta(
-                    id=card.activity_id,
-                    clave=card.activity_key,
-                    descripcion=descriptions.get(card.activity_key, card.activity_key),
-                    unidad_medida=card.unit,
-                    meta_anual=card.annual_goal,
-                ),
-                area_ejecutora_id=card.executing_area_id,
-                criterio_seaes_ids=list(card.criteria_seaes_ids),
-                cuatrimestre=card.quarter,
-                periodo_id=card.period_id,
-                programado=card.scheduled,
-                alcanzado=card.achieved,
-                justificacion_desviacion=card.deviation_justification,
-                progreso=card.progress,
-                alcance=card.scope,
-                estado=card.status.value,
-                comentario_revision=card.review_comment,
+            _tarjeta_respuesta(
+                card,
+                descripcion=descriptions.get(card.activity_key, card.activity_key),
                 evidencias=evidences.get(card.id, 0),
-                actualizado_en=card.updated_at,
             )
             for card in cards
         ],
         total=total,
         offset=offset,
         limit=limit,
+    )
+
+
+@router.get(
+    "/seguimientos/{follow_up_id}",
+    response_model=SeguimientoTarjetaRespuesta,
+    summary="Consultar un seguimiento por su identificador",
+    responses={
+        403: {"model": ErrorResponse, "description": "El seguimiento no es del área."},
+        404: {"model": ErrorResponse, "description": "El seguimiento no existe."},
+    },
+)
+async def get_follow_up_card(
+    follow_up_id: int,
+    request: Request,
+    current_user=Depends(require_roles(*FOLLOW_UP_LIST_ROLES)),
+):
+    """La captura del avance es una pantalla propia con su URL: tiene que poder
+    cargarse sola, sin haber pasado antes por el tablero.
+
+    El permiso se comprueba aquí y no sólo en el filtro del listado: la URL es
+    adivinable cambiando un número.
+    """
+    repository = request.app.state.poa_form_repository
+    follow_up = await repository.get_follow_up(follow_up_id)
+    if follow_up is None:
+        raise ResourceNotFoundError("El seguimiento del POA no existe.")
+    activity = await repository.get_form_activity(follow_up.form_activity_id)
+    if activity is None:
+        raise ResourceNotFoundError("La actividad del seguimiento no existe.")
+    if not current_user.has_any_role(UNRESTRICTED_FOLLOW_UP_ROLES) and (
+        current_user.area_id is None or current_user.area_id != activity.executing_area_id
+    ):
+        raise ForbiddenError("El seguimiento del POA no es de tu área.")
+
+    catalogo = await repository.get_activity_catalog(activity.activity_key)
+    evidencias = await request.app.state.evidence_repository.count_by_entity(
+        FlowEntity.POA_FORM_FOLLOW_UP, [follow_up.id]
+    )
+    card = PoaFollowUpCard(
+        id=follow_up.id,
+        form_id=activity.form_id,
+        activity_id=activity.id,
+        activity_key=activity.activity_key,
+        unit=activity.unit,
+        annual_goal=activity.annual_goal,
+        executing_area_id=activity.executing_area_id,
+        criteria_seaes_ids=tuple(activity.criteria_seaes_ids),
+        quarter=follow_up.quarter,
+        period_id=follow_up.period_id,
+        scheduled=follow_up.scheduled,
+        achieved=follow_up.achieved,
+        status=follow_up.status,
+        review_comment=follow_up.review_comment,
+        deviation_justification=follow_up.deviation_justification,
+        progress=follow_up.progress,
+        scope=follow_up.scope,
+        updated_at=follow_up.updated_at,
+    )
+    return _tarjeta_respuesta(
+        card,
+        descripcion=catalogo.description if catalogo is not None else activity.activity_key,
+        evidencias=evidencias.get(follow_up.id, 0),
+    )
+
+
+def _tarjeta_respuesta(
+    card: PoaFollowUpCard, *, descripcion: str, evidencias: int
+) -> SeguimientoTarjetaRespuesta:
+    """Única forma de armar la tarjeta.
+
+    La usan el listado del tablero y la pantalla de captura: si cada uno la
+    armara por su lado, un campo agregado en uno se quedaría fuera del otro y
+    la pantalla abriría con un hueco que el tablero sí muestra.
+    """
+    return SeguimientoTarjetaRespuesta(
+        id=card.id,
+        cedula_id=card.form_id,
+        actividad=ActividadTarjetaRespuesta(
+            id=card.activity_id,
+            clave=card.activity_key,
+            descripcion=descripcion,
+            unidad_medida=card.unit,
+            meta_anual=card.annual_goal,
+        ),
+        area_ejecutora_id=card.executing_area_id,
+        criterio_seaes_ids=list(card.criteria_seaes_ids),
+        cuatrimestre=card.quarter,
+        periodo_id=card.period_id,
+        programado=card.scheduled,
+        alcanzado=card.achieved,
+        justificacion_desviacion=card.deviation_justification,
+        progreso=card.progress,
+        alcance=card.scope,
+        estado=card.status.value,
+        comentario_revision=card.review_comment,
+        evidencias=evidencias,
+        actualizado_en=card.updated_at,
     )
 
 

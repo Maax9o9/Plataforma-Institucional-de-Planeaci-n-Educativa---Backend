@@ -341,3 +341,73 @@ async def test_la_tarjeta_trae_lo_que_el_area_escribio_no_solo_los_numeros(backe
     )
     assert fila["progreso"] == "Se realizaron 30 de los 40 eventos programados."
     assert fila["alcance"] == "Comunidad universitaria"
+
+
+@pytest.mark.asyncio
+async def test_se_puede_pedir_un_seguimiento_por_su_id(backend_client):
+    """La captura del avance es una pantalla propia con su URL, así que tiene
+    que poder cargarse sola: recargar el navegador o pegar el enlace no puede
+    depender de haber pasado antes por el tablero.
+    """
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+    seguimiento = await _capturar(client, escenario)
+
+    respuesta = await client.get(
+        f"/api/v1/poa/seguimientos/{seguimiento['id']}",
+        headers=escenario["capturer_headers"],
+    )
+
+    assert respuesta.status_code == 200, respuesta.text
+    fila = respuesta.json()
+    assert fila["id"] == seguimiento["id"]
+    assert fila["actividad"]["clave"] == "6.1.1"
+    assert fila["actividad"]["unidad_medida"] == "Eventos"
+    assert Decimal(fila["programado"]) == Decimal("40")
+    assert fila["progreso"] == "Avance del cuatrimestre"
+
+
+@pytest.mark.asyncio
+async def test_un_area_no_puede_abrir_el_seguimiento_de_otra(backend_client):
+    """Mismo candado que el listado: la URL de la pantalla es adivinable
+    cambiando un número, así que el permiso se comprueba aquí y no en el
+    filtro del tablero.
+    """
+    app, client = backend_client
+    primero = await _escenario(app, client)
+    segundo = await _escenario(app, client)
+    ajeno = await _capturar(client, segundo)
+
+    respuesta = await client.get(
+        f"/api/v1/poa/seguimientos/{ajeno['id']}",
+        headers=primero["capturer_headers"],
+    )
+
+    assert respuesta.status_code == 403, respuesta.text
+
+
+@pytest.mark.asyncio
+async def test_planeacion_si_puede_abrir_el_seguimiento_de_cualquier_area(backend_client):
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+    seguimiento = await _capturar(client, escenario)
+
+    respuesta = await client.get(
+        f"/api/v1/poa/seguimientos/{seguimiento['id']}",
+        headers=escenario["planner_headers"],
+    )
+
+    assert respuesta.status_code == 200, respuesta.text
+
+
+@pytest.mark.asyncio
+async def test_pedir_un_seguimiento_inexistente_responde_404(backend_client):
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+
+    respuesta = await client.get(
+        "/api/v1/poa/seguimientos/999999",
+        headers=escenario["planner_headers"],
+    )
+
+    assert respuesta.status_code == 404, respuesta.text
