@@ -342,6 +342,9 @@ class SeguimientoTarjetaRespuesta(BaseModel):
     periodo_id: int
     programado: Decimal
     alcanzado: Decimal | None
+    justificacion_desviacion: str | None
+    progreso: str | None
+    alcance: str | None
     estado: str
     comentario_revision: str | None
     evidencias: int

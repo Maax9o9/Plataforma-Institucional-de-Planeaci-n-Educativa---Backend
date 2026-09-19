@@ -482,4 +482,11 @@ class PoaFollowUpCard:
     achieved: Decimal | None
     status: CaptureStatus
     review_comment: str | None
+    # Lo que el area escribio, no solo lo que midio. Viaja en la tarjeta porque
+    # el formulario de captura se abre desde ahi y el PUT que lo guarda
+    # reemplaza el seguimiento entero: sin estos campos el formulario abriria
+    # en blanco y la siguiente correccion borraria el texto.
+    deviation_justification: str | None
+    progress: str | None
+    scope: str | None
     updated_at: datetime

@@ -301,3 +301,43 @@ async def test_rectoria_ve_todas_las_areas_y_no_puede_escribir(backend_client):
     )
 
     assert denegado.status_code == 403, denegado.text
+
+
+@pytest.mark.asyncio
+async def test_la_tarjeta_trae_lo_que_el_area_escribio_no_solo_los_numeros(backend_client):
+    """El área captura su avance desde la tarjeta del tablero, y el PUT que lo
+    guarda reemplaza el seguimiento completo. Si la tarjeta no devolviera la
+    justificación, el progreso y el alcance, el formulario abriría en blanco y
+    la siguiente corrección —cambiar un número, por ejemplo— borraría el texto
+    que el área ya había escrito, sin avisar.
+    """
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+    seguimiento = await _capturar(client, escenario, alcanzado=30)
+    corregido = await client.put(
+        f"/api/v1/poa/cedulas/actividades/{escenario['activity_id']}/seguimientos/1",
+        headers=escenario["capturer_headers"],
+        json={
+            "periodo_id": escenario["period_id"],
+            "programado": 40,
+            "alcanzado": 30,
+            "justificacion_desviacion": "Dos eventos se recorrieron al segundo cuatrimestre.",
+            "progreso": "Se realizaron 30 de los 40 eventos programados.",
+            "alcance": "Comunidad universitaria",
+        },
+    )
+    assert corregido.status_code == 200, corregido.text
+
+    listado = await client.get(
+        "/api/v1/poa/seguimientos",
+        headers=escenario["capturer_headers"],
+        params={"cuatrimestre": 1},
+    )
+
+    assert listado.status_code == 200, listado.text
+    fila = next(x for x in listado.json()["items"] if x["id"] == seguimiento["id"])
+    assert fila["justificacion_desviacion"] == (
+        "Dos eventos se recorrieron al segundo cuatrimestre."
+    )
+    assert fila["progreso"] == "Se realizaron 30 de los 40 eventos programados."
+    assert fila["alcance"] == "Comunidad universitaria"

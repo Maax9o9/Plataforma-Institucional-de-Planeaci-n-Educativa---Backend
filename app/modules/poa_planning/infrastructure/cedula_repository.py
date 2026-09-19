@@ -311,6 +311,9 @@ class InMemoryPoaFormRepository:
                 achieved=follow_up.achieved,
                 status=follow_up.status,
                 review_comment=follow_up.review_comment,
+                deviation_justification=follow_up.deviation_justification,
+                progress=follow_up.progress,
+                scope=follow_up.scope,
                 updated_at=follow_up.updated_at,
             ))
         cards.sort(key=lambda card: (card.activity_key, card.quarter))

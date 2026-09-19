@@ -566,6 +566,9 @@ class SqlAlchemyPoaFormRepository:
                     achieved=follow_up.alcanzado,
                     status=CaptureStatus(follow_up.estado),
                     review_comment=follow_up.comentario_revision,
+                    deviation_justification=follow_up.justificacion_desviacion,
+                    progress=follow_up.progreso,
+                    scope=follow_up.alcance,
                     updated_at=follow_up.actualizado_en,
                 )
                 for follow_up, activity, form in rows
