@@ -8,6 +8,25 @@ from app.shared.domain.domain_event import DomainEvent
 from ..domain.entities import AuditEntry
 from ..domain.ports.repository import AuditRepository
 
+#: Movimientos de sesion que NO pertenecen a la bitacora de negocio.
+#:
+#: La bitacora responde "quien hizo que con el POA": quien capturo una
+#: actividad, quien la envio, quien la evaluo. Un inicio de sesion no dice nada
+#: de eso, y en la practica los ahogaba: 132 de ~200 registros eran `login` y
+#: `refresh`, asi que para encontrar una modificacion real habia que pasar
+#: varias paginas de ruido.
+#:
+#: Estos eventos no dejan de importar -los intentos fallidos son lo que delata
+#: a alguien intentando entrar-, solo que su lugar es `bitacora_accesos`, que
+#: la migracion 0002 creo aparte justamente para poder purgarla con otra
+#: politica sin tocar la bitacora inmutable.
+#:
+#: `password_changed` NO entra aqui aunque tambien sea de la cuenta: cambiar
+#: una contrasena es un movimiento de seguridad que debe quedar registrado, y
+#: ademas el cambio se revierte si su entrada de bitacora no se escribe
+#: (test_password_change). Sacarlo de aqui rompe esa garantia.
+ACCIONES_DE_SESION = frozenset({"login", "logout", "refresh"})
+
 
 def register_audit_subscriber(
     event_bus: EventBus,
@@ -32,6 +51,8 @@ def register_audit_subscriber(
         return getattr(user, "full_name", None) if user is not None else None
 
     async def handle(event: DomainEvent) -> None:
+        if event.aggregate_type == "user" and event.action in ACCIONES_DE_SESION:
+            return
         await repository.append(
             AuditEntry(
                 id=event.event_id,
