@@ -201,6 +201,21 @@ class ActividadCedulaRespuesta(BaseModel):
     meta_anual: Decimal
     area_ejecutora_id: int | None
     observaciones: str | None
+    actividad_upe: str | None = Field(
+        default=None,
+        description="Qué significa la actividad en concreto para el área que la ejecuta.",
+    )
+    criterio_seaes_ids: list[int] = Field(default_factory=list)
+
+
+class AsignarCriteriosSeaesRequest(BaseModel):
+    criterio_seaes_ids: list[int] = Field(
+        default_factory=list,
+        description=(
+            "Criterios que clasifican la actividad. SEAES admite varios por "
+            "actividad; una lista vacía los retira todos."
+        ),
+    )
 
 
 class ActualizarActividadCedulaRequest(PoaRequest):
@@ -208,6 +223,7 @@ class ActualizarActividadCedulaRequest(PoaRequest):
     meta_anual: NonNegativeInstitutionalDecimal | None = None
     area_ejecutora_id: int | None = None
     observaciones: str | None = None
+    actividad_upe: str | None = None
 
     @model_validator(mode="after")
     def require_change(self):
@@ -218,6 +234,7 @@ class ActualizarActividadCedulaRequest(PoaRequest):
                 self.meta_anual,
                 self.area_ejecutora_id,
                 self.observaciones,
+                self.actividad_upe,
             )
         ):
             raise ValueError("Debe indicar al menos un campo para actualizar.")
@@ -302,6 +319,40 @@ class CambioEstadoSeguimientoRespuesta(BaseModel):
 
 class PaginaHistorialSeguimientoRespuesta(BaseModel):
     items: list[CambioEstadoSeguimientoRespuesta]
+    total: int
+    offset: int
+    limit: int
+
+
+class ActividadTarjetaRespuesta(BaseModel):
+    id: int
+    clave: str
+    descripcion: str
+    unidad_medida: str
+    meta_anual: Decimal
+
+
+class SeguimientoTarjetaRespuesta(BaseModel):
+    id: int
+    cedula_id: int
+    actividad: ActividadTarjetaRespuesta
+    area_ejecutora_id: int | None
+    criterio_seaes_ids: list[int]
+    cuatrimestre: int
+    periodo_id: int
+    programado: Decimal
+    alcanzado: Decimal | None
+    justificacion_desviacion: str | None
+    progreso: str | None
+    alcance: str | None
+    estado: str
+    comentario_revision: str | None
+    evidencias: int
+    actualizado_en: datetime
+
+
+class PaginaSeguimientosRespuesta(BaseModel):
+    items: list[SeguimientoTarjetaRespuesta]
     total: int
     offset: int
     limit: int

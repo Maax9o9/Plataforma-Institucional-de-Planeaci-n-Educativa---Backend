@@ -76,6 +76,12 @@ from app.modules.institutional_catalogs.infrastructure.sql_repository import (
     SqlAlchemyAreaRepository,
     SqlAlchemyInstrumentRepository,
 )
+from app.modules.institutional_catalogs.infrastructure.unit_of_measure_repository import (
+    InMemoryUnitOfMeasureRepository,
+)
+from app.modules.institutional_catalogs.infrastructure.unit_of_measure_sql_repository import (
+    SqlAlchemyUnitOfMeasureRepository,
+)
 from app.modules.notifications.infrastructure.repository import InMemoryNotificationRepository
 from app.modules.notifications.infrastructure.sql_repository import SqlAlchemyNotificationRepository
 from app.modules.periods.infrastructure.repository import InMemoryPeriodRepository
@@ -114,6 +120,7 @@ class Resources:
     capture_repository: object
     criteria_repository: object
     indicator_type_repository: object
+    unit_of_measure_repository: object
     state_change_repository: object
     threshold_config_repository: object
     poa_repository: object
@@ -146,6 +153,7 @@ def create_resources(settings: Settings) -> Resources:
         capture_repository = InMemoryCaptureRepository()
         criteria_repository = InMemoryReferenceRepository()
         indicator_type_repository = InMemoryReferenceRepository()
+        unit_of_measure_repository = InMemoryUnitOfMeasureRepository()
         state_change_repository = InMemoryStateChangeRepository()
         threshold_config_repository = InMemoryThresholdConfigRepository()
         poa_repository = InMemoryPoaRepository()
@@ -185,6 +193,7 @@ def create_resources(settings: Settings) -> Resources:
             db_session_factory,
             IndicatorTypeModel,
         )
+        unit_of_measure_repository = SqlAlchemyUnitOfMeasureRepository(db_session_factory)
         state_change_repository = SqlAlchemyStateChangeRepository(db_session_factory)
         threshold_config_repository = SqlAlchemyThresholdConfigRepository(db_session_factory)
         poa_repository = SqlAlchemyPoaRepository(db_session_factory)
@@ -215,6 +224,7 @@ def create_resources(settings: Settings) -> Resources:
         capture_repository=capture_repository,
         criteria_repository=criteria_repository,
         indicator_type_repository=indicator_type_repository,
+        unit_of_measure_repository=unit_of_measure_repository,
         state_change_repository=state_change_repository,
         threshold_config_repository=threshold_config_repository,
         poa_repository=poa_repository,

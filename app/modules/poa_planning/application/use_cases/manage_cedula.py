@@ -20,7 +20,10 @@ from app.shared.domain.exceptions import (
 
 from ....evidence_management.domain.ports.repositories import EvidenceRepository
 from ....evidence_management.domain.value_objects import FlowEntity
-from ....institutional_catalogs.domain.ports.repositories import AreaRepository
+from ....institutional_catalogs.domain.ports.repositories import (
+    AreaRepository,
+    ReferenceRepository,
+)
 from ....periods.domain.entities import Period
 from ....periods.domain.ports.repository import PeriodRepository
 from ....periods.domain.value_objects import PeriodStatus, PeriodType
@@ -42,8 +45,12 @@ from ..access_control import can_capture_activity, ensure_planning, ensure_struc
 from ..cedula_dto import (
     AddPoaFormActivityCommand,
     AddPoaFormIndicatorCommand,
+    AssignPoaActivityCriteriaCommand,
     CapturePoaIndicatorTotalCommand,
     CreatePoaFormCommand,
+    DeletePoaFormActivityCommand,
+    DeletePoaFormCommand,
+    DeletePoaFormIndicatorCommand,
     IssuePoaFormCommand,
     RecordPoaFollowUpCommand,
     UpdatePoaFollowUpJustificationCommand,
@@ -96,6 +103,24 @@ async def _ensure_structure_editable(
                 "zona_horaria": "America/Mexico_City",
             },
         )
+
+
+async def _ensure_exercise_editable_for_deletion(exercises: PoaRepository, form: PoaForm) -> None:
+    """Puerta única y sin excepciones para borrar piezas del POA.
+
+    A diferencia de `_ensure_structure_editable` (que sólo cierra tras el
+    primer cuatrimestre y admite que `admin_sistema`/`planeacion_admin` la
+    salten en una emergencia), borrar usa la regla que ya existía en
+    `PoaExercise.ensure_editable` -declarada pero sin ningún caso de uso que
+    la invocara hasta esta tarea- y no tiene atajo administrativo: sería
+    incoherente que después de la fecha límite de formulación no se pueda
+    editar una cédula pero sí borrarla entera, y un borrado es más difícil
+    de deshacer que una edición.
+    """
+    exercise = await exercises.get_exercise(form.exercise_id)
+    if exercise is None:
+        raise ResourceNotFoundError("El ejercicio POA de la cédula no existe.")
+    exercise.ensure_editable(_today())
 
 
 async def _require_form(repository: PoaFormRepository, form_id: int) -> PoaForm:
@@ -369,6 +394,66 @@ class UpdatePoaForm:
         return form
 
 
+class DeletePoaForm:
+    """Deshace una cédula agregada por error, mientras el POA siga en borrador.
+
+    Se lleva indicadores, actividades, cuatrimestres y los periodos que esos
+    cuatrimestres crearon: nada de eso significa algo fuera de esta cédula, así
+    que dejarlos huérfanos sólo ensuciaría el listado de periodos. Se detiene,
+    en cambio, si ya hay seguimientos capturados o emisiones (respaldos
+    cuatrimestrales): en teoría no debería haberlos con el ejercicio en
+    borrador -los informes llegan cuando el POA ya está vigente-, pero esta
+    regla no se confía en esa teoría y prefiere la lectura restrictiva.
+    """
+
+    def __init__(
+        self,
+        repository: PoaFormRepository,
+        exercises: PoaRepository,
+        areas: AreaRepository,
+        periods: PeriodRepository,
+        event_bus: EventBus,
+        unit_of_work,
+    ) -> None:
+        self.repository = repository
+        self.exercises = exercises
+        self.areas = areas
+        self.periods = periods
+        self.event_bus = event_bus
+        self.unit_of_work = unit_of_work
+
+    async def execute(self, command: DeletePoaFormCommand) -> None:
+        form = await _require_form(self.repository, command.form_id)
+        await ensure_structure_access(command.actor, self.areas)
+        await _ensure_exercise_editable_for_deletion(self.exercises, form)
+        detail = await self.repository.get_detail(form.id)
+        assert detail is not None  # ya se confirmó que la cédula existe
+        if detail.follow_ups:
+            raise ConflictError(
+                "La cédula tiene seguimientos capturados; no puede eliminarse.",
+                details={"reason": "POA_FORM_HAS_FOLLOW_UPS", "cedula_id": form.id},
+            )
+        issues = await self.repository.list_issues(form.id)
+        if issues:
+            raise ConflictError(
+                "La cédula ya fue emitida en algún cuatrimestre; no puede eliminarse.",
+                details={"reason": "POA_FORM_HAS_ISSUES", "cedula_id": form.id},
+            )
+        period_ids = [quarter.period_id for quarter in detail.quarters]
+        async with self.unit_of_work():
+            await self.repository.delete_form(form.id)
+            for period_id in period_ids:
+                await self.periods.delete(period_id)
+            await _publish(
+                self.event_bus,
+                actor_id=command.actor.id,
+                aggregate_type="poa_form",
+                aggregate_id=form.id,
+                action="deleted",
+                data={"exercise_id": form.exercise_id, "strategy_key": form.strategy_key},
+            )
+
+
 class AddPoaFormIndicator:
     def __init__(
         self, repository: PoaFormRepository, event_bus: EventBus, areas: AreaRepository
@@ -446,6 +531,37 @@ class UpdatePoaFormIndicator:
             data={"form_id": form.id},
         )
         return item
+
+
+class DeletePoaFormIndicator:
+    def __init__(
+        self,
+        repository: PoaFormRepository,
+        exercises: PoaRepository,
+        areas: AreaRepository,
+        event_bus: EventBus,
+    ) -> None:
+        self.repository = repository
+        self.exercises = exercises
+        self.areas = areas
+        self.event_bus = event_bus
+
+    async def execute(self, command: DeletePoaFormIndicatorCommand) -> None:
+        item = await self.repository.get_form_indicator(command.form_indicator_id)
+        if item is None:
+            raise ResourceNotFoundError("El indicador de la cédula no existe.")
+        form = await _require_form(self.repository, item.form_id)
+        await ensure_structure_access(command.actor, self.areas)
+        await _ensure_exercise_editable_for_deletion(self.exercises, form)
+        await self.repository.delete_form_indicator(item.id)
+        await _publish(
+            self.event_bus,
+            actor_id=command.actor.id,
+            aggregate_type="poa_form_indicator",
+            aggregate_id=item.id,
+            action="deleted",
+            data={"form_id": form.id, "indicator_key": item.indicator_key},
+        )
 
 
 class CapturePoaIndicatorTotal:
@@ -589,6 +705,7 @@ class UpdatePoaFormActivity:
             annual_goal=command.annual_goal,
             executing_area_id=command.executing_area_id,
             observations=command.observations,
+            upe_description=command.upe_description,
         )
         async with self.unit_of_work():
             await self.repository.update_form_activity(item)
@@ -608,6 +725,106 @@ class UpdatePoaFormActivity:
                     ),
                 },
             )
+        return item
+
+
+class DeletePoaFormActivity:
+    """Igual que `DeletePoaForm` pero para una sola actividad: se detiene si ya
+    tiene seguimientos capturados en cualquier cuatrimestre (1, 2 o 3)."""
+
+    def __init__(
+        self,
+        repository: PoaFormRepository,
+        exercises: PoaRepository,
+        areas: AreaRepository,
+        event_bus: EventBus,
+        unit_of_work,
+    ) -> None:
+        self.repository = repository
+        self.exercises = exercises
+        self.areas = areas
+        self.event_bus = event_bus
+        self.unit_of_work = unit_of_work
+
+    async def execute(self, command: DeletePoaFormActivityCommand) -> None:
+        item = await self.repository.get_form_activity(command.form_activity_id)
+        if item is None:
+            raise ResourceNotFoundError("La actividad de la cédula no existe.")
+        form = await _require_form(self.repository, item.form_id)
+        await ensure_structure_access(command.actor, self.areas)
+        await _ensure_exercise_editable_for_deletion(self.exercises, form)
+        detail = await self.repository.get_detail(form.id)
+        assert detail is not None  # ya se confirmó que la cédula existe
+        if any(follow_up.form_activity_id == item.id for follow_up in detail.follow_ups):
+            raise ConflictError(
+                "La actividad tiene seguimientos capturados; no puede eliminarse.",
+                details={"reason": "POA_ACTIVITY_HAS_FOLLOW_UPS", "form_activity_id": item.id},
+            )
+        async with self.unit_of_work():
+            await self.repository.delete_form_activity(item.id)
+            await _publish(
+                self.event_bus,
+                actor_id=command.actor.id,
+                aggregate_type="poa_form_activity",
+                aggregate_id=item.id,
+                action="deleted",
+                data={"form_id": form.id, "activity_key": item.activity_key},
+            )
+
+
+class AssignPoaActivityCriteria:
+    """Asigna los criterios SEAES que clasifican una actividad de la cédula.
+
+    Es una escritura del área ejecutora (o de Planeación), no de la estructura
+    de la cédula: la clasificación le toca a quien recibe la actividad. Pasa por
+    la capa de casos de uso —y no por el router— para que mueva la marca de
+    tiempo y publique el evento que alimenta la bitácora: la cobertura SEAES es
+    lo que va a medir el semáforo institucional y su asignación debe quedar
+    auditada.
+
+    SEAES define siete criterios indicativos y una actividad puede caer en
+    varios a la vez, así que el comando reemplaza el conjunto completo en vez
+    de agregar uno solo (la columna singular que existía se retiró en la
+    migración 0031).
+    """
+
+    def __init__(
+        self,
+        repository: PoaFormRepository,
+        criteria: ReferenceRepository,
+        event_bus: EventBus,
+    ) -> None:
+        self.repository = repository
+        self.criteria = criteria
+        self.event_bus = event_bus
+
+    async def execute(self, command: AssignPoaActivityCriteriaCommand) -> PoaFormActivity:
+        item = await self.repository.get_form_activity(command.form_activity_id)
+        if item is None:
+            raise ResourceNotFoundError("La actividad de la cédula no existe.")
+        if not can_capture_activity(command.actor, item.executing_area_id):
+            raise ForbiddenError("La actividad POA no está asignada al área del usuario.")
+        # Se valida cada id tal cual llegó -sin deduplicar aquí-: la entidad es
+        # la única dueña de esa regla (`PoaFormActivity.assign_criteria`) y la
+        # aplica más abajo. Repetir un id sólo repite una consulta barata de
+        # catálogo; no vale la pena reimplementar el mismo `sorted(set(...))`
+        # en esta capa nada más para ahorrarla.
+        for criteria_id in command.criteria_seaes_ids:
+            criteria = await self.criteria.get_by_id(criteria_id)
+            if criteria is None:
+                raise ResourceNotFoundError(f"El criterio SEAES {criteria_id} no existe.")
+        item.assign_criteria(command.criteria_seaes_ids)
+        await self.repository.replace_activity_criteria(
+            item.id, item.criteria_seaes_ids, item.updated_at
+        )
+        await _publish(
+            self.event_bus,
+            actor_id=command.actor.id,
+            aggregate_type="poa_form_activity",
+            aggregate_id=item.id,
+            action="criteria_assigned",
+            data={"form_id": item.form_id, "criteria_seaes_ids": list(item.criteria_seaes_ids)},
+        )
         return item
 
 

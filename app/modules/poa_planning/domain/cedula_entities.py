@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
@@ -274,6 +275,13 @@ class PoaFormActivity(BaseEntity):
     annual_goal: Decimal
     executing_area_id: int | None = None
     observations: str | None = None
+    #: Explicacion concreta de la actividad para el area que la ejecuta: el
+    #: texto oficial del POA federal es generico, y Planeacion le agrega aqui
+    #: que significa en los hechos ("actividad UPE Chiapas").
+    upe_description: str | None = None
+    #: Los criterios SEAES son siete y son indicativos: una actividad puede
+    #: caer en varios a la vez, por eso es un conjunto y no un valor unico.
+    criteria_seaes_ids: tuple[int, ...] = ()
 
     @classmethod
     def create(
@@ -305,6 +313,7 @@ class PoaFormActivity(BaseEntity):
         annual_goal: Decimal | None = None,
         executing_area_id: int | None = None,
         observations: str | None = None,
+        upe_description: str | None = None,
     ) -> None:
         if unit is not None:
             if not unit.strip():
@@ -317,6 +326,21 @@ class PoaFormActivity(BaseEntity):
             self.executing_area_id = executing_area_id
         if observations is not None:
             self.observations = observations.strip() or None
+        if upe_description is not None:
+            self.upe_description = upe_description.strip() or None
+        self.touch()
+
+    def assign_criteria(self, criteria_seaes_ids: Iterable[int]) -> None:
+        """Reemplaza el conjunto completo de criterios SEAES de la actividad.
+
+        Antes había un único criterio; ahora SEAES define siete criterios
+        indicativos y una actividad puede caer en varios a la vez. El método
+        reemplaza el conjunto entero en vez de acumularlo, porque una lista
+        vacía es la forma legítima de retirarlos todos —igual que antes
+        `None` desasignaba el criterio único—, y eso no se puede expresar si
+        `[]` significara "no tocar nada".
+        """
+        self.criteria_seaes_ids = tuple(sorted(set(criteria_seaes_ids)))
         self.touch()
 
 
@@ -437,3 +461,32 @@ class PoaFormIssue(BaseEntity):
     snapshot: dict[str, Any]
     issued_by: int
     issued_at: datetime = field(default_factory=utc_now)
+
+
+@dataclass
+class PoaFollowUpCard:
+    """Una tarjeta del tablero: el seguimiento con lo que hace falta para decidir
+    sin abrirlo. Es un modelo de lectura, no un agregado: no tiene reglas."""
+
+    id: int
+    form_id: int
+    activity_id: int
+    activity_key: str
+    unit: str
+    annual_goal: Decimal
+    executing_area_id: int | None
+    criteria_seaes_ids: tuple[int, ...]
+    quarter: int
+    period_id: int
+    scheduled: Decimal
+    achieved: Decimal | None
+    status: CaptureStatus
+    review_comment: str | None
+    # Lo que el area escribio, no solo lo que midio. Viaja en la tarjeta porque
+    # el formulario de captura se abre desde ahi y el PUT que lo guarda
+    # reemplaza el seguimiento entero: sin estos campos el formulario abriria
+    # en blanco y la siguiente correccion borraria el texto.
+    deviation_justification: str | None
+    progress: str | None
+    scope: str | None
+    updated_at: datetime

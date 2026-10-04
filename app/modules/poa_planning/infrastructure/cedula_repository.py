@@ -9,6 +9,7 @@ from app.shared.domain.exceptions import ConflictError
 from ..domain.cedula_entities import (
     PoaActivityCatalog,
     PoaActivityFollowUp,
+    PoaFollowUpCard,
     PoaForm,
     PoaFormActivity,
     PoaFormDetail,
@@ -134,6 +135,35 @@ class InMemoryPoaFormRepository:
         item.version += 1
         self.forms[item.id] = item
 
+    async def delete_form(self, item_id: int) -> None:
+        # El caso de uso ya comprobó que no hay seguimientos ni emisiones antes
+        # de llegar aquí; de todas formas se limpia cada colección hija -igual
+        # que haría el ON DELETE CASCADE de Postgres- para que esta variante en
+        # memoria no se quede con datos huérfanos si algún día alguien la llama
+        # sin pasar por esa comprobación.
+        self.forms.pop(item_id, None)
+        activity_ids = {
+            activity.id for activity in self.form_activities.values() if activity.form_id == item_id
+        }
+        for activity_id in activity_ids:
+            self.form_activities.pop(activity_id, None)
+        for follow_up_id in [
+            follow_up.id
+            for follow_up in self.follow_ups.values()
+            if follow_up.form_activity_id in activity_ids
+        ]:
+            self.follow_ups.pop(follow_up_id, None)
+        for indicator_id in [
+            indicator.id
+            for indicator in self.form_indicators.values()
+            if indicator.form_id == item_id
+        ]:
+            self.form_indicators.pop(indicator_id, None)
+        for quarter_id in [
+            quarter.id for quarter in self.form_quarters.values() if quarter.form_id == item_id
+        ]:
+            self.form_quarters.pop(quarter_id, None)
+
     async def add_form_quarter(self, item: PoaFormQuarter) -> None:
         if any(
             current.form_id == item.form_id and current.quarter == item.quarter
@@ -180,6 +210,9 @@ class InMemoryPoaFormRepository:
     async def update_form_indicator(self, item: PoaFormIndicator) -> None:
         self.form_indicators[item.id] = item
 
+    async def delete_form_indicator(self, item_id: int) -> None:
+        self.form_indicators.pop(item_id, None)
+
     async def add_form_activity(self, item: PoaFormActivity) -> None:
         if any(
             existing.form_id == item.form_id and existing.activity_key == item.activity_key
@@ -194,6 +227,30 @@ class InMemoryPoaFormRepository:
 
     async def update_form_activity(self, item: PoaFormActivity) -> None:
         self.form_activities[item.id] = item
+
+    async def delete_form_activity(self, item_id: int) -> None:
+        self.form_activities.pop(item_id, None)
+        for follow_up_id in [
+            follow_up.id
+            for follow_up in self.follow_ups.values()
+            if follow_up.form_activity_id == item_id
+        ]:
+            self.follow_ups.pop(follow_up_id, None)
+
+    async def replace_activity_criteria(
+        self, form_activity_id: int, criteria_seaes_ids: tuple[int, ...], updated_at
+    ) -> None:
+        # No deduplica: igual que el repositorio SQL (que inserta tal cual,
+        # sin ON CONFLICT), confía en que quien llama -la entidad, vía el
+        # caso de uso- ya entregó el conjunto sin repetidos. Si volviera a
+        # deduplicar aquí, esta implementación taparía una regresión en esa
+        # capa y la prueba de la variante "memory" pasaría por construcción.
+        item = self.form_activities.get(form_activity_id)
+        if item is None:
+            return
+        item.criteria_seaes_ids = tuple(criteria_seaes_ids)
+        item.updated_at = updated_at
+        self.form_activities[form_activity_id] = item
 
     async def get_follow_up(self, item_id: int) -> PoaActivityFollowUp | None:
         return self.follow_ups.get(item_id)
@@ -212,6 +269,55 @@ class InMemoryPoaFormRepository:
 
     async def update_follow_up(self, item: PoaActivityFollowUp) -> None:
         self.follow_ups[item.id] = item
+
+    async def list_follow_up_cards(
+        self,
+        *,
+        exercise_id: int | None = None,
+        quarter: int | None = None,
+        executing_area_id: int | None = None,
+        status: str | None = None,
+        offset: int = 0,
+        limit: int = 200,
+    ) -> tuple[list[PoaFollowUpCard], int]:
+        cards = []
+        for follow_up in self.follow_ups.values():
+            activity = self.form_activities.get(follow_up.form_activity_id)
+            if activity is None:
+                continue
+            form = self.forms.get(activity.form_id)
+            if form is None:
+                continue
+            if exercise_id is not None and form.exercise_id != exercise_id:
+                continue
+            if quarter is not None and follow_up.quarter != quarter:
+                continue
+            if executing_area_id is not None and activity.executing_area_id != executing_area_id:
+                continue
+            if status is not None and follow_up.status.value != status:
+                continue
+            cards.append(PoaFollowUpCard(
+                id=follow_up.id,
+                form_id=form.id,
+                activity_id=activity.id,
+                activity_key=activity.activity_key,
+                unit=activity.unit,
+                annual_goal=activity.annual_goal,
+                executing_area_id=activity.executing_area_id,
+                criteria_seaes_ids=tuple(activity.criteria_seaes_ids),
+                quarter=follow_up.quarter,
+                period_id=follow_up.period_id,
+                scheduled=follow_up.scheduled,
+                achieved=follow_up.achieved,
+                status=follow_up.status,
+                review_comment=follow_up.review_comment,
+                deviation_justification=follow_up.deviation_justification,
+                progress=follow_up.progress,
+                scope=follow_up.scope,
+                updated_at=follow_up.updated_at,
+            ))
+        cards.sort(key=lambda card: (card.activity_key, card.quarter))
+        return cards[offset:offset + limit], len(cards)
 
     async def upsert_follow_up(self, item: PoaActivityFollowUp) -> PoaActivityFollowUp:
         existing = next(

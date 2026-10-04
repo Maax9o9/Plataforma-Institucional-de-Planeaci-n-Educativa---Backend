@@ -5,19 +5,24 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.core.authorization import actor_from_user
 from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user, require_roles
-from app.shared.domain.exceptions import ForbiddenError, ResourceNotFoundError
+from app.modules.evidence_management.domain.value_objects import FlowEntity
+from app.shared.domain.exceptions import ForbiddenError, GoneError, ResourceNotFoundError
 
-from ..application.access_control import can_edit_structure
+from ..application.access_control import can_capture_activity, can_edit_structure
 from ..application.cedula_dto import (
     AddPoaFormActivityCommand,
     AddPoaFormIndicatorCommand,
+    AssignPoaActivityCriteriaCommand,
     CapturePoaIndicatorTotalCommand,
     CreatePoaFormCommand,
+    DeletePoaFormActivityCommand,
+    DeletePoaFormCommand,
+    DeletePoaFormIndicatorCommand,
     IssuePoaFormCommand,
     PoaQuarterRangeInput,
     RecordPoaFollowUpCommand,
@@ -29,8 +34,12 @@ from ..application.cedula_dto import (
 from ..application.use_cases.manage_cedula import (
     AddPoaFormActivity,
     AddPoaFormIndicator,
+    AssignPoaActivityCriteria,
     CapturePoaIndicatorTotal,
     CreatePoaForm,
+    DeletePoaForm,
+    DeletePoaFormActivity,
+    DeletePoaFormIndicator,
     IssuePoaForm,
     RecordPoaFollowUp,
     UpdatePoaFollowUpJustification,
@@ -51,6 +60,7 @@ from ..application.use_cases.review_follow_up import (
 from ..domain.cedula_entities import (
     STRATEGY_TYPES,
     PoaActivityFollowUp,
+    PoaFollowUpCard,
     PoaForm,
     PoaFormActivity,
     PoaFormDetail,
@@ -62,8 +72,12 @@ from ..domain.cedula_entities import (
 from .cedula_dependencies import (
     get_add_form_activity_use_case,
     get_add_form_indicator_use_case,
+    get_assign_activity_criteria_use_case,
     get_capture_indicator_total_use_case,
     get_create_form_use_case,
+    get_delete_form_activity_use_case,
+    get_delete_form_indicator_use_case,
+    get_delete_form_use_case,
     get_issue_form_use_case,
     get_record_follow_up_use_case,
     get_update_follow_up_justification_use_case,
@@ -74,12 +88,14 @@ from .cedula_dependencies import (
 from .cedula_schemas import (
     ActividadCedulaRespuesta,
     ActividadPoaCatalogoRespuesta,
+    ActividadTarjetaRespuesta,
     ActualizarActividadCedulaRequest,
     ActualizarCedulaPoaRequest,
     ActualizarIndicadorCedulaRequest,
     ActualizarJustificacionSeguimientoRequest,
     AgregarActividadCedulaRequest,
     AgregarIndicadorCedulaRequest,
+    AsignarCriteriosSeaesRequest,
     CambioEstadoSeguimientoRespuesta,
     CapturarTotalIndicadorRequest,
     CedulaPoaDetalleRespuesta,
@@ -92,15 +108,23 @@ from .cedula_schemas import (
     IndicadorPoaCatalogoRespuesta,
     ObjetivoPoaCatalogoRespuesta,
     PaginaHistorialSeguimientoRespuesta,
+    PaginaSeguimientosRespuesta,
     RechazarSeguimientoRequest,
     RegistrarSeguimientoCedulaRequest,
     SeguimientoCedulaRespuesta,
+    SeguimientoTarjetaRespuesta,
 )
 
 router = APIRouter(prefix="/poa", tags=["Cédulas POA"])
 FORM_ROLES = ("planeacion", "planeacion_admin", "admin_sistema", "capturista_poa")
 PLANNING_ROLES = ("planeacion", "planeacion_admin", "admin_sistema")
 STRUCTURE_ROLES = (*PLANNING_ROLES, "capturista_poa")
+#: Rectoría también consulta el tablero, sólo lectura: no se agrega a FORM_ROLES
+#: porque esa tupla habilita acciones de escritura en toda la cédula.
+FOLLOW_UP_LIST_ROLES = (*FORM_ROLES, "rectoria")
+#: Igual que PLANNING_ROLES, pero para decidir si se fuerza el filtro de área:
+#: rectoría ve todas las áreas, como Planeación, aunque no puede escribir.
+UNRESTRICTED_FOLLOW_UP_ROLES = {"planeacion", "planeacion_admin", "admin_sistema", "rectoria"}
 
 
 def _form_response(
@@ -166,6 +190,8 @@ def _activity_response(item: PoaFormActivity, catalog) -> ActividadCedulaRespues
         meta_anual=item.annual_goal,
         area_ejecutora_id=item.executing_area_id,
         observaciones=item.observations,
+        actividad_upe=item.upe_description,
+        criterio_seaes_ids=list(item.criteria_seaes_ids),
     )
 
 
@@ -434,6 +460,161 @@ async def list_forms(
 
 
 @router.get(
+    "/seguimientos",
+    response_model=PaginaSeguimientosRespuesta,
+    summary="Listar los seguimientos del tablero",
+)
+async def list_follow_ups(
+    request: Request,
+    ejercicio_id: int | None = Query(default=None),
+    cuatrimestre: int | None = Query(default=None, ge=1, le=3),
+    area_id: int | None = Query(default=None),
+    estado: str | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=500),
+    current_user=Depends(require_roles(*FOLLOW_UP_LIST_ROLES)),
+):
+    # Un área sólo ve lo suyo: el filtro se fuerza para quien no es de
+    # planeación ni de rectoría (ambas ven todas las áreas, igual que en los
+    # reportes del POA). `executing_area_id=None` significa "sin filtro" en el
+    # repositorio, así que a un usuario de área sin área asignada no se le
+    # puede forzar ese None: se le devuelve la página vacía sin consultar.
+    if not current_user.has_any_role(UNRESTRICTED_FOLLOW_UP_ROLES):
+        if current_user.area_id is None:
+            return PaginaSeguimientosRespuesta(items=[], total=0, offset=offset, limit=limit)
+        area_id = current_user.area_id
+    cards, total = await request.app.state.poa_form_repository.list_follow_up_cards(
+        exercise_id=ejercicio_id,
+        quarter=cuatrimestre,
+        executing_area_id=area_id,
+        status=estado,
+        offset=offset,
+        limit=limit,
+    )
+    evidences = await request.app.state.evidence_repository.count_by_entity(
+        FlowEntity.POA_FORM_FOLLOW_UP, [card.id for card in cards]
+    )
+    # Una sola consulta al catálogo para todas las tarjetas: pedirlo por
+    # actividad dentro de la comprensión sería N+1, justo lo que este
+    # endpoint existe para evitar.
+    descriptions: dict[str, str] = {}
+    if cards:
+        catalog_items = await request.app.state.poa_form_repository.list_activity_catalog()
+        descriptions = {item.key: item.description for item in catalog_items}
+    return PaginaSeguimientosRespuesta(
+        items=[
+            _tarjeta_respuesta(
+                card,
+                descripcion=descriptions.get(card.activity_key, card.activity_key),
+                evidencias=evidences.get(card.id, 0),
+            )
+            for card in cards
+        ],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/seguimientos/{follow_up_id}",
+    response_model=SeguimientoTarjetaRespuesta,
+    summary="Consultar un seguimiento por su identificador",
+    responses={
+        403: {"model": ErrorResponse, "description": "El seguimiento no es del área."},
+        404: {"model": ErrorResponse, "description": "El seguimiento no existe."},
+    },
+)
+async def get_follow_up_card(
+    follow_up_id: int,
+    request: Request,
+    current_user=Depends(require_roles(*FOLLOW_UP_LIST_ROLES)),
+):
+    """La captura del avance es una pantalla propia con su URL: tiene que poder
+    cargarse sola, sin haber pasado antes por el tablero.
+
+    El permiso se comprueba aquí y no sólo en el filtro del listado: la URL es
+    adivinable cambiando un número.
+    """
+    repository = request.app.state.poa_form_repository
+    follow_up = await repository.get_follow_up(follow_up_id)
+    if follow_up is None:
+        raise ResourceNotFoundError("El seguimiento del POA no existe.")
+    activity = await repository.get_form_activity(follow_up.form_activity_id)
+    if activity is None:
+        raise ResourceNotFoundError("La actividad del seguimiento no existe.")
+    if not current_user.has_any_role(UNRESTRICTED_FOLLOW_UP_ROLES) and (
+        current_user.area_id is None or current_user.area_id != activity.executing_area_id
+    ):
+        raise ForbiddenError("El seguimiento del POA no es de tu área.")
+
+    catalogo = await repository.get_activity_catalog(activity.activity_key)
+    evidencias = await request.app.state.evidence_repository.count_by_entity(
+        FlowEntity.POA_FORM_FOLLOW_UP, [follow_up.id]
+    )
+    card = PoaFollowUpCard(
+        id=follow_up.id,
+        form_id=activity.form_id,
+        activity_id=activity.id,
+        activity_key=activity.activity_key,
+        unit=activity.unit,
+        annual_goal=activity.annual_goal,
+        executing_area_id=activity.executing_area_id,
+        criteria_seaes_ids=tuple(activity.criteria_seaes_ids),
+        quarter=follow_up.quarter,
+        period_id=follow_up.period_id,
+        scheduled=follow_up.scheduled,
+        achieved=follow_up.achieved,
+        status=follow_up.status,
+        review_comment=follow_up.review_comment,
+        deviation_justification=follow_up.deviation_justification,
+        progress=follow_up.progress,
+        scope=follow_up.scope,
+        updated_at=follow_up.updated_at,
+    )
+    return _tarjeta_respuesta(
+        card,
+        descripcion=catalogo.description if catalogo is not None else activity.activity_key,
+        evidencias=evidencias.get(follow_up.id, 0),
+    )
+
+
+def _tarjeta_respuesta(
+    card: PoaFollowUpCard, *, descripcion: str, evidencias: int
+) -> SeguimientoTarjetaRespuesta:
+    """Única forma de armar la tarjeta.
+
+    La usan el listado del tablero y la pantalla de captura: si cada uno la
+    armara por su lado, un campo agregado en uno se quedaría fuera del otro y
+    la pantalla abriría con un hueco que el tablero sí muestra.
+    """
+    return SeguimientoTarjetaRespuesta(
+        id=card.id,
+        cedula_id=card.form_id,
+        actividad=ActividadTarjetaRespuesta(
+            id=card.activity_id,
+            clave=card.activity_key,
+            descripcion=descripcion,
+            unidad_medida=card.unit,
+            meta_anual=card.annual_goal,
+        ),
+        area_ejecutora_id=card.executing_area_id,
+        criterio_seaes_ids=list(card.criteria_seaes_ids),
+        cuatrimestre=card.quarter,
+        periodo_id=card.period_id,
+        programado=card.scheduled,
+        alcanzado=card.achieved,
+        justificacion_desviacion=card.deviation_justification,
+        progreso=card.progress,
+        alcance=card.scope,
+        estado=card.status.value,
+        comentario_revision=card.review_comment,
+        evidencias=evidencias,
+        actualizado_en=card.updated_at,
+    )
+
+
+@router.get(
     "/emisiones/{issue_id}",
     response_model=EmisionCedulaPoaRespuesta,
     summary="Consultar el respaldo inmutable de una cédula",
@@ -513,6 +694,26 @@ async def update_form(
     return _form_response(item, quarters)
 
 
+@router.delete(
+    "/cedulas/{form_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Eliminar una cédula agregada por error, mientras el POA esté en borrador",
+    responses={
+        409: {"model": ErrorResponse, "description": "Tiene seguimientos o emisiones."},
+        422: {"model": ErrorResponse, "description": "El POA ya no está en borrador."},
+    },
+)
+async def delete_form(
+    form_id: int,
+    current_user=Depends(require_roles(*STRUCTURE_ROLES)),
+    use_case: DeletePoaForm = Depends(get_delete_form_use_case),
+) -> Response:
+    await use_case.execute(
+        DeletePoaFormCommand(form_id=form_id, actor=actor_from_user(current_user))
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post(
     "/cedulas/{form_id}/indicadores",
     response_model=IndicadorCedulaRespuesta,
@@ -569,6 +770,25 @@ async def update_form_indicator(
     )
     catalog = await request.app.state.poa_form_repository.get_indicator(item.indicator_key)
     return _indicator_response(item, catalog)
+
+
+@router.delete(
+    "/cedulas/indicadores/{form_indicator_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Eliminar un indicador agregado por error, mientras el POA esté en borrador",
+    responses={422: {"model": ErrorResponse, "description": "El POA ya no está en borrador."}},
+)
+async def delete_form_indicator(
+    form_indicator_id: int,
+    current_user=Depends(require_roles(*STRUCTURE_ROLES)),
+    use_case: DeletePoaFormIndicator = Depends(get_delete_form_indicator_use_case),
+) -> Response:
+    await use_case.execute(
+        DeletePoaFormIndicatorCommand(
+            form_indicator_id=form_indicator_id, actor=actor_from_user(current_user)
+        )
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch(
@@ -643,6 +863,80 @@ async def update_form_activity(
             annual_goal=body.meta_anual,
             executing_area_id=body.area_ejecutora_id,
             observations=body.observaciones,
+            upe_description=body.actividad_upe,
+            actor=actor_from_user(current_user),
+        )
+    )
+    catalog = await request.app.state.poa_form_repository.get_activity_catalog(item.activity_key)
+    return _activity_response(item, catalog)
+
+
+@router.delete(
+    "/cedulas/actividades/{form_activity_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Eliminar una actividad agregada por error, mientras el POA esté en borrador",
+    responses={
+        409: {"model": ErrorResponse, "description": "La actividad tiene seguimientos."},
+        422: {"model": ErrorResponse, "description": "El POA ya no está en borrador."},
+    },
+)
+async def delete_form_activity(
+    form_activity_id: int,
+    current_user=Depends(require_roles(*STRUCTURE_ROLES)),
+    use_case: DeletePoaFormActivity = Depends(get_delete_form_activity_use_case),
+) -> Response:
+    await use_case.execute(
+        DeletePoaFormActivityCommand(
+            form_activity_id=form_activity_id, actor=actor_from_user(current_user)
+        )
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch(
+    "/cedulas/actividades/{form_activity_id}/criterio-seaes",
+    summary="Retirado: un criterio SEAES ya no es único por actividad",
+    include_in_schema=False,
+    status_code=status.HTTP_410_GONE,
+    responses={410: {"model": ErrorResponse, "description": "La ruta fue retirada."}},
+)
+async def assign_activity_criteria_retirada(
+    form_activity_id: int,
+    _user=Depends(require_roles(*FORM_ROLES)),
+):
+    # SEAES define siete criterios indicativos: una actividad puede caer en
+    # varios a la vez, así que esta ruta singular (migración 0028) ya no
+    # puede representar el dato. Se conserva sólo para no romper en
+    # silencio a quien todavía le apunte: responde 410 con la ruta nueva en
+    # vez de un 404 que no explica nada.
+    raise GoneError(
+        "Esta ruta fue retirada: un criterio SEAES ya no es único por actividad. Use "
+        "PATCH /poa/cedulas/actividades/{id}/criterios-seaes con 'criterio_seaes_ids' "
+        "(lista).",
+        details={"reason": "POA_CRITERIA_ROUTE_RETIRED", "form_activity_id": form_activity_id},
+    )
+
+
+@router.patch(
+    "/cedulas/actividades/{form_activity_id}/criterios-seaes",
+    response_model=ActividadCedulaRespuesta,
+    summary="Asignar los criterios SEAES que clasifican la actividad",
+    responses={
+        403: {"model": ErrorResponse, "description": "La actividad no es del área."},
+        404: {"model": ErrorResponse, "description": "La actividad o algún criterio no existen."},
+    },
+)
+async def assign_activity_criteria(
+    form_activity_id: int,
+    body: AsignarCriteriosSeaesRequest,
+    request: Request,
+    current_user=Depends(require_roles(*FORM_ROLES)),
+    use_case: AssignPoaActivityCriteria = Depends(get_assign_activity_criteria_use_case),
+):
+    item = await use_case.execute(
+        AssignPoaActivityCriteriaCommand(
+            form_activity_id=form_activity_id,
+            criteria_seaes_ids=tuple(body.criterio_seaes_ids),
             actor=actor_from_user(current_user),
         )
     )
@@ -842,8 +1136,20 @@ async def follow_up_history(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=10, ge=1, le=100),
     order: Literal["asc", "desc"] = Query(default="desc"),
-    _current_user=Depends(require_roles(*FORM_ROLES)),
+    current_user=Depends(require_roles(*FORM_ROLES)),
 ):
+    # El historial trae los comentarios de revisión, que son datos del área:
+    # sin esta comprobación cualquier capturista los leería con sólo conocer
+    # el id del seguimiento. Un área nunca ve datos de otra.
+    repository = request.app.state.poa_form_repository
+    follow_up = await repository.get_follow_up(follow_up_id)
+    if follow_up is None:
+        raise ResourceNotFoundError("El seguimiento del POA no existe.")
+    activity = await repository.get_form_activity(follow_up.form_activity_id)
+    executing_area_id = activity.executing_area_id if activity else None
+    if not can_capture_activity(actor_from_user(current_user), executing_area_id):
+        raise ForbiddenError("La actividad POA no está asignada al área del usuario.")
+
     changes, total = await request.app.state.state_change_repository.list_for_capture_page(
         follow_up_id,
         offset=offset,

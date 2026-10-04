@@ -19,6 +19,7 @@ from app.modules.periods.infrastructure.sql_repository import SqlAlchemyPeriodRe
 def database_settings() -> Settings:
     return Settings(
         environment="testing",
+            indicators_module_enabled=True,
         secret_key="test-secret-key-with-more-than-32-characters",
         database_url="postgresql+asyncpg://planeacion:planeacion_dev@localhost:5433/planeacion",
         email_provider="console",

@@ -8,8 +8,29 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
 
 from ...indicators_capture.domain.value_objects import CaptureStatus
+from ...poa_planning.domain.value_objects import PoaExerciseStatus
 from ..domain.entities import StateChange
 from .models import StateChangeModel
+
+# `cambios_estado` es un historial compartido a proposito entre la captura de
+# indicadores, el seguimiento cuatrimestral del POA y el ejercicio anual del
+# POA (ver migracion 0030): las tres entidades registran sus transiciones ahi
+# para que el historial se lea igual sin importar de cual se trate. Pero el
+# ejercicio deliberadamente NO reutiliza el vocabulario de `CaptureStatus`
+# ("vigente" y "cerrado" no son "validado"): tiene su propio `PoaExerciseStatus`.
+# La columna de Postgres es una sola (`estado_captura`) y admite ambos
+# vocabularios, asi que al reconstruir el dominio hay que elegir el enum de
+# Python correcto segun la entidad de la fila, no asumir siempre `CaptureStatus`.
+_STATUS_POR_ENTIDAD: dict[str, type[CaptureStatus] | type[PoaExerciseStatus]] = {
+    "poa_ejercicio": PoaExerciseStatus,
+}
+
+
+def _status_desde_fila(entidad: str, valor: str | None) -> CaptureStatus | PoaExerciseStatus | None:
+    if valor is None:
+        return None
+    tipo_estado = _STATUS_POR_ENTIDAD.get(entidad, CaptureStatus)
+    return tipo_estado(valor)
 
 
 class SqlAlchemyStateChangeRepository:
@@ -47,8 +68,8 @@ class SqlAlchemyStateChangeRepository:
                 StateChange(
                     id=model.id,
                     entity_id=model.entidad_id,
-                    from_status=CaptureStatus(model.de_estado) if model.de_estado else None,
-                    to_status=CaptureStatus(model.a_estado),
+                    from_status=_status_desde_fila(model.entidad, model.de_estado),
+                    to_status=_status_desde_fila(model.entidad, model.a_estado),
                     user_id=model.usuario_id,
                     comment=model.comentario,
                     created_at=model.fecha,
@@ -99,11 +120,10 @@ class SqlAlchemyStateChangeRepository:
                 [
                     StateChange(
                         id=model.id,
+                        entity=model.entidad,
                         entity_id=model.entidad_id,
-                        from_status=(
-                            CaptureStatus(model.de_estado) if model.de_estado else None
-                        ),
-                        to_status=CaptureStatus(model.a_estado),
+                        from_status=_status_desde_fila(model.entidad, model.de_estado),
+                        to_status=_status_desde_fila(model.entidad, model.a_estado),
                         user_id=model.usuario_id,
                         comment=model.comentario,
                         created_at=model.fecha,
