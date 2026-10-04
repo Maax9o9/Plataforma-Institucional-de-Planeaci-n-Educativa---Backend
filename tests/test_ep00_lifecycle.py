@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -53,7 +54,7 @@ async def test_user_creation_edit_deactivation_and_reactivation(client, app):
     )
     assert created.status_code == 201, created.text
     user_id = created.json()["id"]
-    setup_url = email_sender.messages[0][2].split(": ", 1)[1]
+    setup_url = re.search(r"https?://\S+\?token=\S+", email_sender.messages[0][2]).group()
     setup_token = parse_qs(urlparse(setup_url).query)["token"][0]
     configured = await client.post(
         "/api/v1/auth/password-setup",

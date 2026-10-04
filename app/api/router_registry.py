@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.api.uploads_router import router as uploads_router
 from app.modules.audit.api.router import router as audit_router
 from app.modules.dashboards.api.router import router as dashboards_router
+from app.modules.email_templates.api.router import router as email_templates_router
 from app.modules.evidence_management.api.router import router as evidence_router
 from app.modules.identity_access.api.router import router as identity_router
 from app.modules.indicators_capture.api.router import router as captures_router
@@ -23,7 +24,7 @@ from app.modules.poa_planning.api.router import router as poa_planning_router
 from app.modules.poa_reports.api.router import router as poa_reports_router
 
 #: Routers que siempre se registran: identidad, catalogos institucionales,
-#: periodos, evidencias, POA, notificaciones y bitacora.
+#: periodos, evidencias, POA, notificaciones, plantillas de correo y bitacora.
 CORE_ROUTERS = (
     identity_router,
     uploads_router,
@@ -35,6 +36,7 @@ CORE_ROUTERS = (
     poa_cedula_router,
     poa_reports_router,
     notifications_router,
+    email_templates_router,
     audit_router,
 )
 

@@ -10,6 +10,7 @@ from app.core.config import Settings
 from app.modules.institutional_catalogs.domain.entities import Area
 from app.modules.institutional_catalogs.domain.ports.repositories import AreaRepository
 from app.shared.application.event_bus import EventBus
+from app.shared.application.ports.email_composer import EmailComposer
 from app.shared.application.ports.email_sender import EmailSender
 from app.shared.domain.exceptions import AuthenticationError, ResourceNotFoundError, ValidationError
 
@@ -35,6 +36,7 @@ class InviteUser:
         settings: Settings,
         area_repository: AreaRepository,
         directory: InstitutionalDirectory,
+        email_composer: EmailComposer,
     ) -> None:
         self.repository = repository
         self.password_hasher = password_hasher
@@ -44,6 +46,7 @@ class InviteUser:
         self.settings = settings
         self.area_repository = area_repository
         self.directory = directory
+        self.email_composer = email_composer
 
     async def execute(self, command: RegisterUserCommand) -> User:
         if await self.repository.get_by_email(command.email):
@@ -55,7 +58,8 @@ class InviteUser:
         area_name = None
         assignment = self.directory.find_by_email(command.email)
         await ensure_can_manage_user(
-            self.repository, command.actor_id,
+            self.repository,
+            command.actor_id,
             assigned_roles=set(assignment.roles) if assignment else roles,
         )
         if assignment is not None:
@@ -86,32 +90,26 @@ class InviteUser:
         )
         user.area_name = area_name
         user.password_setup_required = True
-        await self.repository.add(user)
         raw_token = secrets.token_urlsafe(32)
         token_hash = sha256(raw_token.encode("utf-8")).hexdigest()
-        expires_at = datetime.now(UTC) + timedelta(
-            hours=self.settings.password_setup_expire_hours
+        expires_at = datetime.now(UTC) + timedelta(hours=self.settings.password_setup_expire_hours)
+        link = f"{self.settings.frontend_url.rstrip('/')}/establecer-contrasena?token={raw_token}"
+        email = await self.email_composer.render(
+            "invitacion",
+            recipient_name=user.full_name,
+            detail=(
+                f"Tu enlace personal vence en {self.settings.password_setup_expire_hours} horas. "
+                "Sólo puede usarse una vez. No lo compartas con otras personas."
+            ),
+            action_url=link,
         )
+        await self.repository.add(user)
         await self.token_store.issue(
             user_id=user.id,
             token_hash=token_hash,
             expires_at=expires_at,
         )
-        link = (
-            f"{self.settings.frontend_url.rstrip('/')}/establecer-contrasena"
-            f"?token={raw_token}"
-        )
-        await self.email_sender.send(
-            user.email.value,
-            "Configura tu acceso a la Plataforma de Planeacion",
-            (
-                f"<p>Hola {user.full_name},</p>"
-                f"<p>Configura tu contrasena desde este enlace:</p>"
-                f"<p><a href=\"{link}\">Crear contrasena</a></p>"
-                f"<p>El enlace expira en {self.settings.password_setup_expire_hours} horas.</p>"
-            ),
-            f"Configura tu contrasena: {link}",
-        )
+        await self.email_sender.send(user.email.value, email.subject, email.html, email.text)
         await self.event_bus.publish(
             UserRegistered(
                 actor_id=command.actor_id,

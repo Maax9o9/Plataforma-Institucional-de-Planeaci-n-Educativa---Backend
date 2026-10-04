@@ -17,16 +17,22 @@ from app.shared.application.event_bus import EventBus
 from .container import Resources
 
 
-def register_event_handlers(event_bus: EventBus, resources: Resources, email_sender):
-    register_audit_subscriber(
-        event_bus, resources.audit_repository, resources.user_repository
-    )
+def register_event_handlers(
+    event_bus: EventBus,
+    resources: Resources,
+    email_sender,
+    email_composer,
+    frontend_url,
+):
+    register_audit_subscriber(event_bus, resources.audit_repository, resources.user_repository)
     notification_service = NotificationService(
         resources.notification_repository,
         resources.user_repository,
         email_sender,
         resources.indicator_repository,
         resources.poa_period_recipients,
+        email_composer=email_composer,
+        frontend_url=frontend_url,
     )
     notification_service.register(event_bus)
 

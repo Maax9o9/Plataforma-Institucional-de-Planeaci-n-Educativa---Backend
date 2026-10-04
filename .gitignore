@@ -5,6 +5,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 var/uploads/
+var/email-previews/
 *.egg-info/
 
 # Respaldo del .env: contiene secretos, nunca debe versionarse

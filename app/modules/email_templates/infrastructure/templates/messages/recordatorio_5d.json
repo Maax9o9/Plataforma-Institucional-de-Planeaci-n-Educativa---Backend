@@ -1,0 +1,9 @@
+{
+  "etiqueta": "Recordatorio de captura",
+  "contenido": {
+    "asunto": "Tu periodo de captura cierra en 5 días",
+    "titulo": "Tu captura sigue esperándonos",
+    "cuerpo": "Te recordamos revisar los pendientes del periodo de captura. Tu participación permite mantener actualizada la información institucional.",
+    "texto_boton": "Consultar mis pendientes"
+  }
+}
