@@ -621,3 +621,72 @@ async def test_el_area_no_dictamina_sus_propias_evidencias(backend_client):
         json={"aprobada": True},
     )
     assert propia.status_code == 403, propia.text
+
+
+@pytest.mark.asyncio
+async def test_el_tablero_dice_cuantas_evidencias_faltan_por_revisar(backend_client):
+    """Lo que decide por donde entrar a revisar.
+
+    El conteo total no distingue el informe con tres archivos ya dictaminados
+    del que tiene tres sin mirar, y es justo esa diferencia la que busca quien
+    abre el tablero a revisar. Con ella, la revision se puede hacer desde la
+    ficha y en tanda, sin entrar y salir del detalle una vez por archivo.
+    """
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+    seguimiento = await _capturar(client, escenario)
+
+    primera = await _adjuntar_evidencia_con_criterios(
+        client, escenario["capturer_headers"], seguimiento["id"], None
+    )
+    segunda = await _adjuntar_evidencia_con_criterios(
+        client, escenario["capturer_headers"], seguimiento["id"], None
+    )
+    assert primera.status_code == 201, primera.text
+    assert segunda.status_code == 201, segunda.text
+
+    async def tarjeta() -> dict:
+        listado = await client.get(
+            "/api/v1/poa/seguimientos",
+            headers=escenario["admin_headers"],
+            params={"cuatrimestre": 1},
+        )
+        assert listado.status_code == 200, listado.text
+        return next(x for x in listado.json()["items"] if x["id"] == seguimiento["id"])
+
+    recien_subidas = await tarjeta()
+    assert recien_subidas["evidencias"] == 2
+    assert recien_subidas["evidencias_sin_revisar"] == 2
+
+    dictaminada = await client.patch(
+        f"/api/v1/evidencias/{primera.json()['id']}/revision",
+        headers=escenario["admin_headers"],
+        json={"aprobada": True},
+    )
+    assert dictaminada.status_code == 200, dictaminada.text
+
+    # Aprobar no quita la evidencia, la saca de la cola: el total no se mueve.
+    tras_aprobar = await tarjeta()
+    assert tras_aprobar["evidencias"] == 2
+    assert tras_aprobar["evidencias_sin_revisar"] == 1
+
+    # Rechazar tambien cuenta como revisada: el archivo ya se miro, y lo que
+    # queda pendiente es que el area lo reponga, no que Planeacion lo juzgue.
+    rechazada = await client.patch(
+        f"/api/v1/evidencias/{segunda.json()['id']}/revision",
+        headers=escenario["admin_headers"],
+        json={"aprobada": False, "comentario": "Falta la firma del director."},
+    )
+    assert rechazada.status_code == 200, rechazada.text
+
+    revisadas = await tarjeta()
+    assert revisadas["evidencias"] == 2
+    assert revisadas["evidencias_sin_revisar"] == 0
+
+    # Y la pantalla del informe dice lo mismo que el tablero: una sola forma de
+    # armar la tarjeta, para que un campo nuevo no se quede fuera de una.
+    suelta = await client.get(
+        f"/api/v1/poa/seguimientos/{seguimiento['id']}", headers=escenario["admin_headers"]
+    )
+    assert suelta.status_code == 200, suelta.text
+    assert suelta.json()["evidencias_sin_revisar"] == 0

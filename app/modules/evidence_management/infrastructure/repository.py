@@ -7,7 +7,7 @@ from itertools import count
 from app.shared.domain.exceptions import ConflictError
 
 from ..domain.entities import Evidence, EvidenceLink, EvidenceVersion
-from ..domain.value_objects import FlowEntity
+from ..domain.value_objects import EvidenceReviewStatus, FlowEntity
 
 
 class InMemoryEvidenceRepository:
@@ -51,6 +51,21 @@ class InMemoryEvidenceRepository:
         conteo: dict[int, int] = {}
         for _, item_entity, item_id in self._links:
             if item_entity == entity and item_id in buscados:
+                conteo[item_id] = conteo.get(item_id, 0) + 1
+        return conteo
+
+    async def count_pending_review_by_entity(
+        self, entity: FlowEntity, entity_ids: list[int]
+    ) -> dict[int, int]:
+        if not entity_ids:
+            return {}
+        buscados = set(entity_ids)
+        conteo: dict[int, int] = {}
+        for evidence_id, item_entity, item_id in self._links:
+            if item_entity != entity or item_id not in buscados:
+                continue
+            evidencia = self._evidences.get(evidence_id)
+            if evidencia is not None and evidencia.review_status is EvidenceReviewStatus.PENDING:
                 conteo[item_id] = conteo.get(item_id, 0) + 1
         return conteo
 

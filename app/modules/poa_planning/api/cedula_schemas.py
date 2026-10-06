@@ -378,6 +378,12 @@ class SeguimientoTarjetaRespuesta(BaseModel):
     estado: str
     comentario_revision: str | None
     evidencias: int
+    #: Cuántas de esas evidencias siguen esperando dictamen de Planeación.
+    #:
+    #: Un conteo total no distingue el informe con tres archivos ya mirados del
+    #: que tiene tres sin mirar, y es esa diferencia la que decide por dónde
+    #: entrar a revisar.
+    evidencias_sin_revisar: int = 0
     actualizado_en: datetime
 
 

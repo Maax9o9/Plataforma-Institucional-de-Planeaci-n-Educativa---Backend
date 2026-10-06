@@ -117,6 +117,24 @@ class SqlAlchemyEvidenceRepository:
             )
             return {entity_id: total for entity_id, total in rows.all()}
 
+    async def count_pending_review_by_entity(
+        self, entity: FlowEntity, entity_ids: list[int]
+    ) -> dict[int, int]:
+        if not entity_ids:
+            return {}
+        async with session_scope(self.session_factory) as session:
+            rows = await session.execute(
+                select(EvidenceLinkModel.entidad_id, func.count())
+                .join(EvidenceModel, EvidenceModel.id == EvidenceLinkModel.evidencia_id)
+                .where(
+                    EvidenceLinkModel.entidad == entity.value,
+                    EvidenceLinkModel.entidad_id.in_(entity_ids),
+                    EvidenceModel.estado_revision == "pendiente",
+                )
+                .group_by(EvidenceLinkModel.entidad_id)
+            )
+            return {entity_id: total for entity_id, total in rows.all()}
+
     async def get(self, evidence_id: int) -> Evidence | None:
         async with session_scope(self.session_factory) as session:
             model = await session.get(EvidenceModel, evidence_id)

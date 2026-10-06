@@ -732,8 +732,12 @@ async def list_follow_ups(
         offset=offset,
         limit=limit,
     )
+    ids = [card.id for card in cards]
     evidences = await request.app.state.evidence_repository.count_by_entity(
-        FlowEntity.POA_FORM_FOLLOW_UP, [card.id for card in cards]
+        FlowEntity.POA_FORM_FOLLOW_UP, ids
+    )
+    pending = await request.app.state.evidence_repository.count_pending_review_by_entity(
+        FlowEntity.POA_FORM_FOLLOW_UP, ids
     )
     # Una sola consulta al catálogo para todas las tarjetas: pedirlo por
     # actividad dentro de la comprensión sería N+1, justo lo que este
@@ -748,6 +752,7 @@ async def list_follow_ups(
                 card,
                 descripcion=descriptions.get(card.activity_key, card.activity_key),
                 evidencias=evidences.get(card.id, 0),
+                sin_revisar=pending.get(card.id, 0),
             )
             for card in cards
         ],
@@ -793,6 +798,9 @@ async def get_follow_up_card(
     evidencias = await request.app.state.evidence_repository.count_by_entity(
         FlowEntity.POA_FORM_FOLLOW_UP, [follow_up.id]
     )
+    sin_revisar = await request.app.state.evidence_repository.count_pending_review_by_entity(
+        FlowEntity.POA_FORM_FOLLOW_UP, [follow_up.id]
+    )
     card = PoaFollowUpCard(
         id=follow_up.id,
         form_id=activity.form_id,
@@ -818,11 +826,12 @@ async def get_follow_up_card(
         card,
         descripcion=catalogo.description if catalogo is not None else activity.activity_key,
         evidencias=evidencias.get(follow_up.id, 0),
+        sin_revisar=sin_revisar.get(follow_up.id, 0),
     )
 
 
 def _tarjeta_respuesta(
-    card: PoaFollowUpCard, *, descripcion: str, evidencias: int
+    card: PoaFollowUpCard, *, descripcion: str, evidencias: int, sin_revisar: int = 0
 ) -> SeguimientoTarjetaRespuesta:
     """Única forma de armar la tarjeta.
 
@@ -853,6 +862,7 @@ def _tarjeta_respuesta(
         estado=card.status.value,
         comentario_revision=card.review_comment,
         evidencias=evidencias,
+        evidencias_sin_revisar=sin_revisar,
         actualizado_en=card.updated_at,
     )
 
