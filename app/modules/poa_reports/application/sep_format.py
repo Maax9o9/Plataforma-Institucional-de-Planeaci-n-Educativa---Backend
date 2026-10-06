@@ -247,7 +247,11 @@ def escribir_bloque(hoja, bloque: Bloque, cedula: CedulaDelFormato) -> list[str]
     incidencias: list[str] = []
 
     hoja.cell(row=bloque.estrategia + 2, column=COL_B).value = cedula.strategy_denomination
-    hoja.cell(row=bloque.estrategia + 2, column=COL_P).value = cedula.objective_number
+    # «NUM. DE ESTRATEGIA» es siempre 1 en el formato: cada cédula cubre una
+    # sola estrategia, y así viene en los dieciséis bloques del archivo
+    # oficial. No es el número del objetivo —escribirlo ahí pondría un 5 en las
+    # cédulas del objetivo 5— ni la clave, que ya va en la denominación.
+    hoja.cell(row=bloque.estrategia + 2, column=COL_P).value = 1
     hoja.cell(row=bloque.estrategia + 2, column=COL_X).value = cedula.strategy_type
     hoja.cell(row=bloque.area + 2, column=COL_B).value = cedula.responsible_area
     hoja.cell(row=bloque.objetivo, column=COL_C).value = cedula.objective_denomination
@@ -387,10 +391,22 @@ def _huecos_del_objetivo(por_hoja: dict[str, list[Bloque]], numero: int) -> list
 
 
 def _poner_anio(hoja, bloque: Bloque, anio: int) -> None:
-    """El año aparece escrito en el título del bloque y en el encabezado del
-    calendario. Se sustituye el que trae la plantilla para que el archivo no
-    diga 2026 cuando se está entregando otro ejercicio."""
-    for fila, columna in ((bloque.inicio, COL_B), (bloque.actividades_desde - 3, 6)):
+    """El año está escrito en tres sitios de cada bloque, no en uno.
+
+    En el título («PROGRAMA OPERATIVO ANUAL 2026»), en la cabecera de la meta
+    de cada indicador («META INSTITUCIONAL A 2026…») y en la del calendario
+    («CALENDARIO 2026 CUATRIMESTRAL»). Cambiar sólo el primero dejaba un
+    archivo que se contradecía a sí mismo: el título decía 2029 y las columnas
+    seguían diciendo 2026.
+    """
+    objetivos = [
+        (bloque.inicio, COL_B),
+        # Cuatro filas antes del primer hueco de actividad: la del rótulo
+        # «ACTIVIDADES», que es donde vive la cabecera del calendario.
+        (bloque.actividades_desde - 4, 6),
+        *((fila, COL_E) for fila in bloque.indicadores),
+    ]
+    for fila, columna in objetivos:
         celda = hoja.cell(row=fila, column=columna)
         if isinstance(celda.value, str) and ANIO.search(celda.value):
             celda.value = ANIO.sub(str(anio), celda.value)

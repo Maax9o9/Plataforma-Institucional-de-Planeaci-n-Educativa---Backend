@@ -198,12 +198,40 @@ def test_el_archivo_conserva_las_macros_y_el_formato(libro_de_una_cedula):
 
 
 def test_el_anio_del_ejercicio_reemplaza_al_de_la_plantilla():
+    """El año está escrito en tres sitios de cada bloque, no en uno.
+
+    Cambiar sólo el título dejaba un archivo que se contradecía a sí mismo: la
+    portada decía 2029 y las columnas seguían diciendo 2026.
+    """
     archivo, _ = llenar_formato(plantilla(), [_cedula()], anio=2029)
     libro = load_workbook(BytesIO(archivo), keep_vba=True)
     hoja, bloque = _bloque_de(libro, "1.1")
 
-    assert "2029" in str(hoja.cell(row=bloque.inicio, column=2).value)
-    assert "2026" not in str(hoja.cell(row=bloque.inicio, column=2).value)
+    cabeceras = [
+        hoja.cell(row=bloque.inicio, column=2).value,
+        hoja.cell(row=bloque.actividades_desde - 4, column=6).value,
+        hoja.cell(row=bloque.indicadores[0], column=5).value,
+    ]
+    for cabecera in cabeceras:
+        assert "2029" in str(cabecera), cabecera
+        assert "2026" not in str(cabecera), cabecera
+
+
+def test_el_numero_de_estrategia_es_uno_y_no_el_del_objetivo():
+    """«NUM. DE ESTRATEGIA» vale 1 en los dieciséis bloques del archivo
+    oficial: cada cédula cubre una sola estrategia. Escribir ahí el número del
+    objetivo pondría un 5 en las cédulas del objetivo 5."""
+    cedula = _cedula(
+        objective_number=5,
+        strategy_key="5.1",
+        strategy_denomination="Estrategia 5.1 Desarrollar acciones",
+    )
+
+    archivo, _ = llenar_formato(plantilla(), [cedula], anio=2027)
+
+    libro = load_workbook(BytesIO(archivo), keep_vba=True)
+    hoja, bloque = _bloque_de(libro, "5.1")
+    assert hoja.cell(row=bloque.estrategia + 2, column=16).value == 1
 
 
 def test_lo_que_no_cabe_se_dice_en_vez_de_recortarse():
