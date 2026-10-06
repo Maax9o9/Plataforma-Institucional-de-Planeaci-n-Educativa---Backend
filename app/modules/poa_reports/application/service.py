@@ -43,7 +43,10 @@ class PoaReportService:
             if detail is None:
                 continue
             quarters = [
-                q for q in detail.quarters if filters.get("periodo_id") in (None, q.period_id)
+                q
+                for q in detail.quarters
+                if filters.get("periodo_id") in (None, q.period_id)
+                and filters.get("cuatrimestre") in (None, q.quarter)
             ]
             if not quarters:
                 continue

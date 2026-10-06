@@ -18,6 +18,13 @@ router = APIRouter(prefix="/poa/reportes", tags=["Reportes de cédulas POA"])
 def report_filters(
     request: Request,
     periodo_id: int | None = None,
+    #: El cuatrimestre del POA (1, 2 o 3), no el periodo.
+    #:
+    #: Cada cédula abre sus propios tres periodos, así que `periodo_id`
+    #: identifica el cuatrimestre *de una sola cédula* y no sirve para
+    #: preguntar «cómo va el primer cuatrimestre del ejercicio», que es la
+    #: pregunta que trae a alguien a los reportes. El tablero ya filtra así.
+    cuatrimestre: int | None = None,
     ejercicio_id: int | None = None,
     cedula_id: int | None = None,
     objetivo_numero: int | None = None,
@@ -27,6 +34,7 @@ def report_filters(
 ) -> dict:
     allowed = {
         "periodo_id",
+        "cuatrimestre",
         "ejercicio_id",
         "cedula_id",
         "objetivo_numero",
@@ -37,8 +45,11 @@ def report_filters(
     }
     if set(request.query_params) - allowed:
         raise ValidationError("Filtro no admitido por los reportes de cédulas POA.")
+    if cuatrimestre is not None and cuatrimestre not in (1, 2, 3):
+        raise ValidationError("El cuatrimestre del POA es 1, 2 o 3.")
     return {
         "periodo_id": periodo_id,
+        "cuatrimestre": cuatrimestre,
         "ejercicio_id": ejercicio_id,
         "cedula_id": cedula_id,
         "objetivo_numero": objetivo_numero,
