@@ -556,6 +556,7 @@ class SqlAlchemyPoaFormRepository:
                     form_id=form.id,
                     activity_id=activity.id,
                     activity_key=activity.actividad_clave,
+                    upe_description=activity.actividad_upe,
                     unit=activity.unidad_medida,
                     annual_goal=activity.meta_anual,
                     executing_area_id=activity.area_ejecutora_id,

@@ -301,6 +301,7 @@ class InMemoryPoaFormRepository:
                 form_id=form.id,
                 activity_id=activity.id,
                 activity_key=activity.activity_key,
+                upe_description=activity.upe_description,
                 unit=activity.unit,
                 annual_goal=activity.annual_goal,
                 executing_area_id=activity.executing_area_id,

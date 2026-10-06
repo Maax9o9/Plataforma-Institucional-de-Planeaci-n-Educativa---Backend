@@ -328,6 +328,8 @@ class ActividadTarjetaRespuesta(BaseModel):
     id: int
     clave: str
     descripcion: str
+    #: Lo que Planeación le explicó al área sobre esta acción, en concreto.
+    actividad_upe: str | None = None
     unidad_medida: str
     meta_anual: Decimal
 

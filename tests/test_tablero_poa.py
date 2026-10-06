@@ -144,6 +144,41 @@ async def test_el_listado_devuelve_la_tarjeta_completa(backend_client):
 
 
 @pytest.mark.asyncio
+async def test_la_tarjeta_trae_la_explicacion_upe_que_el_area_necesita_leer(backend_client):
+    """La resena UPE es lo que Planeacion le escribe al area para explicar, en
+    concreto, que significa una accion redactada en terminos genericos por la
+    federacion. Vivia solo en la cedula, que el area casi no abre: donde hace
+    falta es en el tablero, que es donde trabaja el dia a dia."""
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+    explicacion = "Para el area: dar mantenimiento preventivo a los 40 equipos del laboratorio."
+
+    actualizado = await client.patch(
+        f"/api/v1/poa/cedulas/actividades/{escenario['activity_id']}",
+        headers=escenario["admin_headers"],
+        json={"actividad_upe": explicacion},
+    )
+    assert actualizado.status_code == 200, actualizado.text
+
+    seguimiento = await _capturar(client, escenario)
+
+    listado = await client.get(
+        "/api/v1/poa/seguimientos", headers=escenario["capturer_headers"]
+    )
+    assert listado.status_code == 200, listado.text
+    fila = next(x for x in listado.json()["items"] if x["id"] == seguimiento["id"])
+    assert fila["actividad"]["actividad_upe"] == explicacion
+
+    # Y tambien al abrir el informe, que es donde se captura mirandola.
+    suelto = await client.get(
+        f"/api/v1/poa/seguimientos/{seguimiento['id']}",
+        headers=escenario["capturer_headers"],
+    )
+    assert suelto.status_code == 200, suelto.text
+    assert suelto.json()["actividad"]["actividad_upe"] == explicacion
+
+
+@pytest.mark.asyncio
 async def test_un_area_no_ve_los_seguimientos_de_otra(backend_client):
     app, client = backend_client
     primero = await _escenario(app, client)

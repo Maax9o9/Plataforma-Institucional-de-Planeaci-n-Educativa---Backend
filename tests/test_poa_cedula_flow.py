@@ -750,6 +750,9 @@ async def test_poa_form_catalogs_quarters_and_immutable_issues(client, app, monk
     assert total.status_code == 200, total.text
     assert Decimal(total.json()["porcentaje_alcanzado"]) == Decimal("120")
 
+    # Reporta el area que ejecuta, no Planeacion: lo alcanzado, el progreso y
+    # el alcance son suyos, aunque Planeacion pueda reprogramar el mismo
+    # renglon.
     q3_follow_up = await client.put(
         f"/api/v1/poa/cedulas/actividades/{activity_id}/seguimientos/3",
         json={
@@ -759,9 +762,39 @@ async def test_poa_form_catalogs_quarters_and_immutable_issues(client, app, monk
             "progreso": "Se realizaron 31 eventos.",
             "alcance": "Cobertura institucional.",
         },
-        headers=headers,
+        headers=capturer_headers,
     )
     assert q3_follow_up.status_code == 200, q3_follow_up.text
+
+    # Planeacion reprograma el mismo renglon: lo programado es suyo, el informe
+    # no. Aunque mande los campos del area, se conserva lo que el area escribio
+    # —si pudiera reescribirlo estaria aprobando su propio texto, y la bitacora
+    # diria que lo capturo el area—.
+    reprogramado = await client.put(
+        f"/api/v1/poa/cedulas/actividades/{activity_id}/seguimientos/3",
+        json={
+            "periodo_id": q3_period_id,
+            "programado": 25,
+            "alcanzado": 999,
+            "progreso": "Texto escrito por quien revisa.",
+            "alcance": "Alcance inventado.",
+        },
+        headers=headers,
+    )
+    assert reprogramado.status_code == 200, reprogramado.text
+    assert Decimal(reprogramado.json()["programado"]) == Decimal("25")
+    assert Decimal(reprogramado.json()["alcanzado"]) == Decimal("31")
+    assert reprogramado.json()["progreso"] == "Se realizaron 31 eventos."
+    assert reprogramado.json()["alcance"] == "Cobertura institucional."
+
+    # Y se deja como estaba, para no alterar lo que sigue probando el flujo.
+    restaurado = await client.put(
+        f"/api/v1/poa/cedulas/actividades/{activity_id}/seguimientos/3",
+        json={"periodo_id": q3_period_id, "programado": 30},
+        headers=headers,
+    )
+    assert restaurado.status_code == 200, restaurado.text
+
     q3_evidence = await _attach_follow_up_file(
         client,
         headers,

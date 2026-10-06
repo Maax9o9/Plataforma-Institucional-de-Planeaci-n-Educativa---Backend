@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
@@ -41,7 +41,12 @@ from ...domain.cedula_entities import (
 from ...domain.events import PoaStructureChanged
 from ...domain.ports.cedula_repository import PoaFormRepository
 from ...domain.ports.repositories import PoaRepository
-from ..access_control import can_capture_activity, ensure_planning, ensure_structure_access
+from ..access_control import (
+    can_capture_activity,
+    can_report_progress,
+    ensure_planning,
+    ensure_structure_access,
+)
 from ..cedula_dto import (
     AddPoaFormActivityCommand,
     AddPoaFormIndicatorCommand,
@@ -63,6 +68,38 @@ from ..completeness import emission_errors
 
 def _today() -> date:
     return institutional_today()
+
+
+@dataclass(frozen=True)
+class _Informe:
+    """Lo que el área reporta de un cuatrimestre, como una sola pieza."""
+
+    achieved: Decimal | None
+    deviation_justification: str | None
+    progress: str | None
+    scope: str | None
+
+
+def _informe_del_comando(command: RecordPoaFollowUpCommand) -> _Informe:
+    return _Informe(
+        achieved=command.achieved,
+        deviation_justification=command.deviation_justification,
+        progress=command.progress,
+        scope=command.scope,
+    )
+
+
+def _informe_existente(existente: PoaActivityFollowUp | None) -> _Informe:
+    """Lo que ya estaba escrito. Sin seguimiento previo no hay informe que
+    conservar, y queda vacío: programar no inventa un avance."""
+    if existente is None:
+        return _Informe(None, None, None, None)
+    return _Informe(
+        achieved=existente.achieved,
+        deviation_justification=existente.deviation_justification,
+        progress=existente.progress,
+        scope=existente.scope,
+    )
 
 
 def _ensure_follow_up_access(
@@ -861,16 +898,27 @@ class RecordPoaFollowUp:
         if existente is not None:
             existente.ensure_editable()
 
+        # El renglón guarda dos cosas de dueños distintos: la programación, que
+        # es de Planeación, y el informe, que es del área que ejecuta. Quien no
+        # puede reportar conserva lo que el área escribió en vez de
+        # reemplazarlo, aunque su petición traiga esos campos: así Planeación
+        # ajusta lo programado sin tocar —ni borrar por omisión— el informe que
+        # va a dictaminar.
+        reporta = can_report_progress(command.actor, activity.executing_area_id)
+        informe = _informe_del_comando(command) if reporta else _informe_existente(existente)
+
         item = PoaActivityFollowUp.create(
             form_activity_id=activity.id,
             quarter=command.quarter,
             period_id=command.period_id,
-            captured_by=command.actor.id,
+            # Quien reporta firma el informe; cuando sólo se reprograma, la
+            # autoría del área se conserva para que la bitácora no mienta.
+            captured_by=command.actor.id if reporta or existente is None else existente.captured_by,
             scheduled=command.scheduled,
-            achieved=command.achieved,
-            deviation_justification=command.deviation_justification,
-            progress=command.progress,
-            scope=command.scope,
+            achieved=informe.achieved,
+            deviation_justification=informe.deviation_justification,
+            progress=informe.progress,
+            scope=informe.scope,
         )
         if existente is not None:
             # HU-08.03: corregir un seguimiento devuelto no lo regresa a borrador;

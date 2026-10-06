@@ -472,6 +472,11 @@ class PoaFollowUpCard:
     form_id: int
     activity_id: int
     activity_key: str
+    # Lo que Planeación le escribió al área para explicar, en concreto, qué
+    # significa esta acción —redactada en términos genéricos por la
+    # federación—. Viaja en la tarjeta porque quien la va a reportar es justo
+    # quien necesita leerla, y hasta ahora sólo se veía al armar la cédula.
+    upe_description: str | None
     unit: str
     annual_goal: Decimal
     executing_area_id: int | None
