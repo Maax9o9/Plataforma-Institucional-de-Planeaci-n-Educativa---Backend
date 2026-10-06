@@ -2,6 +2,7 @@
 
 from fastapi import Request
 
+from ..application.use_cases.manage_catalog import PoaCatalogAdmin
 from ..application.use_cases.manage_cedula import (
     AddPoaFormActivity,
     AddPoaFormIndicator,
@@ -148,3 +149,7 @@ def get_issue_form_use_case(request: Request) -> IssuePoaForm:
         request.app.state.evidence_repository,
         request.app.state.area_repository,
     )
+
+
+def get_catalog_admin_use_case(request: Request) -> PoaCatalogAdmin:
+    return PoaCatalogAdmin(request.app.state.poa_form_repository)

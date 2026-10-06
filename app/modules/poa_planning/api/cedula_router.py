@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import Path as PathParam
 
 from app.core.authorization import actor_from_user
 from app.core.schemas import ErrorResponse
@@ -31,6 +32,7 @@ from ..application.cedula_dto import (
     UpdatePoaFormCommand,
     UpdatePoaFormIndicatorCommand,
 )
+from ..application.use_cases.manage_catalog import PoaCatalogAdmin
 from ..application.use_cases.manage_cedula import (
     AddPoaFormActivity,
     AddPoaFormIndicator,
@@ -59,6 +61,7 @@ from ..application.use_cases.review_follow_up import (
 )
 from ..domain.cedula_entities import (
     STRATEGY_TYPES,
+    PoaActivityCatalog,
     PoaActivityFollowUp,
     PoaFollowUpCard,
     PoaForm,
@@ -67,13 +70,17 @@ from ..domain.cedula_entities import (
     PoaFormIndicator,
     PoaFormIssue,
     PoaFormQuarter,
+    PoaIndicatorCatalog,
+    PoaObjectiveCatalog,
     PoaSignatory,
+    PoaStrategyCatalog,
 )
 from .cedula_dependencies import (
     get_add_form_activity_use_case,
     get_add_form_indicator_use_case,
     get_assign_activity_criteria_use_case,
     get_capture_indicator_total_use_case,
+    get_catalog_admin_use_case,
     get_create_form_use_case,
     get_delete_form_activity_use_case,
     get_delete_form_indicator_use_case,
@@ -87,6 +94,7 @@ from .cedula_dependencies import (
 )
 from .cedula_schemas import (
     ActividadCedulaRespuesta,
+    ActividadPoaCatalogoRequest,
     ActividadPoaCatalogoRespuesta,
     ActividadTarjetaRespuesta,
     ActualizarActividadCedulaRequest,
@@ -103,9 +111,12 @@ from .cedula_schemas import (
     CrearCedulaPoaRequest,
     EmisionCedulaPoaRespuesta,
     EmitirCedulaPoaRequest,
+    EstrategiaPoaCatalogoRequest,
     EstrategiaPoaCatalogoRespuesta,
     IndicadorCedulaRespuesta,
+    IndicadorPoaCatalogoRequest,
     IndicadorPoaCatalogoRespuesta,
+    ObjetivoPoaCatalogoRequest,
     ObjetivoPoaCatalogoRespuesta,
     PaginaHistorialSeguimientoRespuesta,
     PaginaSeguimientosRespuesta,
@@ -290,6 +301,57 @@ async def list_strategy_types(_user=Depends(get_current_user)):
     return list(STRATEGY_TYPES)
 
 
+#: El catálogo del PSE se administra con la llave en la ruta y el verbo como
+#: intención: `POST` da de alta (409 si ya existe) y `PATCH` edita (404 si no
+#: existe). Las llaves las elige quien captura —el objetivo 7, la estrategia
+#: `7.1`, la acción `7.1.1`— y no las genera el servidor, así que un `PUT`
+#: único no alcanzaría: borraría la diferencia entre crear y corregir, que es
+#: justo lo que evita que un alta pise en silencio lo que otra persona acaba de
+#: capturar.
+CATALOGO_RESPUESTAS = {
+    status.HTTP_403_FORBIDDEN: {"model": ErrorResponse},
+    status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
+}
+
+
+def _objetivo_catalogo(item: PoaObjectiveCatalog) -> ObjetivoPoaCatalogoRespuesta:
+    return ObjetivoPoaCatalogoRespuesta(
+        clave=item.key,
+        numero=item.number,
+        denominacion=item.denomination,
+        activo=item.is_active,
+    )
+
+
+def _estrategia_catalogo(item: PoaStrategyCatalog) -> EstrategiaPoaCatalogoRespuesta:
+    return EstrategiaPoaCatalogoRespuesta(
+        clave=item.key,
+        objetivo_numero=item.objective_number,
+        denominacion=item.denomination,
+        activo=item.is_active,
+    )
+
+
+def _indicador_catalogo(item: PoaIndicatorCatalog) -> IndicadorPoaCatalogoRespuesta:
+    return IndicadorPoaCatalogoRespuesta(
+        clave=item.key,
+        objetivo_numero=item.objective_number,
+        nombre=item.name,
+        formula=item.formula,
+        unidad_medida=item.unit,
+        activo=item.is_active,
+    )
+
+
+def _actividad_catalogo(item: PoaActivityCatalog) -> ActividadPoaCatalogoRespuesta:
+    return ActividadPoaCatalogoRespuesta(
+        clave=item.key,
+        estrategia_clave=item.strategy_key,
+        descripcion=item.description,
+        activo=item.is_active,
+    )
+
+
 @router.get(
     "/catalogos/objetivos",
     response_model=list[ObjetivoPoaCatalogoRespuesta],
@@ -307,15 +369,7 @@ async def list_objectives(
     _user=Depends(get_current_user),
 ):
     items = await request.app.state.poa_form_repository.list_objectives(only_active=solo_activos)
-    return [
-        ObjetivoPoaCatalogoRespuesta(
-            clave=item.key,
-            numero=item.number,
-            denominacion=item.denomination,
-            activo=item.is_active,
-        )
-        for item in items
-    ]
+    return [_objetivo_catalogo(item) for item in items]
 
 
 @router.get(
@@ -332,15 +386,7 @@ async def list_strategies(
     items = await request.app.state.poa_form_repository.list_strategies(
         objective_number=objetivo_numero, only_active=solo_activos
     )
-    return [
-        EstrategiaPoaCatalogoRespuesta(
-            clave=item.key,
-            objetivo_numero=item.objective_number,
-            denominacion=item.denomination,
-            activo=item.is_active,
-        )
-        for item in items
-    ]
+    return [_estrategia_catalogo(item) for item in items]
 
 
 @router.get(
@@ -357,17 +403,7 @@ async def list_indicators(
     items = await request.app.state.poa_form_repository.list_indicators(
         objective_number=objetivo_numero, only_active=solo_activos
     )
-    return [
-        IndicadorPoaCatalogoRespuesta(
-            clave=item.key,
-            objetivo_numero=item.objective_number,
-            nombre=item.name,
-            formula=item.formula,
-            unidad_medida=item.unit,
-            activo=item.is_active,
-        )
-        for item in items
-    ]
+    return [_indicador_catalogo(item) for item in items]
 
 
 @router.get(
@@ -384,15 +420,207 @@ async def list_activity_catalog(
     items = await request.app.state.poa_form_repository.list_activity_catalog(
         strategy_key=estrategia_clave, only_active=solo_activos
     )
-    return [
-        ActividadPoaCatalogoRespuesta(
-            clave=item.key,
-            estrategia_clave=item.strategy_key,
-            descripcion=item.description,
-            activo=item.is_active,
+    return [_actividad_catalogo(item) for item in items]
+
+
+@router.post(
+    "/catalogos/objetivos/{numero}",
+    response_model=ObjetivoPoaCatalogoRespuesta,
+    status_code=status.HTTP_201_CREATED,
+    responses={**CATALOGO_RESPUESTAS, status.HTTP_409_CONFLICT: {"model": ErrorResponse}},
+    summary="Dar de alta un objetivo del PSE",
+)
+async def create_objective(
+    body: ObjetivoPoaCatalogoRequest,
+    numero: int = PathParam(ge=1),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
+    use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
+):
+    return _objetivo_catalogo(
+        await use_case.save_objective(
+            number=numero,
+            key=body.clave,
+            denomination=body.denominacion,
+            is_active=body.activo,
+            actor=actor_from_user(current_user),
+            creating=True,
         )
-        for item in items
-    ]
+    )
+
+
+@router.patch(
+    "/catalogos/objetivos/{numero}",
+    response_model=ObjetivoPoaCatalogoRespuesta,
+    responses=CATALOGO_RESPUESTAS,
+    summary="Corregir o deshabilitar un objetivo del PSE",
+)
+async def update_objective(
+    body: ObjetivoPoaCatalogoRequest,
+    numero: int = PathParam(ge=1),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
+    use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
+):
+    return _objetivo_catalogo(
+        await use_case.save_objective(
+            number=numero,
+            key=body.clave,
+            denomination=body.denominacion,
+            is_active=body.activo,
+            actor=actor_from_user(current_user),
+            creating=False,
+        )
+    )
+
+
+@router.post(
+    "/catalogos/estrategias/{clave}",
+    response_model=EstrategiaPoaCatalogoRespuesta,
+    status_code=status.HTTP_201_CREATED,
+    responses={**CATALOGO_RESPUESTAS, status.HTTP_409_CONFLICT: {"model": ErrorResponse}},
+    summary="Dar de alta una estrategia del PSE",
+)
+async def create_strategy(
+    body: EstrategiaPoaCatalogoRequest,
+    clave: str = PathParam(min_length=1, max_length=20),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
+    use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
+):
+    return _estrategia_catalogo(
+        await use_case.save_strategy(
+            key=clave,
+            objective_number=body.objetivo_numero,
+            denomination=body.denominacion,
+            is_active=body.activo,
+            actor=actor_from_user(current_user),
+            creating=True,
+        )
+    )
+
+
+@router.patch(
+    "/catalogos/estrategias/{clave}",
+    response_model=EstrategiaPoaCatalogoRespuesta,
+    responses=CATALOGO_RESPUESTAS,
+    summary="Corregir o deshabilitar una estrategia del PSE",
+)
+async def update_strategy(
+    body: EstrategiaPoaCatalogoRequest,
+    clave: str = PathParam(min_length=1, max_length=20),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
+    use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
+):
+    return _estrategia_catalogo(
+        await use_case.save_strategy(
+            key=clave,
+            objective_number=body.objetivo_numero,
+            denomination=body.denominacion,
+            is_active=body.activo,
+            actor=actor_from_user(current_user),
+            creating=False,
+        )
+    )
+
+
+@router.post(
+    "/catalogos/indicadores/{clave}",
+    response_model=IndicadorPoaCatalogoRespuesta,
+    status_code=status.HTTP_201_CREATED,
+    responses={**CATALOGO_RESPUESTAS, status.HTTP_409_CONFLICT: {"model": ErrorResponse}},
+    summary="Dar de alta un indicador del PSE",
+)
+async def create_indicator(
+    body: IndicadorPoaCatalogoRequest,
+    clave: str = PathParam(min_length=1, max_length=20),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
+    use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
+):
+    return _indicador_catalogo(
+        await use_case.save_indicator(
+            key=clave,
+            objective_number=body.objetivo_numero,
+            name=body.nombre,
+            formula=body.formula,
+            unit=body.unidad_medida,
+            is_active=body.activo,
+            actor=actor_from_user(current_user),
+            creating=True,
+        )
+    )
+
+
+@router.patch(
+    "/catalogos/indicadores/{clave}",
+    response_model=IndicadorPoaCatalogoRespuesta,
+    responses=CATALOGO_RESPUESTAS,
+    summary="Corregir o deshabilitar un indicador del PSE",
+)
+async def update_indicator(
+    body: IndicadorPoaCatalogoRequest,
+    clave: str = PathParam(min_length=1, max_length=20),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
+    use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
+):
+    return _indicador_catalogo(
+        await use_case.save_indicator(
+            key=clave,
+            objective_number=body.objetivo_numero,
+            name=body.nombre,
+            formula=body.formula,
+            unit=body.unidad_medida,
+            is_active=body.activo,
+            actor=actor_from_user(current_user),
+            creating=False,
+        )
+    )
+
+
+@router.post(
+    "/catalogos/actividades/{clave}",
+    response_model=ActividadPoaCatalogoRespuesta,
+    status_code=status.HTTP_201_CREATED,
+    responses={**CATALOGO_RESPUESTAS, status.HTTP_409_CONFLICT: {"model": ErrorResponse}},
+    summary="Dar de alta una acción del PSE",
+)
+async def create_activity_catalog(
+    body: ActividadPoaCatalogoRequest,
+    clave: str = PathParam(min_length=1, max_length=20),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
+    use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
+):
+    return _actividad_catalogo(
+        await use_case.save_activity(
+            key=clave,
+            strategy_key=body.estrategia_clave,
+            description=body.descripcion,
+            is_active=body.activo,
+            actor=actor_from_user(current_user),
+            creating=True,
+        )
+    )
+
+
+@router.patch(
+    "/catalogos/actividades/{clave}",
+    response_model=ActividadPoaCatalogoRespuesta,
+    responses=CATALOGO_RESPUESTAS,
+    summary="Corregir o deshabilitar una acción del PSE",
+)
+async def update_activity_catalog(
+    body: ActividadPoaCatalogoRequest,
+    clave: str = PathParam(min_length=1, max_length=20),
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
+    use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
+):
+    return _actividad_catalogo(
+        await use_case.save_activity(
+            key=clave,
+            strategy_key=body.estrategia_clave,
+            description=body.descripcion,
+            is_active=body.activo,
+            actor=actor_from_user(current_user),
+            creating=False,
+        )
+    )
 
 
 @router.post(
@@ -440,7 +668,7 @@ async def create_form(
 async def list_forms(
     request: Request,
     ejercicio_id: int | None = None,
-    objetivo_numero: int | None = Query(default=None, ge=1, le=6),
+    objetivo_numero: int | None = Query(default=None, ge=1),
     area_responsable_id: int | None = None,
     current_user=Depends(require_roles(*FORM_ROLES)),
 ):
@@ -1089,9 +1317,7 @@ async def send_follow_up(
     item = await SendPoaFollowUp(**_revision_dependencias(request)).execute(
         ReviewFollowUpCommand(follow_up_id=follow_up_id, actor=actor_from_user(current_user))
     )
-    activity = await request.app.state.poa_form_repository.get_form_activity(
-        item.form_activity_id
-    )
+    activity = await request.app.state.poa_form_repository.get_form_activity(item.form_activity_id)
     return _follow_up_response(item, activity.annual_goal)
 
 
@@ -1109,9 +1335,7 @@ async def validate_follow_up(
     item = await ValidatePoaFollowUp(**_revision_dependencias(request)).execute(
         ReviewFollowUpCommand(follow_up_id=follow_up_id, actor=actor_from_user(current_user))
     )
-    activity = await request.app.state.poa_form_repository.get_form_activity(
-        item.form_activity_id
-    )
+    activity = await request.app.state.poa_form_repository.get_form_activity(item.form_activity_id)
     return _follow_up_response(item, activity.annual_goal)
 
 
@@ -1134,9 +1358,7 @@ async def reject_follow_up(
             comment=body.comentario,
         )
     )
-    activity = await request.app.state.poa_form_repository.get_form_activity(
-        item.form_activity_id
-    )
+    activity = await request.app.state.poa_form_repository.get_form_activity(item.form_activity_id)
     return _follow_up_response(item, activity.annual_goal)
 
 

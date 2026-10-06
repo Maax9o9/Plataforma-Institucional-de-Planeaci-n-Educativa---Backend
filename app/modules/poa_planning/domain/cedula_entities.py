@@ -124,8 +124,13 @@ class PoaForm(BaseEntity):
         signatories: tuple[PoaSignatory, ...] = (),
     ) -> PoaForm:
         validate_presentation(strategy_type, signatories)
-        if objective_number not in range(1, 7):
-            raise ValidationError("El objetivo del POA debe estar entre 1 y 6.")
+        # El PSE 2025-2030 trae seis objetivos, pero el catálogo es
+        # administrable: si la SEP agrega un objetivo, el formato no puede
+        # quedar atado a ese seis. Que el objetivo *exista* lo garantiza el
+        # caso de uso, que lo deduce de la estrategia elegida; aquí sólo queda
+        # descartar un número imposible.
+        if objective_number < 1:
+            raise ValidationError("El objetivo del POA no es válido.")
         if not strategy_key.strip():
             raise ValidationError("La estrategia de la cédula es obligatoria.")
         return cls(
@@ -157,8 +162,8 @@ class PoaForm(BaseEntity):
         if signatories is not None:
             self.signatories = signatories
         if objective_number is not None:
-            if objective_number not in range(1, 7):
-                raise ValidationError("El objetivo del POA debe estar entre 1 y 6.")
+            if objective_number < 1:
+                raise ValidationError("El objetivo del POA no es válido.")
             self.objective_number = objective_number
         if strategy_key is not None:
             if not strategy_key.strip():
