@@ -1,16 +1,20 @@
 """Reportes de las cédulas actuales; sin procesos ni avances del modelo retirado."""
 
+from io import BytesIO
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
+from app.core.authorization import actor_from_user
 from app.core.security import require_roles
 from app.modules.indicators_reports.api.schemas import ReporteRespuesta
 from app.modules.indicators_reports.application.exporters import export_xlsx
 from app.shared.domain.exceptions import ValidationError
 
 from ..application.exporters import export_pdf
+from ..application.sep_export import MEDIA_TYPE as SEP_MEDIA_TYPE
+from ..application.sep_export import ExportarFormatoSep
 
 router = APIRouter(prefix="/poa/reportes", tags=["Reportes de cédulas POA"])
 
@@ -108,3 +112,39 @@ for _route, _kind in (
         response_model=ReporteRespuesta,
         summary=f"Reporte {_route} de cédulas POA",
     )
+
+
+@router.get(
+    "/formato-sep",
+    summary="Descargar el POA en el formato .xlsm de la SEP",
+    response_class=StreamingResponse,
+)
+async def export_sep_format(
+    request: Request,
+    ejercicio_id: int,
+    current_user=Depends(require_roles("planeacion", "admin_sistema")),
+):
+    """El entregable: la plantilla oficial rellenada con lo capturado.
+
+    Lo que no cabe en el formato —un objetivo con más cédulas que bloques, una
+    cédula con más actividades que huecos— viaja en una cabecera propia en vez
+    de perderse: el archivo se descarga igual, y quien lo pidió se entera de
+    que algo quedó fuera.
+    """
+    archivo, incidencias = await ExportarFormatoSep(
+        request.app.state.poa_form_repository,
+        request.app.state.poa_repository,
+        request.app.state.area_repository,
+    ).execute(exercise_id=ejercicio_id, actor=actor_from_user(current_user))
+
+    cabeceras = {
+        "Content-Disposition": f'attachment; filename="poa-formato-sep-{ejercicio_id}.xlsm"',
+        "X-Incidencias": str(len(incidencias)),
+    }
+    if incidencias:
+        # Las cabeceras HTTP no admiten saltos de línea ni acentos sin
+        # codificar: se manda el detalle en una sola línea, ya escapada.
+        cabeceras["X-Incidencias-Detalle"] = (
+            " | ".join(incidencias).encode("ascii", "backslashreplace").decode("ascii")
+        )
+    return StreamingResponse(BytesIO(archivo), media_type=SEP_MEDIA_TYPE, headers=cabeceras)
