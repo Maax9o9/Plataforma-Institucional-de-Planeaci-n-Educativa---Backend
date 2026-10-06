@@ -51,3 +51,17 @@ class UnlinkEvidenceCommand:
     entity: FlowEntity
     entity_id: int
     actor: ActorContext
+
+
+@dataclass(frozen=True)
+class ReviewEvidenceCommand:
+    """El dictamen de Planeación sobre una evidencia.
+
+    `comment` es obligatorio al rechazar y se ignora al aprobar: lo que hay que
+    explicar es por qué algo no sirve.
+    """
+
+    evidence_id: int
+    approved: bool
+    actor: ActorContext
+    comment: str | None = None

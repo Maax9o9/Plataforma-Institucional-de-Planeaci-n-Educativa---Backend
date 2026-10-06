@@ -22,6 +22,11 @@ class InMemoryEvidenceRepository:
             evidence.id = next(self._next_id)
         self._evidences[evidence.id] = evidence
 
+    async def save_review(self, evidence: Evidence) -> None:
+        # Guarda la misma instancia que ya tiene el diccionario; se deja
+        # explícito para que el puerto sea el mismo que el del adaptador SQL.
+        self._evidences[evidence.id] = evidence
+
     async def add_version(self, version: EvidenceVersion) -> None:
         self._versions.append(version)
 

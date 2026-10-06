@@ -529,3 +529,95 @@ async def _adjuntar_evidencia_con_criterios(client, headers, follow_up_id, crite
     if criterios is not None:
         cuerpo["criterio_seaes_ids"] = criterios
     return await client.post("/api/v1/evidencias", headers=headers, json=cuerpo)
+
+
+@pytest.mark.asyncio
+async def test_planeacion_dictamina_cada_evidencia_sin_trabar_el_informe(backend_client):
+    """El informe cuatrimestral ya se valida o se devuelve entero. Esto es mas
+    fino: Planeacion dice, archivo por archivo, si la evidencia sostiene lo
+    reportado, para que el area sepa cual repone sin adivinarlo de un
+    comentario general. No bloquea nada: el dictamen del informe sigue siendo
+    uno solo."""
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+    seguimiento = await _capturar(client, escenario)
+    evidencia = await _adjuntar_evidencia_con_criterios(
+        client, escenario["capturer_headers"], seguimiento["id"], None
+    )
+    assert evidencia.status_code == 201, evidencia.text
+    assert evidencia.json()["estado_revision"] == "pendiente"
+
+    rechazada = await client.patch(
+        f"/api/v1/evidencias/{evidencia.json()['id']}/revision",
+        headers=escenario["admin_headers"],
+        json={"aprobada": False, "comentario": "La lista no trae firmas."},
+    )
+    assert rechazada.status_code == 200, rechazada.text
+    assert rechazada.json()["estado_revision"] == "rechazada"
+    assert rechazada.json()["comentario_revision"] == "La lista no trae firmas."
+    assert rechazada.json()["revisado_por"] is not None
+
+    # Y el area lo lee al consultar sus evidencias: para eso existe la marca.
+    listado = await client.get(
+        f"/api/v1/evidencias?entidad=poa_cedula_seguimiento&entidad_id={seguimiento['id']}",
+        headers=escenario["capturer_headers"],
+    )
+    assert listado.status_code == 200, listado.text
+    vista = next(x for x in listado.json() if x["id"] == evidencia.json()["id"])
+    assert vista["estado_revision"] == "rechazada"
+    assert vista["comentario_revision"] == "La lista no trae firmas."
+
+    aprobada = await client.patch(
+        f"/api/v1/evidencias/{evidencia.json()['id']}/revision",
+        headers=escenario["admin_headers"],
+        json={"aprobada": True},
+    )
+    assert aprobada.status_code == 200, aprobada.text
+    assert aprobada.json()["estado_revision"] == "aprobada"
+    # Aprobar limpia el motivo: ya no hay nada que corregir.
+    assert aprobada.json()["comentario_revision"] is None
+
+
+@pytest.mark.asyncio
+async def test_rechazar_una_evidencia_exige_decir_por_que(backend_client):
+    """Sin motivo, el area queda adivinando que reponer -que es justo lo que
+    esta marca viene a evitar-."""
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+    seguimiento = await _capturar(client, escenario)
+    evidencia = await _adjuntar_evidencia_con_criterios(
+        client, escenario["capturer_headers"], seguimiento["id"], None
+    )
+
+    sin_motivo = await client.patch(
+        f"/api/v1/evidencias/{evidencia.json()['id']}/revision",
+        headers=escenario["admin_headers"],
+        json={"aprobada": False},
+    )
+    assert sin_motivo.status_code == 422, sin_motivo.text
+
+    en_blanco = await client.patch(
+        f"/api/v1/evidencias/{evidencia.json()['id']}/revision",
+        headers=escenario["admin_headers"],
+        json={"aprobada": False, "comentario": "   "},
+    )
+    assert en_blanco.status_code == 422, en_blanco.text
+
+
+@pytest.mark.asyncio
+async def test_el_area_no_dictamina_sus_propias_evidencias(backend_client):
+    """Quien entrega no aprueba lo que entrega: es la misma separacion que
+    sostiene el dictamen del informe."""
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+    seguimiento = await _capturar(client, escenario)
+    evidencia = await _adjuntar_evidencia_con_criterios(
+        client, escenario["capturer_headers"], seguimiento["id"], None
+    )
+
+    propia = await client.patch(
+        f"/api/v1/evidencias/{evidencia.json()['id']}/revision",
+        headers=escenario["capturer_headers"],
+        json={"aprobada": True},
+    )
+    assert propia.status_code == 403, propia.text

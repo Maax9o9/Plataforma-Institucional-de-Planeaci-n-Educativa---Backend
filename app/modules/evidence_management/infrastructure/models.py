@@ -23,6 +23,21 @@ class EvidenceModel(Base):
     )
     subida_por: Mapped[int] = mapped_column(Integer, nullable=False)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    estado_revision: Mapped[str] = mapped_column(
+        Enum(
+            "pendiente",
+            "aprobada",
+            "rechazada",
+            name="estado_revision_evidencia",
+            native_enum=True,
+            create_type=False,
+        ),
+        nullable=False,
+        default="pendiente",
+    )
+    revisado_por: Mapped[int | None] = mapped_column(Integer)
+    revisado_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    comentario_revision: Mapped[str | None] = mapped_column(Text)
 
 
 class EvidenceLinkModel(Base):

@@ -8,7 +8,7 @@ from datetime import date, datetime
 from app.shared.domain.base_entity import BaseEntity
 from app.shared.domain.exceptions import ValidationError
 
-from .value_objects import EvidenceType, FlowEntity
+from .value_objects import EvidenceReviewStatus, EvidenceType, FlowEntity
 
 
 def normalizar_criterios(ids: tuple[int, ...] | list[int]) -> tuple[int, ...]:
@@ -32,6 +32,10 @@ class Evidence(BaseEntity):
     #: ninguno. Obligarlo lo volvería un trámite que se rellena con lo primero
     #: que aparezca, y la cobertura SEAES dejaría de significar algo.
     criteria_seaes_ids: tuple[int, ...] = ()
+    review_status: EvidenceReviewStatus = EvidenceReviewStatus.PENDING
+    reviewed_by: int | None = None
+    reviewed_at: datetime | None = None
+    review_comment: str | None = None
 
     @classmethod
     def create(
@@ -54,6 +58,28 @@ class Evidence(BaseEntity):
             uploaded_by=uploaded_by,
             criteria_seaes_ids=normalizar_criterios(criteria_seaes_ids),
         )
+
+    def approve(self, *, reviewer_id: int, at: datetime) -> None:
+        """La evidencia sostiene lo que el área reportó. Aprobar no necesita
+        explicación: lo que hay que explicar es por qué algo no sirve."""
+        self.review_status = EvidenceReviewStatus.APPROVED
+        self.reviewed_by = reviewer_id
+        self.reviewed_at = at
+        self.review_comment = None
+
+    def reject(self, *, reviewer_id: int, at: datetime, comment: str) -> None:
+        """La evidencia no sostiene lo reportado.
+
+        El motivo es obligatorio: sin él el área queda adivinando qué reponer,
+        que es justo lo que esta marca viene a evitar. No bloquea el dictamen
+        del informe —eso se decide aparte—, señala qué archivo corregir.
+        """
+        if not comment.strip():
+            raise ValidationError("Indique por qué la evidencia no sirve.")
+        self.review_status = EvidenceReviewStatus.REJECTED
+        self.reviewed_by = reviewer_id
+        self.reviewed_at = at
+        self.review_comment = comment.strip()
 
 
 @dataclass(frozen=True)

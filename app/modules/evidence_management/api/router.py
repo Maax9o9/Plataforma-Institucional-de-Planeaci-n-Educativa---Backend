@@ -11,17 +11,24 @@ from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user
 from app.shared.domain.exceptions import ResourceNotFoundError
 
-from ..application.dto import AttachEvidenceCommand, ReplaceEvidenceCommand
+from ..application.dto import (
+    AttachEvidenceCommand,
+    ReplaceEvidenceCommand,
+    ReviewEvidenceCommand,
+)
 from ..application.use_cases.manage_evidence import AttachEvidence, ReplaceEvidence
+from ..application.use_cases.review_evidence import ReviewEvidence
 from ..domain.value_objects import FlowEntity
 from .dependencies import (
     get_attach_evidence_use_case,
     get_evidence_access_control,
     get_replace_evidence_use_case,
+    get_review_evidence_use_case,
 )
 from .presenters import present_evidence, public_evidence_reference
 from .schemas import (
     AdjuntarEvidenciaRequest,
+    DictaminarEvidenciaRequest,
     EvidenciaRespuesta,
     PaginaVersionesEvidenciaRespuesta,
     ReemplazarEvidenciaRequest,
@@ -167,4 +174,42 @@ async def list_evidence_versions(
         total=total,
         offset=offset,
         limit=limit,
+    )
+
+
+@router.patch(
+    "/{evidence_id}/revision",
+    response_model=EvidenciaRespuesta,
+    summary="Dictaminar una evidencia",
+    responses={
+        403: {"model": ErrorResponse, "description": "Dictaminar evidencias es de Planeacion."},
+        404: {"model": ErrorResponse, "description": "La evidencia no existe."},
+        422: {"model": ErrorResponse, "description": "Rechazar exige un motivo."},
+    },
+)
+async def review_evidence(
+    evidence_id: int,
+    body: DictaminarEvidenciaRequest,
+    request: Request,
+    current_user=Depends(get_current_user),
+    use_case: ReviewEvidence = Depends(get_review_evidence_use_case),
+) -> EvidenciaRespuesta:
+    """Marca si la evidencia sostiene lo que el area reporto.
+
+    No bloquea el dictamen del informe: ese sigue siendo uno solo -validar o
+    devolver con motivo-. Esta marca le dice al area que archivo reponer sin
+    que tenga que deducirlo de un comentario general.
+    """
+    evidence = await use_case.execute(
+        ReviewEvidenceCommand(
+            evidence_id=evidence_id,
+            approved=body.aprobada,
+            comment=body.comentario,
+            actor=actor_from_user(current_user),
+        )
+    )
+    return await present_evidence(
+        evidence,
+        request.app.state.evidence_repository,
+        request.app.state.settings.api_v1_prefix,
     )

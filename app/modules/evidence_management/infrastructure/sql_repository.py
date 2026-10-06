@@ -12,7 +12,7 @@ from app.shared.domain.exceptions import ConflictError
 from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
 
 from ..domain.entities import Evidence, EvidenceLink, EvidenceVersion
-from ..domain.value_objects import EvidenceType, FlowEntity
+from ..domain.value_objects import EvidenceReviewStatus, EvidenceType, FlowEntity
 from .models import (
     EvidenceCriterionModel,
     EvidenceLinkModel,
@@ -45,6 +45,19 @@ class SqlAlchemyEvidenceRepository:
                 )
             await commit_or_flush(session)
         evidence.id = model.id
+
+    async def save_review(self, evidence: Evidence) -> None:
+        """Guarda sólo el dictamen. No toca el contenido de la evidencia: quien
+        revisa no reescribe lo que revisa."""
+        async with session_scope(self.session_factory) as session:
+            model = await session.get(EvidenceModel, evidence.id)
+            if model is None:
+                return
+            model.estado_revision = evidence.review_status.value
+            model.revisado_por = evidence.reviewed_by
+            model.revisado_en = evidence.reviewed_at
+            model.comentario_revision = evidence.review_comment
+            await commit_or_flush(session)
 
     async def add_version(self, version: EvidenceVersion) -> None:
         async with session_scope(self.session_factory) as session:
@@ -288,4 +301,8 @@ def _a_entidad(model: EvidenceModel, criterios: dict[int, tuple[int, ...]]) -> E
         evidence_type=EvidenceType(model.tipo),
         uploaded_by=model.subida_por,
         criteria_seaes_ids=criterios.get(model.id, ()),
+        review_status=EvidenceReviewStatus(model.estado_revision),
+        reviewed_by=model.revisado_por,
+        reviewed_at=model.revisado_en,
+        review_comment=model.comentario_revision,
     )
