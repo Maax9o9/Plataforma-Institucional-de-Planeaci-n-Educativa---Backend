@@ -23,6 +23,8 @@ class AttachEvidenceCommand:
     mime_type: str | None = None
     size_bytes: int | None = None
     checksum_sha256: str | None = None
+    #: Opcional: a qué criterios del SEAES responde la evidencia.
+    criteria_seaes_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)

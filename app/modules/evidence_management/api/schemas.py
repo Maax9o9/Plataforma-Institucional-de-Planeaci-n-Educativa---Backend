@@ -22,6 +22,10 @@ class AdjuntarEvidenciaRequest(BaseModel):
     mime_type: str | None = None
     tamanio_bytes: int | None = Field(default=None, ge=0)
     checksum_sha256: str | None = Field(default=None, min_length=64, max_length=64)
+    #: A qué criterios del SEAES responde. Opcional: un área entrega varios
+    #: archivos por cuatrimestre y no todos sirven para lo mismo, pero
+    #: obligarlo lo volvería un trámite que se rellena con cualquier cosa.
+    criterio_seaes_ids: list[int] = Field(default_factory=list)
 
 
 class ReemplazarEvidenciaRequest(BaseModel):
@@ -38,6 +42,7 @@ class EvidenciaRespuesta(BaseModel):
     fecha: date
     tipo: EvidenceType
     subida_por: int
+    criterio_seaes_ids: list[int] = Field(default_factory=list)
     version_actual: VersionEvidenciaRespuesta | None = None
 
     @classmethod
@@ -53,6 +58,7 @@ class EvidenciaRespuesta(BaseModel):
             fecha=evidence.evidence_date,
             tipo=evidence.evidence_type,
             subida_por=evidence.uploaded_by,
+            criterio_seaes_ids=list(evidence.criteria_seaes_ids),
             version_actual=version_actual,
         )
 

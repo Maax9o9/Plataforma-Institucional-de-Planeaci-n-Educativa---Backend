@@ -84,6 +84,7 @@ async def attach_evidence(
             entity=body.entidad,
             entity_id=body.entidad_id,
             actor=actor_from_user(current_user),
+            criteria_seaes_ids=tuple(body.criterio_seaes_ids),
             mime_type=body.mime_type,
             size_bytes=body.tamanio_bytes,
             checksum_sha256=body.checksum_sha256,

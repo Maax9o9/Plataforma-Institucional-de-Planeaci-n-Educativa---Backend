@@ -57,3 +57,12 @@ class EvidenceVersionModel(Base):
     checksum_sha256: Mapped[str | None] = mapped_column(String(64))
     usuario_id: Mapped[int] = mapped_column(Integer, nullable=False)
     fecha: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EvidenceCriterionModel(Base):
+    """Criterios SEAES a los que responde una evidencia (migración 0034)."""
+
+    __tablename__ = "evidencia_criterios"
+
+    evidencia_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    criterio_seaes_id: Mapped[int] = mapped_column(Integer, primary_key=True)

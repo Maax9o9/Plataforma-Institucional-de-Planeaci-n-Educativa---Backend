@@ -446,3 +446,86 @@ async def test_pedir_un_seguimiento_inexistente_responde_404(backend_client):
     )
 
     assert respuesta.status_code == 404, respuesta.text
+
+
+@pytest.mark.asyncio
+async def test_el_area_puede_decir_a_que_criterios_seaes_responde_su_evidencia(backend_client):
+    """Un area entrega varios archivos por cuatrimestre y no todos sirven para
+    lo mismo: una lista de asistencia sostiene un criterio y un convenio
+    firmado sostiene otro. Al adjuntar se puede decir a cual responde."""
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+    seguimiento = await _capturar(client, escenario)
+
+    elegidos = []
+    for nombre in ("Pertinencia de los programas", "Cobertura y equidad"):
+        criterio = await client.post(
+            "/api/v1/catalogos/criterios-seaes",
+            headers=escenario["admin_headers"],
+            json={"clave": f"C-{uuid4().hex[:6]}", "nombre": nombre},
+        )
+        assert criterio.status_code == 201, criterio.text
+        elegidos.append(criterio.json()["id"])
+
+    adjuntada = await _adjuntar_evidencia_con_criterios(
+        client, escenario["capturer_headers"], seguimiento["id"], elegidos
+    )
+    assert adjuntada.status_code == 201, adjuntada.text
+    assert adjuntada.json()["criterio_seaes_ids"] == sorted(elegidos)
+
+    # Y se leen al volver a consultarla, no solo en la respuesta del alta.
+    listado = await client.get(
+        f"/api/v1/evidencias?entidad=poa_cedula_seguimiento&entidad_id={seguimiento['id']}",
+        headers=escenario["capturer_headers"],
+    )
+    assert listado.status_code == 200, listado.text
+    guardada = next(x for x in listado.json() if x["id"] == adjuntada.json()["id"])
+    assert guardada["criterio_seaes_ids"] == sorted(elegidos)
+
+
+@pytest.mark.asyncio
+async def test_los_criterios_de_la_evidencia_son_opcionales(backend_client):
+    """Obligarlos los volveria un tramite que se rellena con lo primero que
+    aparezca, y la cobertura SEAES dejaria de significar algo."""
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+    seguimiento = await _capturar(client, escenario)
+
+    adjuntada = await _adjuntar_evidencia_con_criterios(
+        client, escenario["capturer_headers"], seguimiento["id"], None
+    )
+    assert adjuntada.status_code == 201, adjuntada.text
+    assert adjuntada.json()["criterio_seaes_ids"] == []
+
+
+async def _adjuntar_evidencia_con_criterios(client, headers, follow_up_id, criterios):
+    """El archivo tiene que venir del endpoint seguro de carga; la evidencia
+    sola no basta."""
+    subido = await client.post(
+        "/api/v1/archivos",
+        files={
+            "archivo": (
+                f"evidencia-{follow_up_id}.pdf",
+                b"%PDF-1.4\n% evidencia de prueba\n",
+                "application/pdf",
+            )
+        },
+        headers=headers,
+    )
+    assert subido.status_code == 201, subido.text
+
+    cuerpo = {
+        "nombre": "Listas de asistencia",
+        "descripcion": "Listas firmadas del cuatrimestre.",
+        "fecha": "2197-04-30",
+        "tipo": "archivo",
+        "ruta_o_url": subido.json()["ruta"],
+        "entidad": "poa_cedula_seguimiento",
+        "entidad_id": follow_up_id,
+        "mime_type": subido.json()["mime_type"],
+        "tamanio_bytes": subido.json()["tamanio_bytes"],
+        "checksum_sha256": subido.json()["checksum_sha256"],
+    }
+    if criterios is not None:
+        cuerpo["criterio_seaes_ids"] = criterios
+    return await client.post("/api/v1/evidencias", headers=headers, json=cuerpo)
