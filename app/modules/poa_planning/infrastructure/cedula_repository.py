@@ -80,37 +80,63 @@ class InMemoryPoaFormRepository:
     async def ensure_catalogs(self) -> None:
         return None
 
-    async def list_objectives(self) -> list[PoaObjectiveCatalog]:
-        return sorted(self.objectives.values(), key=lambda item: item.number)
+    async def list_objectives(self, *, only_active: bool = False) -> list[PoaObjectiveCatalog]:
+        items = [i for i in self.objectives.values() if i.is_active or not only_active]
+        return sorted(items, key=lambda item: item.number)
+
+    async def get_objective(self, number: int) -> PoaObjectiveCatalog | None:
+        return self.objectives.get(number)
+
+    async def save_objective(self, item: PoaObjectiveCatalog) -> PoaObjectiveCatalog:
+        self.objectives[item.number] = item
+        return item
+
+    async def save_strategy(self, item: PoaStrategyCatalog) -> PoaStrategyCatalog:
+        self.strategies[item.key] = item
+        return item
+
+    async def save_indicator(self, item: PoaIndicatorCatalog) -> PoaIndicatorCatalog:
+        self.indicators[item.key] = item
+        return item
+
+    async def save_activity_catalog(self, item: PoaActivityCatalog) -> PoaActivityCatalog:
+        self.activity_catalog[item.key] = item
+        return item
 
     async def list_strategies(
-        self, *, objective_number: int | None = None
+        self, *, objective_number: int | None = None, only_active: bool = False
     ) -> list[PoaStrategyCatalog]:
         items = self.strategies.values()
         if objective_number is not None:
             items = [item for item in items if item.objective_number == objective_number]
+        if only_active:
+            items = [item for item in items if item.is_active]
         return sorted(items, key=lambda item: tuple(map(int, item.key.split("."))))
 
     async def get_strategy(self, key: str) -> PoaStrategyCatalog | None:
         return self.strategies.get(key)
 
     async def list_indicators(
-        self, *, objective_number: int | None = None
+        self, *, objective_number: int | None = None, only_active: bool = False
     ) -> list[PoaIndicatorCatalog]:
         items = self.indicators.values()
         if objective_number is not None:
             items = [item for item in items if item.objective_number == objective_number]
+        if only_active:
+            items = [item for item in items if item.is_active]
         return sorted(items, key=lambda item: tuple(map(int, item.key.split("."))))
 
     async def get_indicator(self, key: str) -> PoaIndicatorCatalog | None:
         return self.indicators.get(key)
 
     async def list_activity_catalog(
-        self, *, strategy_key: str | None = None
+        self, *, strategy_key: str | None = None, only_active: bool = False
     ) -> list[PoaActivityCatalog]:
         items = self.activity_catalog.values()
         if strategy_key is not None:
             items = [item for item in items if item.strategy_key == strategy_key]
+        if only_active:
+            items = [item for item in items if item.is_active]
         return sorted(items, key=lambda item: tuple(map(int, item.key.split("."))))
 
     async def get_activity_catalog(self, key: str) -> PoaActivityCatalog | None:

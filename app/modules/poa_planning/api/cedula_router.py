@@ -295,8 +295,18 @@ async def list_strategy_types(_user=Depends(get_current_user)):
     response_model=list[ObjetivoPoaCatalogoRespuesta],
     summary="Consultar objetivos del formato POA",
 )
-async def list_objectives(request: Request, _user=Depends(get_current_user)):
-    items = await request.app.state.poa_form_repository.list_objectives()
+async def list_objectives(
+    request: Request,
+    solo_activos: bool = Query(
+        default=True,
+        description=(
+            "Por omisión sólo lo vigente, que es lo que un selector debe ofrecer. "
+            "La pantalla de administración pide todo para poder volver a habilitarlo."
+        ),
+    ),
+    _user=Depends(get_current_user),
+):
+    items = await request.app.state.poa_form_repository.list_objectives(only_active=solo_activos)
     return [
         ObjetivoPoaCatalogoRespuesta(
             clave=item.key,
@@ -315,11 +325,12 @@ async def list_objectives(request: Request, _user=Depends(get_current_user)):
 )
 async def list_strategies(
     request: Request,
-    objetivo_numero: int | None = Query(default=None, ge=1, le=6),
+    objetivo_numero: int | None = Query(default=None, ge=1),
+    solo_activos: bool = Query(default=True),
     _user=Depends(get_current_user),
 ):
     items = await request.app.state.poa_form_repository.list_strategies(
-        objective_number=objetivo_numero
+        objective_number=objetivo_numero, only_active=solo_activos
     )
     return [
         EstrategiaPoaCatalogoRespuesta(
@@ -339,11 +350,12 @@ async def list_strategies(
 )
 async def list_indicators(
     request: Request,
-    objetivo_numero: int | None = Query(default=None, ge=1, le=6),
+    objetivo_numero: int | None = Query(default=None, ge=1),
+    solo_activos: bool = Query(default=True),
     _user=Depends(get_current_user),
 ):
     items = await request.app.state.poa_form_repository.list_indicators(
-        objective_number=objetivo_numero
+        objective_number=objetivo_numero, only_active=solo_activos
     )
     return [
         IndicadorPoaCatalogoRespuesta(
@@ -366,10 +378,11 @@ async def list_indicators(
 async def list_activity_catalog(
     request: Request,
     estrategia_clave: str | None = None,
+    solo_activos: bool = Query(default=True),
     _user=Depends(get_current_user),
 ):
     items = await request.app.state.poa_form_repository.list_activity_catalog(
-        strategy_key=estrategia_clave
+        strategy_key=estrategia_clave, only_active=solo_activos
     )
     return [
         ActividadPoaCatalogoRespuesta(

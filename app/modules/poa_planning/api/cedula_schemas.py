@@ -53,6 +53,34 @@ class ActividadPoaCatalogoRespuesta(BaseModel):
     activo: bool
 
 
+class ObjetivoPoaCatalogoRequest(PoaRequest):
+    clave: str = Field(min_length=1, max_length=20)
+    denominacion: str = Field(min_length=1)
+    #: Si se puede elegir al formular. Deshabilitarlo no afecta a las cédulas
+    #: que ya lo usan: el catálogo gobierna lo que se elige, no lo elegido.
+    activo: bool = True
+
+
+class EstrategiaPoaCatalogoRequest(PoaRequest):
+    objetivo_numero: int = Field(ge=1)
+    denominacion: str = Field(min_length=1)
+    activo: bool = True
+
+
+class IndicadorPoaCatalogoRequest(PoaRequest):
+    objetivo_numero: int = Field(ge=1)
+    nombre: str = Field(min_length=1)
+    formula: str = Field(min_length=1)
+    unidad_medida: str = Field(min_length=1, max_length=100)
+    activo: bool = True
+
+
+class ActividadPoaCatalogoRequest(PoaRequest):
+    estrategia_clave: str = Field(min_length=1, max_length=20)
+    descripcion: str = Field(min_length=1)
+    activo: bool = True
+
+
 class CuatrimestreCedulaRequest(PoaRequest):
     numero: int = Field(ge=1, le=3)
     fecha_inicio: date
