@@ -58,9 +58,14 @@ class ExportarFormatoSep:
         self.areas = areas
 
     async def execute(self, *, exercise_id: int, actor: ActorContext) -> tuple[bytes, list[str]]:
-        if not await can_edit_structure(actor, self.areas):
+        # Rectoría también lo descarga, y no es un permiso de más: **este
+        # archivo es lo que se le manda para validar que el POA de la
+        # universidad está bien hecho**. Negárselo obligaría a que Planeación
+        # se lo reenviara por correo, que es justo el trabajo paralelo que la
+        # plataforma viene a quitar.
+        if not await can_edit_structure(actor, self.areas) and not actor.has_any_role("rectoria"):
             raise ForbiddenError(
-                "Sólo Planeación puede generar el formato de la SEP.",
+                "Sólo Planeación y Rectoría pueden generar el formato de la SEP.",
                 details={"reason": "POA_PLANNING_REQUIRED"},
             )
         exercise = await self.exercises.get_exercise(exercise_id)

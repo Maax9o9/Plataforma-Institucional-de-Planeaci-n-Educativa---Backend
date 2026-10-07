@@ -59,7 +59,12 @@ async def create_exercise(
 @router.get("/ejercicios", response_model=list[EjercicioRespuesta])
 async def list_exercises(
     request: Request,
-    current_user=Depends(require_roles("planeacion", "admin_sistema", "capturista_poa")),
+    # Rectoría entra a leer: es quien aprueba o devuelve el ejercicio, y sin
+    # el listado no tenía forma de llegar hasta él. Sólo lectura: aprobar y
+    # devolver siguen gobernados por APPROVAL_ROLES.
+    current_user=Depends(
+        require_roles("planeacion", "admin_sistema", "capturista_poa", "rectoria")
+    ),
 ):
     items = await request.app.state.poa_repository.list_exercises()
     respuestas = []

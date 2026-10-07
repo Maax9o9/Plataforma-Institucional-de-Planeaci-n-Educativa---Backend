@@ -68,7 +68,9 @@ def _endpoint(report_type: str):
         request: Request,
         filters: dict = Depends(report_filters),
         formato: Literal["json", "xlsx", "pdf"] = "json",
-        current_user=Depends(require_roles("planeacion", "admin_sistema", "capturista_poa")),
+        current_user=Depends(
+            require_roles("planeacion", "admin_sistema", "capturista_poa", "rectoria")
+        ),
     ):
         report = await request.app.state.poa_report_service.generate(
             report_type, filters, current_user
@@ -122,7 +124,7 @@ for _route, _kind in (
 async def export_sep_format(
     request: Request,
     ejercicio_id: int,
-    current_user=Depends(require_roles("planeacion", "admin_sistema")),
+    current_user=Depends(require_roles("planeacion", "admin_sistema", "rectoria")),
 ):
     """El entregable: la plantilla oficial rellenada con lo capturado.
 

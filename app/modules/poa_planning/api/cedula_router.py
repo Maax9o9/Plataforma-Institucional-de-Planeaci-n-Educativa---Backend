@@ -128,6 +128,13 @@ from .cedula_schemas import (
 
 router = APIRouter(prefix="/poa", tags=["Cédulas POA"])
 FORM_ROLES = ("planeacion", "planeacion_admin", "admin_sistema", "capturista_poa")
+#: Los mismos más Rectoría, para lo que sólo se lee.
+#:
+#: Rectoría aprueba o devuelve el POA de la universidad, y para dictaminar
+#: con criterio tiene que poder abrir las cédulas que va a aprobar. Antes la
+#: pantalla se las ofrecía y el backend respondía 403: veía un error donde
+#: debía ver el POA. No se le abre ninguna escritura.
+FORM_READ_ROLES = (*FORM_ROLES, "rectoria")
 PLANNING_ROLES = ("planeacion", "planeacion_admin", "admin_sistema")
 STRUCTURE_ROLES = (*PLANNING_ROLES, "capturista_poa")
 #: Rectoría también consulta el tablero, sólo lectura: no se agrega a FORM_ROLES
@@ -242,6 +249,11 @@ def _issue_response(item: PoaFormIssue) -> EmisionCedulaPoaRespuesta:
 
 async def _ensure_access(repository, item: PoaForm, current_user, areas) -> None:
     if await can_edit_structure(actor_from_user(current_user), areas):
+        return
+    # Rectoría lee cualquier cédula del POA que dictamina. No tiene área, así
+    # que la regla del capturista —«sólo lo de la tuya»— la dejaría fuera de
+    # todas.
+    if current_user.has_any_role({"rectoria"}):
         return
     if current_user.area_id is None or not current_user.has_any_role({"capturista_poa"}):
         raise ForbiddenError("La consulta requiere un capturista con área asignada.")
@@ -670,7 +682,7 @@ async def list_forms(
     ejercicio_id: int | None = None,
     objetivo_numero: int | None = Query(default=None, ge=1),
     area_responsable_id: int | None = None,
-    current_user=Depends(require_roles(*FORM_ROLES)),
+    current_user=Depends(require_roles(*FORM_READ_ROLES)),
 ):
     items = await request.app.state.poa_form_repository.list_forms(
         exercise_id=ejercicio_id,
@@ -875,7 +887,7 @@ def _tarjeta_respuesta(
 async def get_issue(
     issue_id: int,
     request: Request,
-    current_user=Depends(require_roles(*FORM_ROLES)),
+    current_user=Depends(require_roles(*FORM_READ_ROLES)),
 ):
     item = await request.app.state.poa_form_repository.get_issue(issue_id)
     if item is None:
@@ -900,7 +912,7 @@ async def get_issue(
 async def get_form_detail(
     form_id: int,
     request: Request,
-    current_user=Depends(require_roles(*FORM_ROLES)),
+    current_user=Depends(require_roles(*FORM_READ_ROLES)),
 ):
     detail = await request.app.state.poa_form_repository.get_detail(form_id)
     if detail is None:
@@ -1281,7 +1293,7 @@ async def issue_form(
 async def list_form_issues(
     form_id: int,
     request: Request,
-    current_user=Depends(require_roles(*FORM_ROLES)),
+    current_user=Depends(require_roles(*FORM_READ_ROLES)),
 ):
     form = await request.app.state.poa_form_repository.get_form(form_id)
     if form is None:
@@ -1383,7 +1395,7 @@ async def follow_up_history(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=10, ge=1, le=100),
     order: Literal["asc", "desc"] = Query(default="desc"),
-    current_user=Depends(require_roles(*FORM_ROLES)),
+    current_user=Depends(require_roles(*FORM_READ_ROLES)),
 ):
     # El historial trae los comentarios de revisión, que son datos del área:
     # sin esta comprobación cualquier capturista los leería con sólo conocer

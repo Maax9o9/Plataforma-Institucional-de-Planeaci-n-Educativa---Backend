@@ -23,9 +23,15 @@ class PoaReportService:
     async def generate(self, report_type: str, filters: dict, current_user) -> ReportResult:
         actor = ActorContext.from_user(current_user)
         planning = await can_edit_structure(actor, self.areas)
-        if not planning and (not actor.has_any_role("capturista_poa") or actor.area_id is None):
+        # Rectoría es quien valida el POA de la universidad: tiene que poder
+        # leer los reportes de todas las áreas, igual que Planeación, aunque no
+        # pueda escribir nada. Es la misma regla que ya gobierna el tablero.
+        sin_filtro_de_area = planning or actor.has_any_role("rectoria")
+        if not sin_filtro_de_area and (
+            not actor.has_any_role("capturista_poa") or actor.area_id is None
+        ):
             raise ForbiddenError("El usuario no puede consultar reportes de cédulas POA.")
-        area_id = filters.get("area_id") if planning else actor.area_id
+        area_id = filters.get("area_id") if sin_filtro_de_area else actor.area_id
         forms = await self.forms.list_forms(
             exercise_id=filters.get("ejercicio_id"),
             objective_number=filters.get("objetivo_numero"),
@@ -131,7 +137,7 @@ class PoaReportService:
                         }
                     )
         result_filters = {**filters, "fuente": "cedulas_actuales", "datos": "captura_actual"}
-        if not planning:
+        if not sin_filtro_de_area:
             result_filters["area_id"] = actor.area_id
         if report_type == "anual":
             result_filters["completo"] = bool(included_forms) and complete
