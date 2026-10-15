@@ -12,29 +12,68 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
+    Index,
     Integer,
     Numeric,
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.shared.infrastructure.db.base import Base
 
 
+class PoaCatalogoModel(Base):
+    __tablename__ = "poa_catalogos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    nombre: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    anio: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    origen: Mapped[str | None] = mapped_column(Text)
+    creado_por: Mapped[int | None] = mapped_column(Integer)
+    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    actualizado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class PoaObjectiveCatalogModel(Base):
     __tablename__ = "poa_catalogo_objetivos"
+    #: La clave es única *dentro* del POA, no en toda la tabla: dos POA pueden
+    #: tener su propio OBJ-1.
+    __table_args__ = (
+        UniqueConstraint("catalogo_id", "clave", name="uq_poa_catalogo_objetivo_clave"),
+    )
 
+    catalogo_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     numero: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
-    clave: Mapped[str] = mapped_column(String(20), nullable=False, unique=True)
+    clave: Mapped[str] = mapped_column(String(20), nullable=False)
     denominacion: Mapped[str] = mapped_column(Text, nullable=False)
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
 class PoaStrategyCatalogModel(Base):
     __tablename__ = "poa_catalogo_estrategias"
+    #: Redundante con la llave primaria `(catalogo_id, clave)`, pero es la que
+    #: sostiene la foránea de tres columnas de la cédula
+    #: -`(catalogo_id, estrategia_clave, objetivo_numero)`-: Postgres exige una
+    #: única sobre las columnas referidas.
+    #:
+    #: Va como índice único y no como `UniqueConstraint` porque en la base es
+    #: un índice, no una restricción -a diferencia de la de objetivos, que sí
+    #: lo es-. Declararla del otro tipo haría que autogenerate propusiera
+    #: borrar el índice y crear la restricción.
+    __table_args__ = (
+        Index(
+            "uq_poa_catalogo_estrategia_objetivo",
+            "catalogo_id",
+            "clave",
+            "objetivo_numero",
+            unique=True,
+        ),
+    )
 
+    catalogo_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     clave: Mapped[str] = mapped_column(String(20), primary_key=True)
     objetivo_numero: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     denominacion: Mapped[str] = mapped_column(Text, nullable=False)
@@ -44,6 +83,7 @@ class PoaStrategyCatalogModel(Base):
 class PoaIndicatorCatalogModel(Base):
     __tablename__ = "poa_catalogo_indicadores"
 
+    catalogo_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     clave: Mapped[str] = mapped_column(String(30), primary_key=True)
     objetivo_numero: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     nombre: Mapped[str] = mapped_column(Text, nullable=False)
@@ -55,6 +95,7 @@ class PoaIndicatorCatalogModel(Base):
 class PoaActivityCatalogModel(Base):
     __tablename__ = "poa_catalogo_actividades"
 
+    catalogo_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     clave: Mapped[str] = mapped_column(String(30), primary_key=True)
     estrategia_clave: Mapped[str] = mapped_column(String(20), nullable=False)
     descripcion: Mapped[str] = mapped_column(Text, nullable=False)
@@ -65,6 +106,7 @@ class PoaFormModel(Base):
     __tablename__ = "poa_cedulas"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    catalogo_id: Mapped[int] = mapped_column(Integer, nullable=False)
     ejercicio_id: Mapped[int] = mapped_column(Integer, nullable=False)
     objetivo_numero: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     estrategia_clave: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -93,6 +135,7 @@ class PoaFormIndicatorModel(Base):
     __tablename__ = "poa_cedula_indicadores"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    catalogo_id: Mapped[int] = mapped_column(Integer, nullable=False)
     cedula_id: Mapped[int] = mapped_column(Integer, nullable=False)
     indicador_clave: Mapped[str] = mapped_column(String(30), nullable=False)
     meta_institucional: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
@@ -111,6 +154,7 @@ class PoaFormActivityModel(Base):
     __tablename__ = "poa_cedula_actividades"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    catalogo_id: Mapped[int] = mapped_column(Integer, nullable=False)
     cedula_id: Mapped[int] = mapped_column(Integer, nullable=False)
     actividad_clave: Mapped[str] = mapped_column(String(30), nullable=False)
     unidad_medida: Mapped[str] = mapped_column(String(100), nullable=False)

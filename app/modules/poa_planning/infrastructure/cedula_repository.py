@@ -9,6 +9,7 @@ from app.shared.domain.exceptions import ConflictError
 from ..domain.cedula_entities import (
     PoaActivityCatalog,
     PoaActivityFollowUp,
+    PoaCatalogo,
     PoaFollowUpCard,
     PoaForm,
     PoaFormActivity,
@@ -28,48 +29,34 @@ from .reference_data import (
 )
 
 
+def _catalog_key(item) -> tuple[int, ...]:
+    """Ordena la clave punteada por número y no como texto.
+
+    Como texto, «1.1.10» se colaría antes de «1.1.2» y el listado saldría en un
+    orden distinto al del adaptador SQL, que ya ordena así.
+    """
+    return tuple(int(part) for part in item.key.split("."))
+
+
 class InMemoryPoaFormRepository:
     def __init__(self) -> None:
-        self.objectives = {
-            int(item["numero"]): PoaObjectiveCatalog(
-                key=str(item["clave"]),
-                number=int(item["numero"]),
-                denomination=str(item["denominacion"]),
-            )
-            for item in POA_OBJECTIVES
-        }
-        self.strategies = {
-            str(item["clave"]): PoaStrategyCatalog(
-                key=str(item["clave"]),
-                objective_number=int(item["objetivo_numero"]),
-                denomination=str(item["denominacion"]),
-            )
-            for item in POA_STRATEGIES
-        }
-        self.indicators = {
-            str(item["clave"]): PoaIndicatorCatalog(
-                key=str(item["clave"]),
-                objective_number=int(item["objetivo_numero"]),
-                name=str(item["nombre"]),
-                formula=str(item["formula"]),
-                unit=str(item["unidad_medida"]),
-            )
-            for item in POA_INDICATORS
-        }
-        self.activity_catalog = {
-            str(item["clave"]): PoaActivityCatalog(
-                key=str(item["clave"]),
-                strategy_key=str(item["estrategia_clave"]),
-                description=str(item["descripcion"]),
-            )
-            for item in POA_ACTIVITIES
-        }
+        # Las cuatro colecciones del catálogo van indizadas por el POA más su
+        # llave propia -el número en los objetivos, la clave en las otras
+        # tres-, porque esa llave sola dejó de identificar una fila en cuanto
+        # el catálogo pasó a colgar de su POA. Nacen vacías y las siembra
+        # `ensure_catalogs()`, que es quien crea el POA del que colgarlas.
+        self.catalogs: dict[int, PoaCatalogo] = {}
+        self.objectives: dict[tuple[int, int], PoaObjectiveCatalog] = {}
+        self.strategies: dict[tuple[int, str], PoaStrategyCatalog] = {}
+        self.indicators: dict[tuple[int, str], PoaIndicatorCatalog] = {}
+        self.activity_catalog: dict[tuple[int, str], PoaActivityCatalog] = {}
         self.forms: dict[int, PoaForm] = {}
         self.form_indicators: dict[int, PoaFormIndicator] = {}
         self.form_quarters: dict[int, PoaFormQuarter] = {}
         self.form_activities: dict[int, PoaFormActivity] = {}
         self.follow_ups: dict[int, PoaActivityFollowUp] = {}
         self.issues: dict[int, PoaFormIssue] = {}
+        self._next_catalog_id = count(1)
         self._form_ids = count(1)
         self._indicator_ids = count(1)
         self._quarter_ids = count(1)
@@ -77,70 +64,161 @@ class InMemoryPoaFormRepository:
         self._follow_up_ids = count(1)
         self._issue_ids = count(1)
 
-    async def ensure_catalogs(self) -> None:
-        return None
+    async def ensure_catalogs(self) -> int:
+        # Siembra sólo si no hay ningún POA. Volver a sembrar sobre uno que ya
+        # existe resucitaría lo que Planeación retiró desde la pantalla del
+        # catálogo, que es administrable.
+        if self.catalogs:
+            # El id más bajo, no el primero que se insertó: es lo mismo que
+            # devuelve el adaptador SQL con su `ORDER BY id LIMIT 1`, y así los
+            # dos coinciden aunque las altas no lleguen en orden de id.
+            return min(self.catalogs)
+        inicial = PoaCatalogo.create(
+            name="POA 2026",
+            year=2026,
+            origin="Catálogo inicial del sistema",
+            created_by=None,
+        )
+        inicial.id = next(self._next_catalog_id)
+        self.catalogs[inicial.id] = inicial
+        for item in POA_OBJECTIVES:
+            self.objectives[(inicial.id, int(item["numero"]))] = PoaObjectiveCatalog(
+                catalog_id=inicial.id,
+                key=str(item["clave"]),
+                number=int(item["numero"]),
+                denomination=str(item["denominacion"]),
+            )
+        for item in POA_STRATEGIES:
+            self.strategies[(inicial.id, str(item["clave"]))] = PoaStrategyCatalog(
+                catalog_id=inicial.id,
+                key=str(item["clave"]),
+                objective_number=int(item["objetivo_numero"]),
+                denomination=str(item["denominacion"]),
+            )
+        for item in POA_INDICATORS:
+            self.indicators[(inicial.id, str(item["clave"]))] = PoaIndicatorCatalog(
+                catalog_id=inicial.id,
+                key=str(item["clave"]),
+                objective_number=int(item["objetivo_numero"]),
+                name=str(item["nombre"]),
+                formula=str(item["formula"]),
+                unit=str(item["unidad_medida"]),
+            )
+        for item in POA_ACTIVITIES:
+            self.activity_catalog[(inicial.id, str(item["clave"]))] = PoaActivityCatalog(
+                catalog_id=inicial.id,
+                key=str(item["clave"]),
+                strategy_key=str(item["estrategia_clave"]),
+                description=str(item["descripcion"]),
+            )
+        return inicial.id
 
-    async def list_objectives(self, *, only_active: bool = False) -> list[PoaObjectiveCatalog]:
-        items = [i for i in self.objectives.values() if i.is_active or not only_active]
+    async def list_catalogs(self) -> list[PoaCatalogo]:
+        return sorted(self.catalogs.values(), key=lambda item: item.id)
+
+    async def get_catalog(self, catalog_id: int) -> PoaCatalogo | None:
+        return self.catalogs.get(catalog_id)
+
+    async def get_catalog_by_name(self, name: str) -> PoaCatalogo | None:
+        return next((item for item in self.catalogs.values() if item.name == name), None)
+
+    async def save_catalog(self, item: PoaCatalogo) -> PoaCatalogo:
+        # El nombre es único: es con lo que Planeación distingue un POA de otro
+        # en el selector. Lo comprueba aquí la variante en memoria porque en la
+        # de Postgres lo comprueba la base.
+        if any(otro.name == item.name and otro.id != item.id for otro in self.catalogs.values()):
+            raise ConflictError("Ya existe un POA con ese nombre.")
+        if not item.id:
+            item.id = next(self._next_catalog_id)
+        self.catalogs[item.id] = item
+        return item
+
+    async def touch_catalog(self, catalog_id: int) -> None:
+        item = self.catalogs.get(catalog_id)
+        if item is not None:
+            item.touch_contents()
+
+    async def list_objectives(
+        self, *, catalog_id: int, only_active: bool = False
+    ) -> list[PoaObjectiveCatalog]:
+        items = [
+            item
+            for (catalogo, _), item in self.objectives.items()
+            if catalogo == catalog_id and (item.is_active or not only_active)
+        ]
         return sorted(items, key=lambda item: item.number)
 
-    async def get_objective(self, number: int) -> PoaObjectiveCatalog | None:
-        return self.objectives.get(number)
+    async def get_objective(self, catalog_id: int, number: int) -> PoaObjectiveCatalog | None:
+        return self.objectives.get((catalog_id, number))
 
     async def save_objective(self, item: PoaObjectiveCatalog) -> PoaObjectiveCatalog:
-        self.objectives[item.number] = item
+        self.objectives[(item.catalog_id, item.number)] = item
         return item
 
     async def save_strategy(self, item: PoaStrategyCatalog) -> PoaStrategyCatalog:
-        self.strategies[item.key] = item
+        self.strategies[(item.catalog_id, item.key)] = item
         return item
 
     async def save_indicator(self, item: PoaIndicatorCatalog) -> PoaIndicatorCatalog:
-        self.indicators[item.key] = item
+        self.indicators[(item.catalog_id, item.key)] = item
         return item
 
     async def save_activity_catalog(self, item: PoaActivityCatalog) -> PoaActivityCatalog:
-        self.activity_catalog[item.key] = item
+        self.activity_catalog[(item.catalog_id, item.key)] = item
         return item
 
     async def list_strategies(
-        self, *, objective_number: int | None = None, only_active: bool = False
+        self,
+        *,
+        catalog_id: int,
+        objective_number: int | None = None,
+        only_active: bool = False,
     ) -> list[PoaStrategyCatalog]:
-        items = self.strategies.values()
+        items = [item for (catalogo, _), item in self.strategies.items() if catalogo == catalog_id]
         if objective_number is not None:
             items = [item for item in items if item.objective_number == objective_number]
         if only_active:
             items = [item for item in items if item.is_active]
-        return sorted(items, key=lambda item: tuple(map(int, item.key.split("."))))
+        return sorted(items, key=_catalog_key)
 
-    async def get_strategy(self, key: str) -> PoaStrategyCatalog | None:
-        return self.strategies.get(key)
+    async def get_strategy(self, catalog_id: int, key: str) -> PoaStrategyCatalog | None:
+        return self.strategies.get((catalog_id, key))
 
     async def list_indicators(
-        self, *, objective_number: int | None = None, only_active: bool = False
+        self,
+        *,
+        catalog_id: int,
+        objective_number: int | None = None,
+        only_active: bool = False,
     ) -> list[PoaIndicatorCatalog]:
-        items = self.indicators.values()
+        items = [item for (catalogo, _), item in self.indicators.items() if catalogo == catalog_id]
         if objective_number is not None:
             items = [item for item in items if item.objective_number == objective_number]
         if only_active:
             items = [item for item in items if item.is_active]
-        return sorted(items, key=lambda item: tuple(map(int, item.key.split("."))))
+        return sorted(items, key=_catalog_key)
 
-    async def get_indicator(self, key: str) -> PoaIndicatorCatalog | None:
-        return self.indicators.get(key)
+    async def get_indicator(self, catalog_id: int, key: str) -> PoaIndicatorCatalog | None:
+        return self.indicators.get((catalog_id, key))
 
     async def list_activity_catalog(
-        self, *, strategy_key: str | None = None, only_active: bool = False
+        self,
+        *,
+        catalog_id: int,
+        strategy_key: str | None = None,
+        only_active: bool = False,
     ) -> list[PoaActivityCatalog]:
-        items = self.activity_catalog.values()
+        items = [
+            item for (catalogo, _), item in self.activity_catalog.items() if catalogo == catalog_id
+        ]
         if strategy_key is not None:
             items = [item for item in items if item.strategy_key == strategy_key]
         if only_active:
             items = [item for item in items if item.is_active]
-        return sorted(items, key=lambda item: tuple(map(int, item.key.split("."))))
+        return sorted(items, key=_catalog_key)
 
-    async def get_activity_catalog(self, key: str) -> PoaActivityCatalog | None:
-        return self.activity_catalog.get(key)
+    async def get_activity_catalog(self, catalog_id: int, key: str) -> PoaActivityCatalog | None:
+        return self.activity_catalog.get((catalog_id, key))
 
     async def add_form(self, item: PoaForm) -> None:
         duplicate = any(
@@ -322,29 +400,31 @@ class InMemoryPoaFormRepository:
                 continue
             if status is not None and follow_up.status.value != status:
                 continue
-            cards.append(PoaFollowUpCard(
-                id=follow_up.id,
-                form_id=form.id,
-                activity_id=activity.id,
-                activity_key=activity.activity_key,
-                upe_description=activity.upe_description,
-                unit=activity.unit,
-                annual_goal=activity.annual_goal,
-                executing_area_id=activity.executing_area_id,
-                criteria_seaes_ids=tuple(activity.criteria_seaes_ids),
-                quarter=follow_up.quarter,
-                period_id=follow_up.period_id,
-                scheduled=follow_up.scheduled,
-                achieved=follow_up.achieved,
-                status=follow_up.status,
-                review_comment=follow_up.review_comment,
-                deviation_justification=follow_up.deviation_justification,
-                progress=follow_up.progress,
-                scope=follow_up.scope,
-                updated_at=follow_up.updated_at,
-            ))
+            cards.append(
+                PoaFollowUpCard(
+                    id=follow_up.id,
+                    form_id=form.id,
+                    activity_id=activity.id,
+                    activity_key=activity.activity_key,
+                    upe_description=activity.upe_description,
+                    unit=activity.unit,
+                    annual_goal=activity.annual_goal,
+                    executing_area_id=activity.executing_area_id,
+                    criteria_seaes_ids=tuple(activity.criteria_seaes_ids),
+                    quarter=follow_up.quarter,
+                    period_id=follow_up.period_id,
+                    scheduled=follow_up.scheduled,
+                    achieved=follow_up.achieved,
+                    status=follow_up.status,
+                    review_comment=follow_up.review_comment,
+                    deviation_justification=follow_up.deviation_justification,
+                    progress=follow_up.progress,
+                    scope=follow_up.scope,
+                    updated_at=follow_up.updated_at,
+                )
+            )
         cards.sort(key=lambda card: (card.activity_key, card.quarter))
-        return cards[offset:offset + limit], len(cards)
+        return cards[offset : offset + limit], len(cards)
 
     async def upsert_follow_up(self, item: PoaActivityFollowUp) -> PoaActivityFollowUp:
         existing = next(

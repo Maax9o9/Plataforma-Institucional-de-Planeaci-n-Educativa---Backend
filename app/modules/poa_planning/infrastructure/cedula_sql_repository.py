@@ -17,6 +17,7 @@ from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_s
 from ..domain.cedula_entities import (
     PoaActivityCatalog,
     PoaActivityFollowUp,
+    PoaCatalogo,
     PoaFollowUpCard,
     PoaForm,
     PoaFormActivity,
@@ -32,6 +33,7 @@ from ..domain.cedula_entities import (
 from .cedula_models import (
     PoaActivityCatalogModel,
     PoaActivityFollowUpModel,
+    PoaCatalogoModel,
     PoaFormActivityCriteriaModel,
     PoaFormActivityModel,
     PoaFormIndicatorModel,
@@ -52,6 +54,17 @@ from .reference_data import (
 
 def _catalog_key(item) -> tuple[int, ...]:
     return tuple(int(part) for part in item.key.split("."))
+
+
+def _con_catalogo(
+    filas: tuple[dict[str, object], ...], catalogo_id: int
+) -> list[dict[str, object]]:
+    """Cuelga las filas de `reference_data` del POA que se está sembrando.
+
+    El módulo de datos de referencia no sabe de POA -es el texto del formato
+    institucional, nada más-, y `catalogo_id` es obligatorio desde la 0037.
+    """
+    return [{**fila, "catalogo_id": catalogo_id} for fila in filas]
 
 
 async def _load_activity_criteria(
@@ -84,44 +97,122 @@ class SqlAlchemyPoaFormRepository:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self.session_factory = session_factory
 
-    async def ensure_catalogs(self) -> None:
+    async def ensure_catalogs(self) -> int:
         async with session_scope(self.session_factory) as session:
+            # Siembra sólo si no hay ningún POA, y devuelve el id del más
+            # antiguo. Volver a sembrar sobre un POA que ya existe resucitaría
+            # lo que Planeación retiró desde la pantalla del catálogo, que es
+            # administrable.
+            inicial = await session.scalar(
+                select(PoaCatalogoModel.id).order_by(PoaCatalogoModel.id).limit(1)
+            )
+            if inicial is not None:
+                return inicial
+            ahora = datetime.now(UTC)
+            catalogo = PoaCatalogoModel(
+                nombre="POA 2026",
+                anio=2026,
+                origen="Catálogo inicial del sistema",
+                creado_por=None,
+                creado_en=ahora,
+                actualizado_en=ahora,
+            )
+            session.add(catalogo)
+            await session.flush()
             statements = (
                 pg_insert(PoaObjectiveCatalogModel)
-                .values(list(POA_OBJECTIVES))
-                .on_conflict_do_nothing(index_elements=["numero"]),
+                .values(_con_catalogo(POA_OBJECTIVES, catalogo.id))
+                .on_conflict_do_nothing(index_elements=["catalogo_id", "numero"]),
                 pg_insert(PoaStrategyCatalogModel)
-                .values(list(POA_STRATEGIES))
-                .on_conflict_do_nothing(index_elements=["clave"]),
+                .values(_con_catalogo(POA_STRATEGIES, catalogo.id))
+                .on_conflict_do_nothing(index_elements=["catalogo_id", "clave"]),
                 pg_insert(PoaIndicatorCatalogModel)
-                .values(list(POA_INDICATORS))
-                .on_conflict_do_nothing(index_elements=["clave"]),
+                .values(_con_catalogo(POA_INDICATORS, catalogo.id))
+                .on_conflict_do_nothing(index_elements=["catalogo_id", "clave"]),
                 pg_insert(PoaActivityCatalogModel)
-                .values(list(POA_ACTIVITIES))
-                .on_conflict_do_nothing(index_elements=["clave"]),
+                .values(_con_catalogo(POA_ACTIVITIES, catalogo.id))
+                .on_conflict_do_nothing(index_elements=["catalogo_id", "clave"]),
             )
             for statement in statements:
                 await session.execute(statement)
             await commit_or_flush(session)
+            return catalogo.id
 
-    async def list_objectives(self, *, only_active: bool = False) -> list[PoaObjectiveCatalog]:
+    async def list_catalogs(self) -> list[PoaCatalogo]:
         async with session_scope(self.session_factory) as session:
-            statement = select(PoaObjectiveCatalogModel).order_by(PoaObjectiveCatalogModel.numero)
+            models = (
+                await session.scalars(select(PoaCatalogoModel).order_by(PoaCatalogoModel.id))
+            ).all()
+            return [self._catalog(model) for model in models]
+
+    async def get_catalog(self, catalog_id: int) -> PoaCatalogo | None:
+        async with session_scope(self.session_factory) as session:
+            model = await session.get(PoaCatalogoModel, catalog_id)
+            return self._catalog(model) if model else None
+
+    async def get_catalog_by_name(self, name: str) -> PoaCatalogo | None:
+        async with session_scope(self.session_factory) as session:
+            model = await session.scalar(
+                select(PoaCatalogoModel).where(PoaCatalogoModel.nombre == name)
+            )
+            return self._catalog(model) if model else None
+
+    async def save_catalog(self, item: PoaCatalogo) -> PoaCatalogo:
+        async with session_scope(self.session_factory) as session:
+            try:
+                model = await session.get(PoaCatalogoModel, item.id) if item.id else None
+                if model is None:
+                    model = PoaCatalogoModel(creado_en=item.created_at)
+                    session.add(model)
+                model.nombre = item.name
+                model.anio = item.year
+                model.origen = item.origin
+                model.creado_por = item.created_by
+                model.actualizado_en = item.updated_at
+                await commit_or_flush(session)
+            except IntegrityError as exc:
+                await session.rollback()
+                raise ConflictError("Ya existe un POA con ese nombre.") from exc
+            return self._catalog(model)
+
+    async def touch_catalog(self, catalog_id: int) -> None:
+        async with session_scope(self.session_factory) as session:
+            await session.execute(
+                update(PoaCatalogoModel)
+                .where(PoaCatalogoModel.id == catalog_id)
+                .values(actualizado_en=datetime.now(UTC))
+            )
+            await commit_or_flush(session)
+
+    async def list_objectives(
+        self, *, catalog_id: int, only_active: bool = False
+    ) -> list[PoaObjectiveCatalog]:
+        async with session_scope(self.session_factory) as session:
+            statement = (
+                select(PoaObjectiveCatalogModel)
+                .where(PoaObjectiveCatalogModel.catalogo_id == catalog_id)
+                .order_by(PoaObjectiveCatalogModel.numero)
+            )
             if only_active:
                 statement = statement.where(PoaObjectiveCatalogModel.activo.is_(True))
             models = (await session.scalars(statement)).all()
             return [self._objective(model) for model in models]
 
-    async def get_objective(self, number: int) -> PoaObjectiveCatalog | None:
+    async def get_objective(self, catalog_id: int, number: int) -> PoaObjectiveCatalog | None:
         async with session_scope(self.session_factory) as session:
-            model = await session.get(PoaObjectiveCatalogModel, number)
+            model = await session.get(
+                PoaObjectiveCatalogModel, {"catalogo_id": catalog_id, "numero": number}
+            )
             return self._objective(model) if model else None
 
     async def save_objective(self, item: PoaObjectiveCatalog) -> PoaObjectiveCatalog:
         async with session_scope(self.session_factory) as session:
-            model = await session.get(PoaObjectiveCatalogModel, item.number)
+            model = await session.get(
+                PoaObjectiveCatalogModel,
+                {"catalogo_id": item.catalog_id, "numero": item.number},
+            )
             if model is None:
-                model = PoaObjectiveCatalogModel(numero=item.number)
+                model = PoaObjectiveCatalogModel(catalogo_id=item.catalog_id, numero=item.number)
                 session.add(model)
             model.clave = item.key
             model.denominacion = item.denomination
@@ -131,9 +222,11 @@ class SqlAlchemyPoaFormRepository:
 
     async def save_strategy(self, item: PoaStrategyCatalog) -> PoaStrategyCatalog:
         async with session_scope(self.session_factory) as session:
-            model = await session.get(PoaStrategyCatalogModel, item.key)
+            model = await session.get(
+                PoaStrategyCatalogModel, {"catalogo_id": item.catalog_id, "clave": item.key}
+            )
             if model is None:
-                model = PoaStrategyCatalogModel(clave=item.key)
+                model = PoaStrategyCatalogModel(catalogo_id=item.catalog_id, clave=item.key)
                 session.add(model)
             model.objetivo_numero = item.objective_number
             model.denominacion = item.denomination
@@ -143,9 +236,11 @@ class SqlAlchemyPoaFormRepository:
 
     async def save_indicator(self, item: PoaIndicatorCatalog) -> PoaIndicatorCatalog:
         async with session_scope(self.session_factory) as session:
-            model = await session.get(PoaIndicatorCatalogModel, item.key)
+            model = await session.get(
+                PoaIndicatorCatalogModel, {"catalogo_id": item.catalog_id, "clave": item.key}
+            )
             if model is None:
-                model = PoaIndicatorCatalogModel(clave=item.key)
+                model = PoaIndicatorCatalogModel(catalogo_id=item.catalog_id, clave=item.key)
                 session.add(model)
             model.objetivo_numero = item.objective_number
             model.nombre = item.name
@@ -157,9 +252,11 @@ class SqlAlchemyPoaFormRepository:
 
     async def save_activity_catalog(self, item: PoaActivityCatalog) -> PoaActivityCatalog:
         async with session_scope(self.session_factory) as session:
-            model = await session.get(PoaActivityCatalogModel, item.key)
+            model = await session.get(
+                PoaActivityCatalogModel, {"catalogo_id": item.catalog_id, "clave": item.key}
+            )
             if model is None:
-                model = PoaActivityCatalogModel(clave=item.key)
+                model = PoaActivityCatalogModel(catalogo_id=item.catalog_id, clave=item.key)
                 session.add(model)
             model.estrategia_clave = item.strategy_key
             model.descripcion = item.description
@@ -168,10 +265,18 @@ class SqlAlchemyPoaFormRepository:
             return self._activity_catalog(model)
 
     async def list_strategies(
-        self, *, objective_number: int | None = None, only_active: bool = False
+        self,
+        *,
+        catalog_id: int,
+        objective_number: int | None = None,
+        only_active: bool = False,
     ) -> list[PoaStrategyCatalog]:
         async with session_scope(self.session_factory) as session:
-            statement = select(PoaStrategyCatalogModel).order_by(PoaStrategyCatalogModel.clave)
+            statement = (
+                select(PoaStrategyCatalogModel)
+                .where(PoaStrategyCatalogModel.catalogo_id == catalog_id)
+                .order_by(PoaStrategyCatalogModel.clave)
+            )
             if objective_number is not None:
                 statement = statement.where(
                     PoaStrategyCatalogModel.objetivo_numero == objective_number
@@ -181,16 +286,26 @@ class SqlAlchemyPoaFormRepository:
             items = [self._strategy(model) for model in (await session.scalars(statement)).all()]
             return sorted(items, key=_catalog_key)
 
-    async def get_strategy(self, key: str) -> PoaStrategyCatalog | None:
+    async def get_strategy(self, catalog_id: int, key: str) -> PoaStrategyCatalog | None:
         async with session_scope(self.session_factory) as session:
-            model = await session.get(PoaStrategyCatalogModel, key)
+            model = await session.get(
+                PoaStrategyCatalogModel, {"catalogo_id": catalog_id, "clave": key}
+            )
             return self._strategy(model) if model else None
 
     async def list_indicators(
-        self, *, objective_number: int | None = None, only_active: bool = False
+        self,
+        *,
+        catalog_id: int,
+        objective_number: int | None = None,
+        only_active: bool = False,
     ) -> list[PoaIndicatorCatalog]:
         async with session_scope(self.session_factory) as session:
-            statement = select(PoaIndicatorCatalogModel).order_by(PoaIndicatorCatalogModel.clave)
+            statement = (
+                select(PoaIndicatorCatalogModel)
+                .where(PoaIndicatorCatalogModel.catalogo_id == catalog_id)
+                .order_by(PoaIndicatorCatalogModel.clave)
+            )
             if objective_number is not None:
                 statement = statement.where(
                     PoaIndicatorCatalogModel.objetivo_numero == objective_number
@@ -200,16 +315,26 @@ class SqlAlchemyPoaFormRepository:
             items = [self._indicator(model) for model in (await session.scalars(statement)).all()]
             return sorted(items, key=_catalog_key)
 
-    async def get_indicator(self, key: str) -> PoaIndicatorCatalog | None:
+    async def get_indicator(self, catalog_id: int, key: str) -> PoaIndicatorCatalog | None:
         async with session_scope(self.session_factory) as session:
-            model = await session.get(PoaIndicatorCatalogModel, key)
+            model = await session.get(
+                PoaIndicatorCatalogModel, {"catalogo_id": catalog_id, "clave": key}
+            )
             return self._indicator(model) if model else None
 
     async def list_activity_catalog(
-        self, *, strategy_key: str | None = None, only_active: bool = False
+        self,
+        *,
+        catalog_id: int,
+        strategy_key: str | None = None,
+        only_active: bool = False,
     ) -> list[PoaActivityCatalog]:
         async with session_scope(self.session_factory) as session:
-            statement = select(PoaActivityCatalogModel).order_by(PoaActivityCatalogModel.clave)
+            statement = (
+                select(PoaActivityCatalogModel)
+                .where(PoaActivityCatalogModel.catalogo_id == catalog_id)
+                .order_by(PoaActivityCatalogModel.clave)
+            )
             if strategy_key is not None:
                 statement = statement.where(
                     PoaActivityCatalogModel.estrategia_clave == strategy_key
@@ -221,9 +346,11 @@ class SqlAlchemyPoaFormRepository:
             ]
             return sorted(items, key=_catalog_key)
 
-    async def get_activity_catalog(self, key: str) -> PoaActivityCatalog | None:
+    async def get_activity_catalog(self, catalog_id: int, key: str) -> PoaActivityCatalog | None:
         async with session_scope(self.session_factory) as session:
-            model = await session.get(PoaActivityCatalogModel, key)
+            model = await session.get(
+                PoaActivityCatalogModel, {"catalogo_id": catalog_id, "clave": key}
+            )
             return self._activity_catalog(model) if model else None
 
     async def add_form(self, item: PoaForm) -> None:
@@ -596,15 +723,15 @@ class SqlAlchemyPoaFormRepository:
                 )
             if status is not None:
                 statement = statement.where(PoaActivityFollowUpModel.estado == status)
-            total = await session.scalar(
-                select(func.count()).select_from(statement.subquery())
-            )
+            total = await session.scalar(select(func.count()).select_from(statement.subquery()))
             rows = (
                 await session.execute(
                     statement.order_by(
                         PoaFormActivityModel.actividad_clave,
                         PoaActivityFollowUpModel.cuatrimestre,
-                    ).offset(offset).limit(limit)
+                    )
+                    .offset(offset)
+                    .limit(limit)
                 )
             ).all()
             criteria_by_activity = await _load_activity_criteria(
@@ -716,8 +843,21 @@ class SqlAlchemyPoaFormRepository:
             return self._issue(model) if model else None
 
     @staticmethod
+    def _catalog(model: PoaCatalogoModel) -> PoaCatalogo:
+        return PoaCatalogo(
+            id=model.id,
+            name=model.nombre,
+            year=model.anio,
+            origin=model.origen,
+            created_by=model.creado_por,
+            created_at=model.creado_en,
+            updated_at=model.actualizado_en,
+        )
+
+    @staticmethod
     def _objective(model: PoaObjectiveCatalogModel) -> PoaObjectiveCatalog:
         return PoaObjectiveCatalog(
+            catalog_id=model.catalogo_id,
             key=model.clave,
             number=model.numero,
             denomination=model.denominacion,
@@ -727,6 +867,7 @@ class SqlAlchemyPoaFormRepository:
     @staticmethod
     def _strategy(model: PoaStrategyCatalogModel) -> PoaStrategyCatalog:
         return PoaStrategyCatalog(
+            catalog_id=model.catalogo_id,
             key=model.clave,
             objective_number=model.objetivo_numero,
             denomination=model.denominacion,
@@ -736,6 +877,7 @@ class SqlAlchemyPoaFormRepository:
     @staticmethod
     def _indicator(model: PoaIndicatorCatalogModel) -> PoaIndicatorCatalog:
         return PoaIndicatorCatalog(
+            catalog_id=model.catalogo_id,
             key=model.clave,
             objective_number=model.objetivo_numero,
             name=model.nombre,
@@ -747,6 +889,7 @@ class SqlAlchemyPoaFormRepository:
     @staticmethod
     def _activity_catalog(model: PoaActivityCatalogModel) -> PoaActivityCatalog:
         return PoaActivityCatalog(
+            catalog_id=model.catalogo_id,
             key=model.clave,
             strategy_key=model.estrategia_clave,
             description=model.descripcion,
