@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError
+from app.shared.infrastructure.db.constraints import viola_la_restriccion
 from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
 
 from ..domain.entities import PoaExercise
@@ -13,17 +14,6 @@ from .models import PoaExerciseModel
 #: La única del año del ejercicio: es el nombre que Postgres le dio al `UNIQUE`
 #: en línea de `poa_ejercicios.anio` en la migración 0007.
 _UNICA_DEL_ANIO = "poa_ejercicios_anio_key"
-
-
-def _viola_la_unica_del_anio(exc: IntegrityError) -> bool:
-    """¿Esta violación es la del año repetido, y no otra?
-
-    Con asyncpg el nombre de la restricción viaja en la excepción original
-    (`orig.__cause__`), no en el texto: preguntarlo ahí evita adivinar por el
-    mensaje, que cambia con el idioma del servidor.
-    """
-    causa = getattr(exc.orig, "__cause__", None)
-    return getattr(causa, "constraint_name", None) == _UNICA_DEL_ANIO
 
 
 def _to_entity(model: PoaExerciseModel) -> PoaExercise:
@@ -61,7 +51,7 @@ class SqlAlchemyPoaRepository:
                 # POA por un `catalogo_id` inexistente, por ejemplo- se levanta
                 # tal cual: decir «ya existe» cuando lo que falló fue otra cosa
                 # manda a buscar un duplicado que no está.
-                if _viola_la_unica_del_anio(exc):
+                if viola_la_restriccion(exc, _UNICA_DEL_ANIO):
                     raise ConflictError("El ejercicio POA ya existe.") from exc
                 raise
             item.id = model.id

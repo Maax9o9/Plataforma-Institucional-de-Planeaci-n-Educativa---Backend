@@ -6,15 +6,14 @@ from pydantic import BaseModel, Field
 
 from ..domain.entities import PoaExercise
 from ..domain.value_objects import PoaExerciseStatus
+from .cedula_schemas import IdDePoa
 
 
 class CrearEjercicioRequest(BaseModel):
     anio: int = Field(ge=2000, le=2200)
-    #: El POA con el que se formula el año. Es obligatorio y sin valor por
-    #: omisión: no hay "el POA vigente" que adivinar. El tope es el de la columna
-    #: (un entero de 32 bits): un id mayor no es un POA que no existe sino un
-    #: valor que PostgreSQL ni acepta, y contestaría 500 donde el contrato es 404.
-    catalogo_id: int = Field(ge=1, le=2_147_483_647)
+    #: El POA con el que se formula el año. Obligatorio: no hay «el POA vigente»
+    #: que adivinar. Sus límites, y por qué, en `IdDePoa`.
+    catalogo_id: IdDePoa
     fecha_limite_formulacion: date | None = None
 
 

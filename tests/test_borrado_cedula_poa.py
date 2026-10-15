@@ -25,7 +25,7 @@ import pytest
 
 from app.modules.identity_access.domain.value_objects import Role
 from app.modules.poa_planning.domain.cedula_entities import PoaFormIssue
-from conftest import poa_inicial_id
+from helpers import poa_inicial_id
 from test_ciclo_poa import _account
 from test_poa_cedula_flow import _open_poa_period
 

@@ -15,7 +15,7 @@ from app.modules.poa_planning.infrastructure.reference_data import (
     POA_OBJECTIVES,
     POA_STRATEGIES,
 )
-from conftest import poa_inicial_id
+from helpers import poa_inicial_id
 
 
 @pytest.mark.asyncio

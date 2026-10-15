@@ -29,7 +29,7 @@ from app.modules.poa_planning.domain.entities import PoaExercise
 from app.shared.application.actor import ActorContext
 from app.shared.domain.exceptions import ForbiddenError, InvalidStateError
 from app.shared.infrastructure.db.sql_loader import split_sql
-from conftest import poa_inicial_id
+from helpers import poa_inicial_id
 
 
 def _random_year() -> int:

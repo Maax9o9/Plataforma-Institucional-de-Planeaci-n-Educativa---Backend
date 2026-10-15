@@ -15,7 +15,7 @@ import pytest
 from app.modules.identity_access.application.dto import RegisterUserCommand
 from app.modules.identity_access.application.use_cases.create_user import CreateUser
 from app.modules.identity_access.domain.value_objects import Role
-from conftest import poa_inicial_id
+from helpers import poa_inicial_id
 from test_poa_cedula_flow import _attach_follow_up_file, _open_poa_period
 
 

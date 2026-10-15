@@ -124,18 +124,6 @@ async def planeacion_headers(backend_client) -> dict[str, str]:
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
-async def poa_inicial_id(client, headers) -> int:
-    """El id del POA que siembra el sistema, para las pruebas que sólo necesitan
-    *un* POA del que colgar un ejercicio.
-
-    Se pide por el nombre y por la API, no por el repositorio: así sirve igual
-    en cualquier variante, y a quien sólo tiene cliente y cabeceras en la mano.
-    """
-    listado = await client.get("/api/v1/poa/catalogos-poa", headers=headers)
-    assert listado.status_code == 200, listado.text
-    return next(poa["id"] for poa in listado.json() if poa["nombre"] == "POA 2026")
-
-
 @pytest.fixture
 def app():
     return create_app(

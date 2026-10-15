@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.modules.indicators_capture.domain.value_objects import CaptureStatus
 from app.shared.domain.exceptions import ConflictError
+from app.shared.infrastructure.db.constraints import viola_la_restriccion
 from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
 
 from ..domain.cedula_entities import (
@@ -59,17 +60,6 @@ def _catalog_key(item) -> tuple[int, ...]:
 #: La única del nombre del POA. Es el nombre que Postgres le dio al `UNIQUE` en
 #: línea de `poa_catalogos.nombre` en la migración 0037.
 _UNICA_NOMBRE_DEL_POA = "poa_catalogos_nombre_key"
-
-
-def _viola_la_unica_del_nombre(exc: IntegrityError) -> bool:
-    """¿Esta violación es la del nombre repetido, y no otra?
-
-    Con asyncpg el nombre de la restricción viaja en la excepción original
-    (`orig.__cause__`), no en el texto: preguntarlo ahí evita adivinar por el
-    mensaje, que cambia con el idioma del servidor.
-    """
-    causa = getattr(exc.orig, "__cause__", None)
-    return getattr(causa, "constraint_name", None) == _UNICA_NOMBRE_DEL_POA
 
 
 def _con_catalogo(
@@ -192,7 +182,7 @@ class SqlAlchemyPoaFormRepository:
                 # a `usuarios` por un `creado_por` inexistente, por ejemplo- se
                 # levanta tal cual: decir «ya existe» cuando lo que falló fue
                 # otra cosa manda a buscar un duplicado que no está.
-                if _viola_la_unica_del_nombre(exc):
+                if viola_la_restriccion(exc, _UNICA_NOMBRE_DEL_POA):
                     raise ConflictError(f"Ya existe un POA llamado «{item.name}».") from exc
                 raise
             return self._catalog(model)

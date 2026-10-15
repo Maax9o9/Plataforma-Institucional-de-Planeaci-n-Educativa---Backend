@@ -10,6 +10,7 @@ import pytest
 from app.modules.identity_access.application.dto import RegisterUserCommand
 from app.modules.identity_access.application.use_cases.create_user import CreateUser
 from app.modules.identity_access.domain.value_objects import Role
+from helpers import IDS_QUE_NO_PUEDEN_SER_DE_UN_POA, poa_inicial_id
 
 API = "/api/v1"
 CATALOGO = f"{API}/poa/catalogos"
@@ -187,26 +188,16 @@ async def test_un_poa_que_no_existe_es_404_en_los_doce(backend_client, metodo, r
     assert f"El POA {POA_INEXISTENTE} no existe." == respuesta.json()["message"]
 
 
-#: Los dos extremos de lo que el catálogo no admite como id de POA: por arriba,
-#: el primer entero que no cabe en los 32 bits de la columna; por abajo, el
-#: primero que tampoco cabe, y el cero (un id serial empieza en 1).
-FUERA_DE_RANGO = [
-    pytest.param(2**31, "less_than_equal", id="mayor_que_el_entero_de_la_base"),
-    pytest.param(-(2**31) - 1, "greater_than_equal", id="menor_que_el_entero_de_la_base"),
-    pytest.param(0, "greater_than_equal", id="cero"),
-]
-
-
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("catalogo_id", "tipo"), FUERA_DE_RANGO)
+@pytest.mark.parametrize(("catalogo_id", "tipo"), IDS_QUE_NO_PUEDEN_SER_DE_UN_POA)
 @pytest.mark.parametrize(("metodo", "ruta", "cuerpo"), LOS_DOCE)
-async def test_un_poa_fuera_del_rango_de_la_base_es_422_y_no_500(
+async def test_un_id_que_no_puede_ser_de_un_poa_es_422_y_no_404_ni_500(
     backend_client, metodo, ruta, cuerpo, catalogo_id, tipo
 ):
-    """El id es un entero de 32 bits en la base. Uno que no cabe -por arriba o por
-    abajo- no es un POA que no existe sino un valor que PostgreSQL ni acepta como
-    parámetro: sin tope en la consulta llega hasta ahí y contesta 500, justo donde
-    el contrato es 404."""
+    """Un id que no cabe en el entero de 32 bits de la base no es un POA que no
+    existe sino un valor que PostgreSQL ni acepta como parámetro: sin límite en la
+    consulta llega hasta ahí y contesta 500, justo donde el contrato es 404. El
+    cero tampoco es un POA que no existe: los ids son seriales y empiezan en 1."""
     app, client = backend_client
     headers = await _planeacion(app, client, uuid4().hex[:8])
 
@@ -216,12 +207,6 @@ async def test_un_poa_fuera_del_rango_de_la_base_es_422_y_no_500(
 
     assert respuesta.status_code == 422, respuesta.text
     assert [(d["field"], d["type"]) for d in respuesta.json()["details"]] == [("catalogo_id", tipo)]
-
-
-async def _poa_inicial(client, headers) -> int:
-    listado = await client.get(f"{API}/poa/catalogos-poa", headers=headers)
-    assert listado.status_code == 200, listado.text
-    return next(p["id"] for p in listado.json() if p["nombre"] == "POA 2026")
 
 
 async def _fechas(client, headers) -> dict[int, datetime]:
@@ -250,7 +235,7 @@ async def test_cada_endpoint_trabaja_sobre_el_poa_que_se_le_pidió(backend_clien
     clave que ya existe, o el inicial amanecería editado."""
     app, client = backend_client
     headers = await _planeacion(app, client, uuid4().hex[:8])
-    inicial = await _poa_inicial(client, headers)
+    inicial = await poa_inicial_id(client, headers)
     otro = await client.post(
         f"{API}/poa/catalogos-poa",
         headers=headers,

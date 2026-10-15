@@ -7,71 +7,21 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.modules.identity_access.application.dto import RegisterUserCommand
-from app.modules.identity_access.application.use_cases.create_user import CreateUser
 from app.modules.identity_access.domain.value_objects import Role
 from app.modules.poa_planning.domain.entities import PoaExercise
 from app.shared.domain.exceptions import ConflictError, ValidationError
+from helpers import (
+    API,
+    IDS_QUE_NO_PUEDEN_SER_DE_UN_POA,
+    anio_libre,
+    crear_ejercicio,
+    crear_poa,
+)
+from test_ciclo_poa import _account
 
-API = "/api/v1"
 #: Un id que ningún POA tiene. La base de pruebas es persistente y el id es
 #: serial: con uno chico, tarde o temprano habría un POA que lo use.
 POA_INEXISTENTE = 999999
-
-
-async def _anio_libre(client, headers) -> int:
-    """El primer año que ningún ejercicio ocupa.
-
-    `poa_ejercicios.anio` es único en todo el sistema y la base de PostgreSQL
-    persiste durante la corrida. Se busca desde abajo y no con `max + 1` porque
-    otras pruebas piden años fijos arriba de 2160 (y los generadores al azar
-    reparten por todo el rango): subir desde el máximo toparía con ellas, o se
-    saldría del 2200 que el contrato admite.
-    """
-    listado = await client.get(f"{API}/poa/ejercicios", headers=headers)
-    assert listado.status_code == 200, listado.text
-    ocupados = {ejercicio["anio"] for ejercicio in listado.json()}
-    return next(anio for anio in range(2000, 2201) if anio not in ocupados)
-
-
-async def _poa(client, headers, anio: int) -> dict:
-    poa = await client.post(
-        f"{API}/poa/catalogos-poa",
-        headers=headers,
-        json={"nombre": f"POA {uuid4().hex[:6]}", "anio": anio, "origen": None},
-    )
-    assert poa.status_code == 201, poa.text
-    return poa.json()
-
-
-async def _ejercicio(client, headers, poa: dict, anio: int) -> dict:
-    creado = await client.post(
-        f"{API}/poa/ejercicios",
-        headers=headers,
-        json={"anio": anio, "catalogo_id": poa["id"]},
-    )
-    assert creado.status_code == 201, creado.text
-    return creado.json()
-
-
-async def _rectoria(app, client) -> dict[str, str]:
-    correo = f"ejercicio-poa-rectoria-{uuid4().hex[:8]}@example.com"
-    await CreateUser(
-        app.state.user_repository, app.state.password_hasher, app.state.event_bus
-    ).execute(
-        RegisterUserCommand(
-            email=correo,
-            full_name="Rectoría de pruebas",
-            password="password-seguro",
-            roles={Role.RECTORIA},
-            area_id=None,
-        )
-    )
-    login = await client.post(
-        f"{API}/auth/login", json={"correo": correo, "contrasena": "password-seguro"}
-    )
-    assert login.status_code == 200, login.text
-    return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
 async def _enviado(app, ejercicio: dict) -> None:
@@ -106,29 +56,24 @@ async def test_crear_un_ejercicio_sin_poa_se_rechaza(backend_client, planeacion_
 @pytest.mark.asyncio
 async def test_el_ejercicio_recuerda_su_poa(backend_client, planeacion_headers):
     app, client = backend_client
-    anio = await _anio_libre(client, planeacion_headers)
-    poa = await client.post(
-        f"{API}/poa/catalogos-poa",
-        headers=planeacion_headers,
-        json={"nombre": f"POA {uuid4().hex[:6]}", "anio": anio, "origen": None},
-    )
-    assert poa.status_code == 201, poa.text
+    anio = await anio_libre(client, planeacion_headers)
+    poa = await crear_poa(client, planeacion_headers, anio)
 
     creado = await client.post(
         f"{API}/poa/ejercicios",
         headers=planeacion_headers,
-        json={"anio": anio, "catalogo_id": poa.json()["id"]},
+        json={"anio": anio, "catalogo_id": poa["id"]},
     )
 
     assert creado.status_code == 201, creado.text
-    assert creado.json()["catalogo_id"] == poa.json()["id"]
+    assert creado.json()["catalogo_id"] == poa["id"]
     # Un id no se le muestra a nadie: la pantalla lee el nombre del POA, así que
     # tiene que venir en la respuesta y no resolverse allá.
-    assert creado.json()["catalogo_nombre"] == poa.json()["nombre"]
+    assert creado.json()["catalogo_nombre"] == poa["nombre"]
     # Y quedó guardado: quien lo lea después (la cédula, al resolver su POA)
     # tiene que encontrarlo en el ejercicio.
     guardado = await app.state.poa_repository.get_exercise(creado.json()["id"])
-    assert guardado.catalog_id == poa.json()["id"]
+    assert guardado.catalog_id == poa["id"]
 
 
 @pytest.mark.asyncio
@@ -136,12 +81,12 @@ async def test_el_listado_dice_de_que_poa_es_cada_ejercicio(backend_client, plan
     """Cada ejercicio trae el nombre de *su* POA, no el del primero ni el del
     inicial: con dos POA distintos, un nombre mal resuelto se nota."""
     _, client = backend_client
-    primer_anio = await _anio_libre(client, planeacion_headers)
-    poa_a = await _poa(client, planeacion_headers, primer_anio)
-    ejercicio_a = await _ejercicio(client, planeacion_headers, poa_a, primer_anio)
-    segundo_anio = await _anio_libre(client, planeacion_headers)
-    poa_b = await _poa(client, planeacion_headers, segundo_anio)
-    ejercicio_b = await _ejercicio(client, planeacion_headers, poa_b, segundo_anio)
+    primer_anio = await anio_libre(client, planeacion_headers)
+    poa_a = await crear_poa(client, planeacion_headers, primer_anio)
+    ejercicio_a = await crear_ejercicio(client, planeacion_headers, poa_a, primer_anio)
+    segundo_anio = await anio_libre(client, planeacion_headers)
+    poa_b = await crear_poa(client, planeacion_headers, segundo_anio)
+    ejercicio_b = await crear_ejercicio(client, planeacion_headers, poa_b, segundo_anio)
 
     listado = await client.get(f"{API}/poa/ejercicios", headers=planeacion_headers)
 
@@ -159,12 +104,12 @@ async def test_cada_respuesta_del_ejercicio_dice_su_poa(backend_client, planeaci
     y el listado: la pantalla del ejercicio se repinta con esa respuesta, y si
     ahí el nombre del POA faltara, se apagaría justo después de actuar."""
     app, client = backend_client
-    rectoria = await _rectoria(app, client)
-    anio = await _anio_libre(client, planeacion_headers)
-    poa = await _poa(client, planeacion_headers, anio)
-    vigente = await _ejercicio(client, planeacion_headers, poa, anio)
-    devuelto = await _ejercicio(
-        client, planeacion_headers, poa, await _anio_libre(client, planeacion_headers)
+    _, rectoria = await _account(app, client, Role.RECTORIA, uuid4().hex[:8])
+    anio = await anio_libre(client, planeacion_headers)
+    poa = await crear_poa(client, planeacion_headers, anio)
+    vigente = await crear_ejercicio(client, planeacion_headers, poa, anio)
+    devuelto = await crear_ejercicio(
+        client, planeacion_headers, poa, await anio_libre(client, planeacion_headers)
     )
     await _enviado(app, vigente)
     await _enviado(app, devuelto)
@@ -191,7 +136,7 @@ async def test_un_poa_que_no_existe_no_da_ejercicio(backend_client, planeacion_h
     un ejercicio colgando de la nada, y en PostgreSQL reventaría con la llave
     foránea cruda."""
     _, client = backend_client
-    anio = await _anio_libre(client, planeacion_headers)
+    anio = await anio_libre(client, planeacion_headers)
 
     inexistente = await client.post(
         f"{API}/poa/ejercicios",
@@ -206,29 +151,25 @@ async def test_un_poa_que_no_existe_no_da_ejercicio(backend_client, planeacion_h
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("catalogo_id", "tipo"),
-    [(2**31, "less_than_equal"), (0, "greater_than_equal")],
-    ids=["mayor_que_el_entero_de_la_base", "cero"],
-)
-async def test_un_catalogo_id_fuera_del_rango_de_la_base_es_422(
+@pytest.mark.parametrize(("catalogo_id", "tipo"), IDS_QUE_NO_PUEDEN_SER_DE_UN_POA)
+async def test_un_catalogo_id_que_no_puede_ser_de_un_poa_es_422(
     backend_client, planeacion_headers, catalogo_id, tipo
 ):
-    """Un id que PostgreSQL ni acepta como parámetro no es «un POA que no
-    existe»: llegaría hasta la base para contestar 500 donde el contrato es 404."""
+    """Un id que no cabe en el entero de 32 bits de la base no es «un POA que no
+    existe»: PostgreSQL ni lo acepta como parámetro, y llegaría hasta allá para
+    contestar 500 donde el contrato es 404. El cero tampoco es un POA que no
+    existe: los ids son seriales y empiezan en 1."""
     _, client = backend_client
-    anio = await _anio_libre(client, planeacion_headers)
+    anio = await anio_libre(client, planeacion_headers)
 
-    fuera_de_rango = await client.post(
+    rechazado = await client.post(
         f"{API}/poa/ejercicios",
         headers=planeacion_headers,
         json={"anio": anio, "catalogo_id": catalogo_id},
     )
 
-    assert fuera_de_rango.status_code == 422, fuera_de_rango.text
-    assert [(d["field"], d["type"]) for d in fuera_de_rango.json()["details"]] == [
-        ("catalogo_id", tipo)
-    ]
+    assert rechazado.status_code == 422, rechazado.text
+    assert [(d["field"], d["type"]) for d in rechazado.json()["details"]] == [("catalogo_id", tipo)]
 
 
 def test_la_entidad_no_depende_de_que_el_esquema_la_proteja():
@@ -244,17 +185,20 @@ def test_la_entidad_no_depende_de_que_el_esquema_la_proteja():
 async def test_dos_ejercicios_del_mismo_año_siguen_siendo_conflicto(
     backend_client, planeacion_headers
 ):
-    """Escribir el POA no deshace la regla de un ejercicio por año: el repositorio
-    sigue traduciendo la única del año al conflicto de siempre. Se llama directo,
+    """Escribir el POA no deshace la regla: un ejercicio por año **en todo el
+    sistema**, por decisión del cliente, aunque cuelgue de otro POA. El segundo
+    cuelga justamente de otro: con el mismo, relajar la única a
+    `(anio, catalogo_id)` no se notaría. Se llama al repositorio directo,
     saltándose al caso de uso, para probar el adaptador y no sus comprobaciones."""
     app, client = backend_client
-    anio = await _anio_libre(client, planeacion_headers)
-    poa = await _poa(client, planeacion_headers, anio)
+    anio = await anio_libre(client, planeacion_headers)
+    primero = await crear_poa(client, planeacion_headers, anio)
+    otro = await crear_poa(client, planeacion_headers, anio)
     repositorio = app.state.poa_repository
-    await repositorio.add_exercise(PoaExercise.create(anio, catalog_id=poa["id"]))
+    await repositorio.add_exercise(PoaExercise.create(anio, catalog_id=primero["id"]))
 
     with pytest.raises(ConflictError):
-        await repositorio.add_exercise(PoaExercise.create(anio, catalog_id=poa["id"]))
+        await repositorio.add_exercise(PoaExercise.create(anio, catalog_id=otro["id"]))
 
 
 @pytest.mark.asyncio
@@ -269,7 +213,7 @@ async def test_un_poa_inexistente_no_se_hace_pasar_por_año_repetido(
     depura a buscar un duplicado que no está, y es lo que hacía el `except` ancho
     con el `catalogo_id` que el adaptador no escribía."""
     app, client = backend_client
-    anio = await _anio_libre(client, planeacion_headers)
+    anio = await anio_libre(client, planeacion_headers)
 
     with pytest.raises(IntegrityError) as fallo:
         await app.state.poa_repository.add_exercise(

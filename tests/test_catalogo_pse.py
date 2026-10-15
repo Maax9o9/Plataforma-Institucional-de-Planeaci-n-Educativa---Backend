@@ -22,6 +22,7 @@ from app.modules.poa_planning.infrastructure.cedula_repository import (
 )
 from app.shared.application.actor import ActorContext
 from app.shared.domain.exceptions import ForbiddenError
+from helpers import poa_inicial_id
 
 CATALOGO = "/api/v1/poa/catalogos"
 
@@ -30,13 +31,6 @@ def _poa(catalogo_id: int, ruta: str) -> str:
     """La URL de un elemento del catálogo dentro de su POA, que es obligatorio."""
     separador = "&" if "?" in ruta else "?"
     return f"{CATALOGO}/{ruta}{separador}catalogo_id={catalogo_id}"
-
-
-async def _poa_inicial(client, headers) -> int:
-    """El POA que siembra el sistema, sobre el que estas pruebas trabajan."""
-    listado = await client.get("/api/v1/poa/catalogos-poa", headers=headers)
-    assert listado.status_code == 200, listado.text
-    return next(p["id"] for p in listado.json() if p["nombre"] == "POA 2026")
 
 
 async def _account(app, client, role: Role, suffix: str, area_id: int | None = None):
@@ -67,7 +61,7 @@ async def _nueva_rama(client, headers) -> dict[str, str | int]:
     prueba puede deshabilitar lo que acaba de crear sin dejar inservible el
     catalogo real para las demas pruebas de la misma base.
     """
-    catalogo_id = await _poa_inicial(client, headers)
+    catalogo_id = await poa_inicial_id(client, headers)
     objetivos = await client.get(_poa(catalogo_id, "objetivos?solo_activos=false"), headers=headers)
     assert objetivos.status_code == 200, objetivos.text
     numero = max((item["numero"] for item in objetivos.json()), default=0) + 1
@@ -157,7 +151,7 @@ async def _deshabilitar(client, headers, rama) -> None:
 
 
 async def _cedula_con_la_rama(client, headers, rama, area_id: int) -> dict:
-    catalogo_id = await _poa_inicial(client, headers)
+    catalogo_id = await poa_inicial_id(client, headers)
     anio = 2000 + (uuid4().int % 200)
     for _ in range(8):
         ejercicio = await client.post(

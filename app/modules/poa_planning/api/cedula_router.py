@@ -119,6 +119,7 @@ from .cedula_schemas import (
     EmitirCedulaPoaRequest,
     EstrategiaPoaCatalogoRequest,
     EstrategiaPoaCatalogoRespuesta,
+    IdDePoa,
     IndicadorCedulaRespuesta,
     IndicadorPoaCatalogoRequest,
     IndicadorPoaCatalogoRespuesta,
@@ -370,23 +371,10 @@ def _actividad_catalogo(item: PoaActivityCatalog) -> ActividadPoaCatalogoRespues
     )
 
 
-#: De qué POA se lee o se escribe. Obligatorio y sin valor por omisión, en los
-#: doce endpoints del catálogo: la «1.1» del 2026 y la del 2027 son dos filas
-#: distintas, y adivinar de cuál hablan es justo lo que hizo que editar un año
-#: cambiara los demás. Lo exige Pydantic: sin él, 422 con el parámetro que falta.
-#:
-#: Los dos extremos son los de la columna (un entero de 32 bits, serial, que
-#: empieza en 1): un id mayor que el tope, o por debajo del piso, no es un POA
-#: que no existe sino un valor que PostgreSQL ni acepta, y llegaría hasta allá
-#: para contestar 500 donde el contrato es 404. El piso es 1 y no el mínimo del
-#: entero porque un id de POA nunca es cero ni negativo.
+#: De qué POA se lee o se escribe: obligatorio en los doce endpoints del
+#: catálogo. Sus límites, y por qué, en `IdDePoa`.
 CatalogoQuery = Annotated[
-    int,
-    Query(
-        ge=1,
-        le=2_147_483_647,
-        description="El POA al que pertenece lo que se consulta o se edita.",
-    ),
+    IdDePoa, Query(description="El POA al que pertenece lo que se consulta o se edita.")
 ]
 
 
