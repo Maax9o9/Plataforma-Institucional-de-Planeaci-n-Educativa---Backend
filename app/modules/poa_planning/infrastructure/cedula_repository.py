@@ -127,7 +127,7 @@ class InMemoryPoaFormRepository:
         # en el selector. Lo comprueba aquí la variante en memoria porque en la
         # de Postgres lo comprueba la base.
         if any(otro.name == item.name and otro.id != item.id for otro in self.catalogs.values()):
-            raise ConflictError("Ya existe un POA con ese nombre.")
+            raise ConflictError(f"Ya existe un POA llamado «{item.name}».")
         if not item.id:
             item.id = next(self._next_catalog_id)
         self.catalogs[item.id] = item

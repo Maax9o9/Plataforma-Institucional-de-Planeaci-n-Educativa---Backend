@@ -424,6 +424,7 @@ async def test_el_caso_de_uso_tambien_exige_planeacion():
 
     with pytest.raises(ForbiddenError):
         await admin.save_strategy(
+            catalog_id=1,
             key="1.1",
             objective_number=1,
             denomination="Mi version",
