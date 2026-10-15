@@ -305,24 +305,34 @@ async def test_cada_endpoint_trabaja_sobre_el_poa_que_se_le_pidió(backend_clien
 # --- Quién puede qué --------------------------------------------------------
 
 
+#: Escrita a mano y no importada del router: si saliera de `PLANNING_ROLES`, un
+#: rol que se quitara de ahí saldría también de la prueba y nadie se enteraría.
+PUEDEN_CREAR_UN_POA = {Role.PLANEACION, Role.PLANEACION_ADMIN, Role.ADMIN_SISTEMA}
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("rol", [Role.CAPTURISTA_POA, Role.RECTORIA, Role.CONSULTA])
+@pytest.mark.parametrize("rol", list(Role))
 async def test_sólo_planeación_crea_un_poa(backend_client, rol):
+    """Los tres roles de Planeación pueden —el administrador del sistema
+    incluido, que es quien da de alta todo lo demás— y los otros cinco no. Se
+    recorre `Role` completo: un rol que se agregue mañana empieza prohibido, y
+    la prueba lo exige hasta que alguien decida lo contrario aquí."""
     app, client = backend_client
     suffix = uuid4().hex[:8]
-    intruso = await _cuenta(app, client, rol, suffix)
-    planeacion = await _planeacion(app, client, suffix)
-    nombre = f"POA del intruso {suffix}"
+    headers = await _cuenta(app, client, rol, suffix)
+    nombre = f"POA de {rol.value} {suffix}"
+    puede = rol in PUEDEN_CREAR_UN_POA
 
-    denegado = await client.post(
+    respuesta = await client.post(
         f"{API}/poa/catalogos-poa",
-        headers=intruso,
+        headers=headers,
         json={"nombre": nombre, "anio": 2027, "origen": None},
     )
 
-    assert denegado.status_code == 403, denegado.text
-    listado = await client.get(f"{API}/poa/catalogos-poa", headers=planeacion)
-    assert nombre not in [p["nombre"] for p in listado.json()]
+    assert respuesta.status_code == (201 if puede else 403), respuesta.text
+    # Y quien no puede no deja nada: un 403 que además guardara sería peor.
+    listado = await client.get(f"{API}/poa/catalogos-poa", headers=headers)
+    assert (nombre in [p["nombre"] for p in listado.json()]) is puede
 
 
 @pytest.mark.asyncio
