@@ -187,25 +187,35 @@ async def test_un_poa_que_no_existe_es_404_en_los_doce(backend_client, metodo, r
     assert f"El POA {POA_INEXISTENTE} no existe." == respuesta.json()["message"]
 
 
+#: Los dos extremos de lo que el catálogo no admite como id de POA: por arriba,
+#: el primer entero que no cabe en los 32 bits de la columna; por abajo, el
+#: primero que tampoco cabe, y el cero (un id serial empieza en 1).
+FUERA_DE_RANGO = [
+    pytest.param(2**31, "less_than_equal", id="mayor_que_el_entero_de_la_base"),
+    pytest.param(-(2**31) - 1, "greater_than_equal", id="menor_que_el_entero_de_la_base"),
+    pytest.param(0, "greater_than_equal", id="cero"),
+]
+
+
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("catalogo_id", "tipo"), FUERA_DE_RANGO)
 @pytest.mark.parametrize(("metodo", "ruta", "cuerpo"), LOS_DOCE)
 async def test_un_poa_fuera_del_rango_de_la_base_es_422_y_no_500(
-    backend_client, metodo, ruta, cuerpo
+    backend_client, metodo, ruta, cuerpo, catalogo_id, tipo
 ):
-    """El id es un entero de 32 bits en la base. Uno mayor no es un POA que no
-    existe sino un valor que PostgreSQL ni acepta como parámetro: sin tope en la
-    consulta llega hasta ahí y contesta 500, justo donde el contrato es 404."""
+    """El id es un entero de 32 bits en la base. Uno que no cabe -por arriba o por
+    abajo- no es un POA que no existe sino un valor que PostgreSQL ni acepta como
+    parámetro: sin tope en la consulta llega hasta ahí y contesta 500, justo donde
+    el contrato es 404."""
     app, client = backend_client
     headers = await _planeacion(app, client, uuid4().hex[:8])
 
     respuesta = await client.request(
-        metodo, f"{CATALOGO}/{ruta}?catalogo_id={2**31}", headers=headers, json=cuerpo
+        metodo, f"{CATALOGO}/{ruta}?catalogo_id={catalogo_id}", headers=headers, json=cuerpo
     )
 
     assert respuesta.status_code == 422, respuesta.text
-    assert [(d["field"], d["type"]) for d in respuesta.json()["details"]] == [
-        ("catalogo_id", "less_than_equal")
-    ]
+    assert [(d["field"], d["type"]) for d in respuesta.json()["details"]] == [("catalogo_id", tipo)]
 
 
 async def _poa_inicial(client, headers) -> int:
