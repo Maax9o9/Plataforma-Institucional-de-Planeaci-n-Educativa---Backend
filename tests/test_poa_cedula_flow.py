@@ -15,7 +15,8 @@ from app.modules.poa_planning.infrastructure.reference_data import (
     POA_OBJECTIVES,
     POA_STRATEGIES,
 )
-from helpers import poa_inicial_id
+from app.shared.domain.calendar import institutional_today
+from helpers import anio_libre, cuatrimestres, poa_inicial_id
 
 
 @pytest.mark.asyncio
@@ -60,10 +61,18 @@ async def test_multiple_children_area_permissions_and_snapshots(backend_client):
     capturer, capturer_headers = await account(Role.CAPTURISTA_POA, area_id)
     _, reviewer_headers = await account(Role.REVISOR_POA, area_id)
     planner, planner_headers = await account(Role.PLANEACION)
+    # El anio del ejercicio es unico en todo el sistema y la base de PostgreSQL
+    # persiste durante la corrida, asi que un literal aqui es una cita a ciegas
+    # con cualquier otra prueba que pida ese mismo anio: `test_ciclo_poa`
+    # sortea el suyo en el rango 2000-2199, que contenia al 2197 que estaba
+    # escrito aqui. Esta peticion no reintenta -ni debe-, asi que el anio se
+    # pide libre. Y tiene que ser uno que no haya empezado: la estructura de la
+    # cedula se cierra al terminar su primer cuatrimestre.
+    anio = await anio_libre(client, headers, desde=institutional_today().year + 1)
     exercise = await client.post(
         "/api/v1/poa/ejercicios",
         headers=headers,
-        json={"anio": 2197, "catalogo_id": await poa_inicial_id(client, headers)},
+        json={"anio": anio, "catalogo_id": await poa_inicial_id(client, headers)},
     )
     assert exercise.status_code == 201, exercise.text
     response = await client.post(
@@ -78,11 +87,7 @@ async def test_multiple_children_area_permissions_and_snapshots(backend_client):
                 {"nombre": "Titular Rectoría", "cargo": "Rectoría"},
                 {"nombre": "Titular Secretaría", "cargo": "Secretaría Académica"},
             ],
-            "cuatrimestres": [
-                {"numero": 1, "fecha_inicio": "2197-01-01", "fecha_fin": "2197-04-30"},
-                {"numero": 2, "fecha_inicio": "2197-05-01", "fecha_fin": "2197-08-31"},
-                {"numero": 3, "fecha_inicio": "2197-09-01", "fecha_fin": "2197-12-31"},
-            ],
+            "cuatrimestres": cuatrimestres(anio),
         },
     )
     assert response.status_code == 201, response.text
@@ -183,7 +188,11 @@ async def test_multiple_children_area_permissions_and_snapshots(backend_client):
         )
         assert follow_up.status_code == 200, follow_up.text
         evidence = await _attach_follow_up_file(
-            client, capturer_headers, follow_up.json()["id"], f"multiple-{index}", "2197-04-30"
+            client,
+            capturer_headers,
+            follow_up.json()["id"],
+            f"multiple-{index}",
+            f"{anio}-04-30",
         )
         if index == 0:
             first_evidence_id = evidence.json()["id"]
@@ -206,7 +215,7 @@ async def test_multiple_children_area_permissions_and_snapshots(backend_client):
     )
     assert issue.status_code == 201, issue.text
     snapshot = issue.json()["snapshot"]
-    assert snapshot["encabezado"]["anio"] == 2197
+    assert snapshot["encabezado"]["anio"] == anio
     assert snapshot["encabezado"]["tipo_estrategia"] == "Vinculación"
     assert len(snapshot["bloque_firmas"]) == 2
     assert snapshot["seccion_1_estrategia"]["area_responsable_nombre"] == f"Área ejecutora {suffix}"
@@ -276,11 +285,7 @@ async def test_multiple_children_area_permissions_and_snapshots(backend_client):
             "ejercicio_id": exercise.json()["id"],
             "estrategia_clave": "6.1",
             "area_responsable_id": new_area.json()["id"],
-            "cuatrimestres": [
-                {"numero": 1, "fecha_inicio": "2197-01-01", "fecha_fin": "2197-04-30"},
-                {"numero": 2, "fecha_inicio": "2197-05-01", "fecha_fin": "2197-08-31"},
-                {"numero": 3, "fecha_inicio": "2197-09-01", "fecha_fin": "2197-12-31"},
-            ],
+            "cuatrimestres": cuatrimestres(anio),
         },
     )
     assert duplicate_target.status_code == 201, duplicate_target.text

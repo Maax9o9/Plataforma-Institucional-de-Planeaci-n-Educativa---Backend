@@ -31,12 +31,20 @@ from test_poa_cedula_flow import _open_poa_period
 
 
 async def _exercise(client, admin_headers, anio: int, *, with_deadline: bool = False) -> dict:
-    # A diferencia de `test_ciclo_poa._new_exercise`, aquí el año es fijo y no
-    # sale de un generador aleatorio compartido: cada prueba de este archivo
-    # ya trae su propio año (ver los literales al pie del archivo), elegido
-    # para no chocar con los años fijos que usan otras suites. Ir por un año
-    # propio y determinista evita el mismo riesgo de colisión entre pruebas
-    # que ya existe en el generador aleatorio.
+    # Cada prueba de este archivo trae su propio año fijo (ver los literales en
+    # las llamadas), distinto de los que usan las demás suites.
+    #
+    # Ojo con lo que eso *no* protege: elegir un año fijo no lo pone a salvo del
+    # generador aleatorio de `test_ciclo_poa`, que sortea en el rango 2000-2199
+    # y por tanto puede sacar cualquiera de los de aquí. Lo que hoy salva a este
+    # archivo es que pytest lo recoge antes que a cualquiera que sortee un año
+    # -ningún archivo anterior crea ejercicios-, así que el 2160-2165 ya está
+    # tomado cuando el primer sorteo ocurre. Esa es una propiedad del orden de
+    # recogida, no una invariante declarada: si este archivo se renombrara, o
+    # alguno de los anteriores empezara a crear ejercicios, volvería el 409
+    # intermitente que `test_poa_cedula_flow` sufrió con su 2197 fijo. El
+    # remedio, cuando toque, es `anio_libre` de `helpers.py` con un `desde`
+    # que mantenga el año por venir -el borrado exige ejercicio editable-.
     catalogo_id = await poa_inicial_id(client, admin_headers)
     body = {"anio": anio, "catalogo_id": catalogo_id}
     if with_deadline:

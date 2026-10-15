@@ -7,6 +7,7 @@ from app.modules.evidence_management.domain.value_objects import EvidenceType, F
 from app.modules.indicators_reports.application.service import ReportResult
 from app.modules.institutional_catalogs.domain.ports.repositories import AreaRepository
 from app.modules.poa_planning.application.access_control import can_edit_structure
+from app.modules.poa_planning.domain.cedula_entities import PoaActivityCatalog
 from app.modules.poa_planning.domain.ports.cedula_repository import PoaFormRepository
 from app.shared.application.actor import ActorContext
 from app.shared.domain.exceptions import ForbiddenError
@@ -45,7 +46,7 @@ class PoaReportService:
         # reporte puede cruzar varios ejercicios y por tanto varios POAs, y la
         # clave de una acción sólo vale dentro del suyo. De ahí que la
         # descripción se busque por `(POA, clave)`.
-        catalogs = {}
+        catalogs: dict[tuple[int, str], PoaActivityCatalog] = {}
         for catalog_id in {form.catalog_id for form in forms}:
             catalogs.update(
                 {

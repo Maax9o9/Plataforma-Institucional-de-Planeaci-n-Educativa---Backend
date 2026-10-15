@@ -30,7 +30,9 @@ from app.modules.identity_access.infrastructure.sql_repository import (
     SqlAlchemyRefreshTokenStore,
 )
 from app.scripts.seed_integration import seed
+from app.shared.domain.calendar import institutional_today
 from app.shared.infrastructure.db.unit_of_work import SqlAlchemyUnitOfWorkFactory
+from helpers import anio_libre
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
@@ -282,9 +284,16 @@ async def test_postgresql_directory_roles_and_form_quarter_transaction():
                 json={"codigo": f"SQL-{suffix}", "nombre": f"Área SQL {suffix}"},
                 headers=headers,
             )
+            # Libre y no literal, por lo mismo que en `test_poa_cedula_flow`:
+            # el anio del ejercicio es unico en todo el sistema y esta prueba
+            # escribe en la base compartida, asi que el 2198 que estaba escrito
+            # aqui competia con el sorteo 2000-2199 de `test_ciclo_poa`. Las
+            # fechas de los cuatrimestres son deliberadamente irregulares -no
+            # las de `cuatrimestres()`-, asi que se arman con el anio elegido.
+            anio = await anio_libre(client, headers, desde=institutional_today().year + 1)
             exercise = await client.post(
                 "/api/v1/poa/ejercicios",
-                json={"anio": 2198, "catalogo_id": catalogo_id},
+                json={"anio": anio, "catalogo_id": catalogo_id},
                 headers=headers,
             )
             form = await client.post(
@@ -296,18 +305,18 @@ async def test_postgresql_directory_roles_and_form_quarter_transaction():
                     "cuatrimestres": [
                         {
                             "numero": 1,
-                            "fecha_inicio": "2198-01-10",
-                            "fecha_fin": "2198-04-20",
+                            "fecha_inicio": f"{anio}-01-10",
+                            "fecha_fin": f"{anio}-04-20",
                         },
                         {
                             "numero": 2,
-                            "fecha_inicio": "2198-05-05",
-                            "fecha_fin": "2198-08-25",
+                            "fecha_inicio": f"{anio}-05-05",
+                            "fecha_fin": f"{anio}-08-25",
                         },
                         {
                             "numero": 3,
-                            "fecha_inicio": "2198-09-03",
-                            "fecha_fin": "2198-12-15",
+                            "fecha_inicio": f"{anio}-09-03",
+                            "fecha_fin": f"{anio}-12-15",
                         },
                     ],
                 },

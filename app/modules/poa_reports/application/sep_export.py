@@ -72,15 +72,21 @@ class ExportarFormatoSep:
         if exercise is None:
             raise ResourceNotFoundError("El ejercicio POA no existe.")
 
-        # Los tres catálogos salen del POA del que cuelga el ejercicio que se
-        # exporta: el formato de un año tiene que decir lo que decía *ese* POA,
-        # y la clave `1.1.1` puede existir en varios con textos distintos.
+        # Las cuatro consultas al catálogo salen del POA del que cuelga el
+        # ejercicio que se exporta: el formato de un año tiene que decir lo que
+        # decía *ese* POA, y la clave `1.1.1` puede existir en varios con
+        # textos distintos.
         #
         # Aquí basta un POA -y no el conjunto distinto, como en el tablero y en
-        # los reportes- porque la exportación está acotada a un ejercicio y la
-        # foránea compuesta de la base no deja que una de sus cédulas apunte a
-        # otro catálogo. Se piden antes del bucle porque no habría cédulas de
-        # las que sacar el dato si el ejercicio estuviera vacío.
+        # los reportes- porque la exportación está acotada a un ejercicio. Y
+        # para que eso se pueda comprobar leyendo esta función, las cuatro usan
+        # esta misma local y ninguna vuelve a `form.catalog_id`: son iguales
+        # -lo garantizan `uq_poa_ejercicio_catalogo` y la foránea compuesta de
+        # la cédula-, pero leerlo de un solo sitio no obliga a saberse el
+        # esquema para creerle al párrafo de arriba.
+        #
+        # Los tres primeros se piden antes del bucle porque no habría cédulas
+        # de las que sacar el dato si el ejercicio estuviera vacío.
         catalogo_id = exercise.catalog_id
         objetivos = {
             item.number: item for item in await self.forms.list_objectives(catalog_id=catalogo_id)
@@ -98,7 +104,7 @@ class ExportarFormatoSep:
             detalle = await self.forms.get_detail(form.id)
             if detalle is None:
                 continue
-            estrategia = await self.forms.get_strategy(form.catalog_id, form.strategy_key)
+            estrategia = await self.forms.get_strategy(catalogo_id, form.strategy_key)
             objetivo = objetivos.get(form.objective_number)
             cedulas.append(
                 CedulaDelFormato(

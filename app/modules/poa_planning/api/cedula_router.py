@@ -929,8 +929,6 @@ async def get_follow_up_card(
     ):
         raise ForbiddenError("El seguimiento del POA no es de tu área.")
 
-    # El POA sale de la actividad, igual que al armar la tarjeta más abajo: la
-    # pantalla de captura y el tablero tienen que decir lo mismo.
     catalogo = await repository.get_activity_catalog(activity.catalog_id, activity.activity_key)
     evidencias = await request.app.state.evidence_repository.count_by_entity(
         FlowEntity.POA_FORM_FOLLOW_UP, [follow_up.id]
