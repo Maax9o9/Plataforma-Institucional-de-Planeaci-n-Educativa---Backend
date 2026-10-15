@@ -33,9 +33,18 @@ COMMENT ON COLUMN poa_catalogos.nombre IS
 -- apropiarse. Si se insertara igual, `ensure_catalogs()` la encontraria al
 -- arrancar -devuelve el POA mas antiguo y se da por sembrada-, y las cuatro
 -- tablas del catalogo quedarian vacias: la aplicacion levanta sin un solo
--- error y la pantalla del catalogo sale en blanco. Basta preguntar por los
--- objetivos: en la 0022 las otras tres cuelgan de ellos con foranea
--- obligatoria, asi que si no hay objetivos no hay catalogo ninguno.
+-- error y la pantalla del catalogo sale en blanco.
+--
+-- Se pregunta por los objetivos, y eso garantiza la mitad que importa: en la
+-- 0022 las otras tres cuelgan de ellos con foranea obligatoria, asi que sin
+-- objetivos no hay catalogo ninguno y a la condicion no se le escapa ninguna
+-- instalacion nueva. La inversa -que haber objetivos implique catalogo
+-- completo- las foraneas NO la garantizan: una base con objetivos y las otras
+-- tres vacias recibiria cabecera, `ensure_catalogs()` la encontraria y el
+-- catalogo quedaria a medias en silencio. Lo que vuelve ese caso inalcanzable
+-- no son las foraneas, es el sembrado: inserta las cuatro tablas dentro de un
+-- solo `session_scope` y con un solo commit, asi que o estan las cuatro o no
+-- esta ninguna.
 INSERT INTO poa_catalogos (nombre, anio, origen)
 SELECT 'POA 2026', 2026, 'Catálogo inicial del sistema'
 WHERE EXISTS (SELECT 1 FROM poa_catalogo_objetivos);

@@ -36,11 +36,15 @@ from app.main import create_app
 
 RAIZ = Path(__file__).resolve().parents[1]
 
-#: La base que estas pruebas crean y tiran. Lleva otro nombre a proposito. El
-#: nombre es fijo y no lleva sufijo al azar para que, si una corrida muere sin
-#: limpiar, la siguiente barra la huerfana en vez de dejar una por corrida; se
-#: puede porque la suite corre en serie y la fixture es de cada prueba.
-BASE_DESECHABLE = "planeacion_recien_nacida"
+#: Por donde empiezan los nombres de las bases que estas pruebas crean y
+#: tiran. Lleva otro nombre a proposito, y sirve para reconocer las huerfanas.
+PREFIJO_DESECHABLE = "planeacion_recien_nacida"
+
+#: La base de *esta* corrida. Lleva el PID dentro para que dos procesos de
+#: pytest -hoy no pasa, porque `pytest-xdist` no esta instalado y la suite
+#: corre en serie, pero basta que alguien lo instale- no se tiren la base el
+#: uno al otro en mitad de la migracion.
+BASE_DESECHABLE = f"{PREFIJO_DESECHABLE}_{os.getpid()}"
 
 #: Las que esta prueba no puede crear ni tirar jamas, pase lo que pase con el
 #: nombre de arriba. `planeacion` tiene los datos reales y `planeacion_test` la
@@ -120,12 +124,53 @@ def _comprobar_que_es_desechable(url_de_la_suite: str) -> None:
     verdad- es todo lo que haria falta. Falla, no se salta: que el nombre
     coincida con una base real no es una condicion del entorno, es un error.
     """
-    if BASE_DESECHABLE in BASES_INTOCABLES:
-        pytest.fail(f"«{BASE_DESECHABLE}» no es desechable: esta prueba la tiraria.")
-    if BASE_DESECHABLE == _base_de(url_de_la_suite):
-        pytest.fail(
-            f"«{BASE_DESECHABLE}» es la base de TEST_DATABASE_URL, que usa el resto de la suite."
-        )
+    for nombre in (PREFIJO_DESECHABLE, BASE_DESECHABLE):
+        if nombre in BASES_INTOCABLES:
+            pytest.fail(f"«{nombre}» no es desechable: esta prueba la tiraria.")
+        if nombre == _base_de(url_de_la_suite):
+            pytest.fail(
+                f"«{nombre}» es la base de TEST_DATABASE_URL, que usa el resto de la suite."
+            )
+
+
+def _de_un_proceso_vivo(nombre: str) -> bool:
+    """¿Queda un proceso con el PID que el nombre lleva al final?"""
+    sufijo = nombre.rpartition("_")[2]
+    if not sufijo.isdigit() or int(sufijo) <= 0:
+        return False
+    try:
+        os.kill(int(sufijo), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Existe y es de otro usuario: no es nuestra y no se toca.
+        return True
+    return True
+
+
+async def _barrer_huerfanas(conexion: asyncpg.Connection) -> None:
+    """Tira la base de esta corrida y las que dejo una corrida muerta.
+
+    Se reconocen por el prefijo. La de otro proceso que siga vivo se respeta:
+    con `pytest-xdist` dos trabajadores corren a la vez, y barrer por prefijo a
+    secas le tiraria a uno la base que el otro esta migrando, que es justo la
+    carrera que el PID del nombre viene a cerrar. Si el PID ya no existe, la
+    base es basura y se va. Un PID reciclado por otro proceso deja la huerfana
+    en pie una corrida mas; se la lleva la siguiente.
+    """
+    candidatas = await conexion.fetch(
+        "SELECT datname FROM pg_database WHERE starts_with(datname, $1)",
+        PREFIJO_DESECHABLE,
+    )
+    for fila in candidatas:
+        nombre = fila["datname"]
+        # Imposible por el prefijo -las dos reales son mas cortas que el-, pero
+        # esto es lo unico que emite un DROP con un nombre que no es el literal.
+        if nombre in BASES_INTOCABLES:
+            continue
+        if nombre != BASE_DESECHABLE and _de_un_proceso_vivo(nombre):
+            continue
+        await conexion.execute(f'DROP DATABASE IF EXISTS "{nombre}" WITH (FORCE)')
 
 
 async def _consultar(url: str, consulta: str):
@@ -182,13 +227,13 @@ async def base_recien_nacida():
         pytest.skip(f"No se pudo conectar a «postgres» para crear la base desechable: {fallo}")
 
     # `FORCE` desaloja lo que haya quedado conectado (PostgreSQL 13 y arriba;
-    # el proyecto corre 16). El `DROP` de antes barre la huerfana que pudiera
-    # haber dejado una corrida muerta: `CREATE` sobre una base que ya existe
-    # fallaria, y la prueba exige nacer vacia.
+    # el proyecto corre 16). El barrido de antes se lleva lo que pudiera haber
+    # dejado una corrida muerta: `CREATE` sobre una base que ya existe fallaria,
+    # y la prueba exige nacer vacia.
     tirar = f'DROP DATABASE IF EXISTS "{BASE_DESECHABLE}" WITH (FORCE)'
     try:
         try:
-            await conexion.execute(tirar)
+            await _barrer_huerfanas(conexion)
             await conexion.execute(f'CREATE DATABASE "{BASE_DESECHABLE}"')
         except asyncpg.PostgresError as fallo:
             # Sin permiso para crear bases, o con la plantilla ocupada: no hay
