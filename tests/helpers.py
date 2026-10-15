@@ -24,6 +24,13 @@ IDS_QUE_NO_PUEDEN_SER_DE_UN_POA = [
     pytest.param(0, "greater_than_equal", id="cero"),
 ]
 
+#: Un id que ningún POA tiene. La base de pruebas es persistente y el id es
+#: serial: con uno chico, tarde o temprano habría un POA que lo use. Vive aquí
+#: porque lo piden las pruebas del catálogo, las del ejercicio y las de la
+#: cédula, y tres copias del mismo número son tres sitios donde dejar de
+#: coincidir.
+POA_INEXISTENTE = 999999
+
 
 async def poa_inicial_id(client, headers) -> int:
     """El id del POA que siembra el sistema, para las pruebas que sólo necesitan
@@ -37,19 +44,23 @@ async def poa_inicial_id(client, headers) -> int:
     return next(poa["id"] for poa in listado.json() if poa["nombre"] == "POA 2026")
 
 
-async def anio_libre(client, headers) -> int:
-    """El primer año que ningún ejercicio ocupa.
+async def anio_libre(client, headers, *, desde: int = 2000) -> int:
+    """El primer año, a partir de `desde`, que ningún ejercicio ocupa.
 
     `poa_ejercicios.anio` es único en todo el sistema y la base de PostgreSQL
     persiste durante la corrida. Se busca desde abajo y no con `max + 1` porque
     otras pruebas piden años fijos (2036, 2160 a 2165, 2197 y 2198) y los
     generadores al azar reparten por todo el rango: subir desde el máximo toparía con ellas, o se
     saldría del 2200 que el contrato admite.
+
+    `desde` es para quien además necesita que el año no haya empezado: la
+    estructura de una cédula se cierra al terminar su primer cuatrimestre, así
+    que sólo se puede formular en un ejercicio por venir.
     """
     listado = await client.get(f"{API}/poa/ejercicios", headers=headers)
     assert listado.status_code == 200, listado.text
     ocupados = {ejercicio["anio"] for ejercicio in listado.json()}
-    return next(anio for anio in range(2000, 2201) if anio not in ocupados)
+    return next(anio for anio in range(desde, 2201) if anio not in ocupados)
 
 
 async def crear_poa(client, headers, anio: int) -> dict:

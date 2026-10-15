@@ -14,6 +14,13 @@ from app.modules.identity_access.application.dto import RegisterUserCommand
 from app.modules.identity_access.application.use_cases.create_user import CreateUser
 from app.modules.identity_access.domain.value_objects import Role
 
+# `tests/helpers.py` no es un archivo de prueba, asi que pytest no reescribe
+# sus aserciones por su cuenta: un `assert creada.status_code == 201` que falla
+# dentro de un ayudante mostraba `AssertionError: <el cuerpo de la respuesta>`
+# en vez de `assert 500 == 201`. Pedirlo aqui -antes de que cualquier modulo de
+# prueba importe `helpers`- devuelve el mensaje que dice que se comparaba.
+pytest.register_assert_rewrite("helpers")
+
 # Tablas con datos sembrados por una migracion (no por las pruebas). Si se
 # vaciaran junto con el resto, nada las repuebla: `unidades_medida` perderia
 # las veinte claves de la migracion 0032 y `alembic_version` perderia el

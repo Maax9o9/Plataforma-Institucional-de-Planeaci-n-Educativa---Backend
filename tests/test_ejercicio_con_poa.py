@@ -13,15 +13,12 @@ from app.shared.domain.exceptions import ConflictError, ValidationError
 from helpers import (
     API,
     IDS_QUE_NO_PUEDEN_SER_DE_UN_POA,
+    POA_INEXISTENTE,
     anio_libre,
     crear_ejercicio,
     crear_poa,
 )
 from test_ciclo_poa import _account
-
-#: Un id que ningún POA tiene. La base de pruebas es persistente y el id es
-#: serial: con uno chico, tarde o temprano habría un POA que lo use.
-POA_INEXISTENTE = 999999
 
 
 async def _enviado(app, ejercicio: dict) -> None:

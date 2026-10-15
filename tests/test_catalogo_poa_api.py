@@ -10,13 +10,10 @@ import pytest
 from app.modules.identity_access.application.dto import RegisterUserCommand
 from app.modules.identity_access.application.use_cases.create_user import CreateUser
 from app.modules.identity_access.domain.value_objects import Role
-from helpers import IDS_QUE_NO_PUEDEN_SER_DE_UN_POA, poa_inicial_id
+from helpers import IDS_QUE_NO_PUEDEN_SER_DE_UN_POA, POA_INEXISTENTE, poa_inicial_id
 
 API = "/api/v1"
 CATALOGO = f"{API}/poa/catalogos"
-#: Un id que ningún POA tiene. La base de pruebas es persistente y el id es
-#: serial: con uno chico, tarde o temprano habría un POA que lo use.
-POA_INEXISTENTE = 999999
 
 
 async def _cuenta(app, client, rol: Role, suffix: str) -> dict[str, str]:
