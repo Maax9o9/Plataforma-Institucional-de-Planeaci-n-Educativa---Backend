@@ -916,6 +916,9 @@ async def get_follow_up_card(
     )
     card = PoaFollowUpCard(
         id=follow_up.id,
+        # El POA sale de la actividad, que ya lo trae: la tarjeta del tablero
+        # se arma igual, y las dos tienen que decir lo mismo.
+        catalog_id=activity.catalog_id,
         form_id=activity.form_id,
         activity_id=activity.id,
         activity_key=activity.activity_key,

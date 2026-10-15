@@ -61,6 +61,12 @@ def _catalog_key(item) -> tuple[int, ...]:
 #: línea de `poa_catalogos.nombre` en la migración 0037.
 _UNICA_NOMBRE_DEL_POA = "poa_catalogos_nombre_key"
 
+#: La que dice que una cédula es la misma: un ejercicio, una estrategia y un
+#: área. Es el nombre que Postgres le dio al `UNIQUE (ejercicio_id,
+#: estrategia_clave, area_responsable_id)` en línea de la migración 0022,
+#: truncado a los 63 caracteres que admite un identificador.
+_UNICA_CEDULA_DEL_AREA = "poa_cedulas_ejercicio_id_estrategia_clave_area_responsable__key"
+
 
 def _con_catalogo(
     filas: tuple[dict[str, object], ...], catalogo_id: int
@@ -370,6 +376,7 @@ class SqlAlchemyPoaFormRepository:
         async with session_scope(self.session_factory) as session:
             try:
                 model = PoaFormModel(
+                    catalogo_id=item.catalog_id,
                     ejercicio_id=item.exercise_id,
                     objetivo_numero=item.objective_number,
                     estrategia_clave=item.strategy_key,
@@ -387,9 +394,16 @@ class SqlAlchemyPoaFormRepository:
                 await commit_or_flush(session)
             except IntegrityError as exc:
                 await session.rollback()
-                raise ConflictError(
-                    "Ya existe una cédula para la estrategia, área y ejercicio."
-                ) from exc
+                # Sólo la del duplicado es un conflicto. Las foráneas compuestas
+                # contra el ejercicio y el catálogo -las que impiden que la
+                # cédula apunte al POA de otro año- se levantan tal cual: decir
+                # «ya existe una cédula» cuando lo que falló fue el POA manda a
+                # buscar un duplicado que no está, y eso cuesta una tarde.
+                if viola_la_restriccion(exc, _UNICA_CEDULA_DEL_AREA):
+                    raise ConflictError(
+                        "Ya existe una cédula para la estrategia, área y ejercicio."
+                    ) from exc
+                raise
         item.id = model.id
         item.created_at = now
         item.updated_at = now
@@ -498,6 +512,7 @@ class SqlAlchemyPoaFormRepository:
         async with session_scope(self.session_factory) as session:
             try:
                 model = PoaFormIndicatorModel(
+                    catalogo_id=item.catalog_id,
                     cedula_id=item.form_id,
                     indicador_clave=item.indicator_key,
                     meta_institucional=item.institutional_goal,
@@ -554,6 +569,7 @@ class SqlAlchemyPoaFormRepository:
         async with session_scope(self.session_factory) as session:
             try:
                 model = PoaFormActivityModel(
+                    catalogo_id=item.catalog_id,
                     cedula_id=item.form_id,
                     actividad_clave=item.activity_key,
                     unidad_medida=item.unit,
@@ -752,6 +768,7 @@ class SqlAlchemyPoaFormRepository:
             return [
                 PoaFollowUpCard(
                     id=follow_up.id,
+                    catalog_id=form.catalogo_id,
                     form_id=form.id,
                     activity_id=activity.id,
                     activity_key=activity.actividad_clave,
@@ -912,6 +929,7 @@ class SqlAlchemyPoaFormRepository:
     def _form(model: PoaFormModel) -> PoaForm:
         return PoaForm(
             id=model.id,
+            catalog_id=model.catalogo_id,
             exercise_id=model.ejercicio_id,
             objective_number=model.objetivo_numero,
             strategy_key=model.estrategia_clave,
@@ -940,6 +958,7 @@ class SqlAlchemyPoaFormRepository:
     def _form_indicator(model: PoaFormIndicatorModel) -> PoaFormIndicator:
         return PoaFormIndicator(
             id=model.id,
+            catalog_id=model.catalogo_id,
             form_id=model.cedula_id,
             indicator_key=model.indicador_clave,
             institutional_goal=model.meta_institucional,
@@ -960,6 +979,7 @@ class SqlAlchemyPoaFormRepository:
     ) -> PoaFormActivity:
         return PoaFormActivity(
             id=model.id,
+            catalog_id=model.catalogo_id,
             form_id=model.cedula_id,
             activity_key=model.actividad_clave,
             unit=model.unidad_medida,

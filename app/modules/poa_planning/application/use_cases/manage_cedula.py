@@ -295,13 +295,17 @@ class CreatePoaForm:
             previous_end = quarter.ends_on
         if not _can_override_structure_lock(command.actor) and _today() > quarters[0].ends_on:
             raise InvalidStateError("No se puede crear una cédula después del primer cuatrimestre.")
-        strategy = await self.repository.get_strategy(command.strategy_key)
+        # El POA se resuelve aquí, una sola vez, desde el ejercicio: es el único
+        # sitio donde la cédula todavía no existe y hay que preguntarlo. De aquí
+        # en adelante viaja en la cédula, que es para lo que lo guarda.
+        strategy = await self.repository.get_strategy(exercise.catalog_id, command.strategy_key)
         if strategy is None or not strategy.is_active:
             raise ResourceNotFoundError("La estrategia POA no existe o está desactivada.")
         area = await self.areas.get_by_id(command.responsible_area_id)
         if area is None or not area.is_active:
             raise ValidationError("El área responsable no existe o está desactivada.")
         item = PoaForm.create(
+            catalog_id=exercise.catalog_id,
             exercise_id=command.exercise_id,
             objective_number=strategy.objective_number,
             strategy_key=strategy.key,
@@ -363,16 +367,20 @@ class UpdatePoaForm:
         await _ensure_structure_editable(self.repository, form, command.actor)
         objective_number = None
         if command.strategy_key is not None and command.strategy_key != form.strategy_key:
-            strategy = await self.repository.get_strategy(command.strategy_key)
+            # El POA sale de la cédula: cambiar de estrategia no cambia de POA
+            # -el ejercicio no se mueve-, así que no hay que volver a pedirlo.
+            strategy = await self.repository.get_strategy(form.catalog_id, command.strategy_key)
             if strategy is None or not strategy.is_active:
                 raise ResourceNotFoundError("La estrategia POA no existe o está desactivada.")
             detail = await self.repository.get_detail(form.id)
             assert detail is not None
             indicator_catalogs = {
-                item.key: item for item in await self.repository.list_indicators()
+                item.key: item
+                for item in await self.repository.list_indicators(catalog_id=form.catalog_id)
             }
             activity_catalogs = {
-                item.key: item for item in await self.repository.list_activity_catalog()
+                item.key: item
+                for item in await self.repository.list_activity_catalog(catalog_id=form.catalog_id)
             }
             incompatible_indicators = [
                 item.id
@@ -503,12 +511,15 @@ class AddPoaFormIndicator:
         form = await _require_form(self.repository, command.form_id)
         await ensure_structure_access(command.actor, self.areas)
         await _ensure_structure_editable(self.repository, form, command.actor)
-        catalog = await self.repository.get_indicator(command.indicator_key)
+        catalog = await self.repository.get_indicator(form.catalog_id, command.indicator_key)
         if catalog is None or not catalog.is_active:
             raise ResourceNotFoundError("El indicador POA no existe o está desactivado.")
         if catalog.objective_number != form.objective_number:
             raise ValidationError("El indicador no pertenece al objetivo de la cédula.")
         item = PoaFormIndicator.create(
+            # El del padre: un indicador de la cédula no puede apuntar al
+            # catálogo de otro POA, y la foránea compuesta lo exige.
+            catalog_id=form.catalog_id,
             form_id=form.id,
             indicator_key=catalog.key,
             institutional_goal=command.institutional_goal,
@@ -678,7 +689,7 @@ class AddPoaFormActivity:
         form = await _require_form(self.repository, command.form_id)
         await ensure_structure_access(command.actor, self.areas)
         await _ensure_structure_editable(self.repository, form, command.actor)
-        catalog = await self.repository.get_activity_catalog(command.activity_key)
+        catalog = await self.repository.get_activity_catalog(form.catalog_id, command.activity_key)
         if catalog is None or not catalog.is_active:
             raise ResourceNotFoundError("La actividad POA no existe o está desactivada.")
         if catalog.strategy_key != form.strategy_key:
@@ -688,6 +699,8 @@ class AddPoaFormActivity:
             if area is None or not area.is_active:
                 raise ValidationError("El área ejecutora no existe o está desactivada.")
         item = PoaFormActivity.create(
+            # El del padre, igual que en el indicador.
+            catalog_id=form.catalog_id,
             form_id=form.id,
             activity_key=catalog.key,
             unit=command.unit,
@@ -991,16 +1004,26 @@ async def _build_snapshot(
     for area_id in area_ids:
         area = await areas.get_by_id(area_id)
         area_names[area_id] = area.name if area is not None else None
-    objectives = {item.number: item for item in await repository.list_objectives()}
+    # Las cuatro consultas del catálogo salen del POA de la cédula que se
+    # respalda: el respaldo tiene que decir lo que decía *ese* POA, no lo que
+    # diga el de otro año.
+    catalog_id = detail.form.catalog_id
+    objectives = {
+        item.number: item for item in await repository.list_objectives(catalog_id=catalog_id)
+    }
     objective = objectives[detail.form.objective_number]
-    strategy = await repository.get_strategy(detail.form.strategy_key)
+    strategy = await repository.get_strategy(catalog_id, detail.form.strategy_key)
     indicator_catalogs = {
         item.key: item
-        for item in await repository.list_indicators(objective_number=detail.form.objective_number)
+        for item in await repository.list_indicators(
+            catalog_id=catalog_id, objective_number=detail.form.objective_number
+        )
     }
     activity_catalogs = {
         item.key: item
-        for item in await repository.list_activity_catalog(strategy_key=detail.form.strategy_key)
+        for item in await repository.list_activity_catalog(
+            catalog_id=catalog_id, strategy_key=detail.form.strategy_key
+        )
     }
     follow_ups_by_activity: dict[int, list[dict[str, Any]]] = {}
     for follow_up in detail.follow_ups:

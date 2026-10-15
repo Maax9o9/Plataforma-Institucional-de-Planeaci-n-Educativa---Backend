@@ -146,6 +146,15 @@ class PoaActivityCatalog:
 
 @dataclass(kw_only=True)
 class PoaForm(BaseEntity):
+    #: El POA del que la cédula lee sus nombres: el mismo del que cuelga su
+    #: ejercicio, resuelto una sola vez al crearla.
+    #:
+    #: Es el mismo dato dos veces -el ejercicio ya lo tiene- y está así a
+    #: propósito: la spec lo pide guardado en la cédula para que la foránea
+    #: compuesta de la base pueda impedir que apunte al catálogo de otro año.
+    #: La entidad retrata esa tabla, y además ahorra volver al ejercicio a
+    #: quien ya tiene la cédula en la mano sólo para saber en qué POA buscar.
+    catalog_id: int
     exercise_id: int
     objective_number: int
     strategy_key: str
@@ -160,6 +169,7 @@ class PoaForm(BaseEntity):
     def create(
         cls,
         *,
+        catalog_id: int,
         exercise_id: int,
         objective_number: int,
         strategy_key: str,
@@ -170,6 +180,11 @@ class PoaForm(BaseEntity):
         signatories: tuple[PoaSignatory, ...] = (),
     ) -> PoaForm:
         validate_presentation(strategy_type, signatories)
+        # El caso de uso lo toma del ejercicio, pero la entidad no puede
+        # depender de que algo más la proteja: sin POA no hay de dónde leer la
+        # estrategia ni los indicadores que la cédula nombra.
+        if catalog_id is None:
+            raise ValidationError("La cédula POA necesita el POA del que cuelga.")
         # El PSE 2025-2030 trae seis objetivos, pero el catálogo es
         # administrable: si la SEP agrega un objetivo, el formato no puede
         # quedar atado a ese seis. Que el objetivo *exista* lo garantiza el
@@ -180,6 +195,7 @@ class PoaForm(BaseEntity):
         if not strategy_key.strip():
             raise ValidationError("La estrategia de la cédula es obligatoria.")
         return cls(
+            catalog_id=catalog_id,
             exercise_id=exercise_id,
             objective_number=objective_number,
             strategy_key=strategy_key.strip(),
@@ -255,6 +271,12 @@ class PoaFormQuarter(BaseEntity):
 
 @dataclass(kw_only=True)
 class PoaFormIndicator(BaseEntity):
+    #: El POA de la cédula a la que pertenece. Lo lleva por el mismo motivo que
+    #: la cédula -la foránea compuesta con el catálogo lo exige- y porque los
+    #: sitios que resuelven el nombre del indicador tienen en la mano este
+    #: renglón y nada más: sin el campo, cada uno necesitaría una consulta
+    #: extra a la cédula padre sólo para saber de qué POA leerlo.
+    catalog_id: int
     form_id: int
     indicator_key: str
     institutional_goal: Decimal | None = None
@@ -267,7 +289,9 @@ class PoaFormIndicator(BaseEntity):
     achieved_percentage: Decimal | None = None
 
     @classmethod
-    def create(cls, *, form_id: int, indicator_key: str, **values) -> PoaFormIndicator:
+    def create(
+        cls, *, catalog_id: int, form_id: int, indicator_key: str, **values
+    ) -> PoaFormIndicator:
         for field_name, label in (
             ("institutional_goal", "La meta institucional"),
             ("baseline_value", "La línea base"),
@@ -282,7 +306,7 @@ class PoaFormIndicator(BaseEntity):
         baseline_year = values.get("baseline_year")
         if baseline_year is not None and not 2000 <= baseline_year <= 2200:
             raise ValidationError("El año de la línea base no es válido.")
-        return cls(form_id=form_id, indicator_key=indicator_key, **values)
+        return cls(catalog_id=catalog_id, form_id=form_id, indicator_key=indicator_key, **values)
 
     def update_details(self, **values) -> None:
         for field_name, label in (
@@ -320,6 +344,10 @@ class PoaFormIndicator(BaseEntity):
 
 @dataclass(kw_only=True)
 class PoaFormActivity(BaseEntity):
+    #: El POA de la cédula a la que pertenece, por lo mismo que en
+    #: `PoaFormIndicator`: la foránea compuesta con el catálogo de acciones, y
+    #: los sitios que resuelven la descripción con la actividad en la mano.
+    catalog_id: int
     form_id: int
     activity_key: str
     unit: str
@@ -338,6 +366,7 @@ class PoaFormActivity(BaseEntity):
     def create(
         cls,
         *,
+        catalog_id: int,
         form_id: int,
         activity_key: str,
         unit: str,
@@ -349,6 +378,7 @@ class PoaFormActivity(BaseEntity):
             raise ValidationError("La unidad de medida de la actividad es obligatoria.")
         _require_non_negative(annual_goal, "La meta anual")
         return cls(
+            catalog_id=catalog_id,
             form_id=form_id,
             activity_key=activity_key,
             unit=unit.strip(),
@@ -520,6 +550,10 @@ class PoaFollowUpCard:
     sin abrirlo. Es un modelo de lectura, no un agregado: no tiene reglas."""
 
     id: int
+    # El POA de la cédula de la que sale la tarjeta. El tablero resuelve la
+    # descripción de cada acción sin abrir su cédula: sin este campo tendría
+    # que pedirla por tarjeta nada más para saber en qué catálogo buscar.
+    catalog_id: int
     form_id: int
     activity_id: int
     activity_key: str

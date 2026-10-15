@@ -403,6 +403,7 @@ class InMemoryPoaFormRepository:
             cards.append(
                 PoaFollowUpCard(
                     id=follow_up.id,
+                    catalog_id=form.catalog_id,
                     form_id=form.id,
                     activity_id=activity.id,
                     activity_key=activity.activity_key,
