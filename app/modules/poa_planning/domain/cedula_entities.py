@@ -64,8 +64,51 @@ def build_issue_name(objective_number: int, quarter: int, year: int) -> str:
     return f"Cédula Objetivo {objective_number} - {four_month_period_name(quarter)} {year}"
 
 
+@dataclass(kw_only=True)
+class PoaCatalogo(BaseEntity):
+    """El POA de un año: el marco del que cuelgan objetivos, estrategias,
+    indicadores y acciones.
+
+    Es una entidad propia y no una propiedad del ejercicio para que se pueda
+    subir y revisar *antes* de abrir el año —que es como llega en la realidad:
+    primero el documento, después el ejercicio—.
+    """
+
+    name: str
+    year: int
+    origin: str | None = None
+    created_by: int | None = None
+    created_at: datetime = field(default_factory=utc_now)
+    updated_at: datetime = field(default_factory=utc_now)
+
+    @classmethod
+    def create(
+        cls, *, name: str, year: int, origin: str | None, created_by: int | None
+    ) -> PoaCatalogo:
+        if not name.strip():
+            raise ValidationError("El POA necesita un nombre.")
+        if not 2000 <= year <= 2200:
+            raise ValidationError("El año del POA no es válido.")
+        ahora = utc_now()
+        return cls(
+            name=name.strip(),
+            year=year,
+            origin=origin.strip() if origin else None,
+            created_by=created_by,
+            created_at=ahora,
+            updated_at=ahora,
+        )
+
+    def touch_contents(self) -> None:
+        """Mueve la fecha de modificación. La llama quien cambia el CONTENIDO
+        del catálogo: lo que Planeación entiende por «última modificación» es
+        que alguien tocó una estrategia, no que alguien renombró el POA."""
+        self.updated_at = utc_now()
+
+
 @dataclass(frozen=True, kw_only=True)
 class PoaObjectiveCatalog:
+    catalog_id: int
     key: str
     number: int
     denomination: str
@@ -74,6 +117,7 @@ class PoaObjectiveCatalog:
 
 @dataclass(frozen=True, kw_only=True)
 class PoaStrategyCatalog:
+    catalog_id: int
     key: str
     objective_number: int
     denomination: str
@@ -82,6 +126,7 @@ class PoaStrategyCatalog:
 
 @dataclass(frozen=True, kw_only=True)
 class PoaIndicatorCatalog:
+    catalog_id: int
     key: str
     objective_number: int
     name: str
@@ -92,6 +137,7 @@ class PoaIndicatorCatalog:
 
 @dataclass(frozen=True, kw_only=True)
 class PoaActivityCatalog:
+    catalog_id: int
     key: str
     strategy_key: str
     description: str
