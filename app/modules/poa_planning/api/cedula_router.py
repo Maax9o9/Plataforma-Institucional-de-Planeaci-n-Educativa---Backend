@@ -401,13 +401,16 @@ def _catalogo_poa(item: PoaCatalogo) -> CatalogoPoaRespuesta:
 @router.get(
     "/catalogos-poa",
     response_model=list[CatalogoPoaRespuesta],
-    responses={status.HTTP_403_FORBIDDEN: {"model": ErrorResponse}},
     summary="Consultar los POA",
 )
 async def list_poa_catalogs(
-    # Los mismos que leen las cédulas, Rectoría incluida: para dictaminar tiene
-    # que poder ver contra qué POA se formuló lo que va a aprobar.
-    current_user=Depends(require_roles(*FORM_READ_ROLES)),
+    # Cualquier usuario autenticado, igual que los cuatro GET del catálogo: esto
+    # es la portada (nombre y año) de un catálogo que todos ya pueden leer
+    # entero, y un índice más estrecho que su contenido no se sostiene. Además
+    # lo necesitan roles que no están en FORM_READ_ROLES: el revisor, para saber
+    # de qué POA son las cédulas que revisa; quien formula o reporta, para saber
+    # en cuál trabaja. Sólo crear un POA es de Planeación.
+    current_user=Depends(get_current_user),
     use_case: ListarCatalogosPoa = Depends(get_list_poa_catalogs_use_case),
 ):
     items = await use_case.execute(actor_from_user(current_user))

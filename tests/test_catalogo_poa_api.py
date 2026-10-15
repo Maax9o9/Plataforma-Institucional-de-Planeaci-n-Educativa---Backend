@@ -326,24 +326,28 @@ async def test_sólo_planeación_crea_un_poa(backend_client, rol):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("rol", "esperado"),
-    [
-        (Role.PLANEACION, 200),
-        (Role.CAPTURISTA_POA, 200),
-        # Rectoría ve contra qué POA se formuló lo que va a aprobar: sin esto
-        # el menú le ofrece pantallas que contestan 403.
-        (Role.RECTORIA, 200),
-        (Role.CONSULTA, 403),
-    ],
-)
-async def test_los_roles_que_leen_la_cédula_ven_la_lista_de_poa(backend_client, rol, esperado):
+@pytest.mark.parametrize("rol", list(Role))
+async def test_cualquier_usuario_autenticado_ve_la_lista_de_poa(backend_client, rol):
+    """Es la portada de un catálogo que cualquier autenticado ya lee entero: un
+    índice más estrecho que su contenido no se sostiene. El revisor necesita
+    saber de qué POA son las cédulas que revisa; quien formula o reporta, en cuál
+    trabaja; Rectoría, contra cuál se formuló lo que va a aprobar. Se recorre
+    `Role` completo para que un rol que se agregue mañana quede cubierto."""
     app, client = backend_client
     headers = await _cuenta(app, client, rol, uuid4().hex[:8])
 
     listado = await client.get(f"{API}/poa/catalogos-poa", headers=headers)
 
-    assert listado.status_code == esperado, listado.text
+    assert listado.status_code == 200, listado.text
+
+
+@pytest.mark.asyncio
+async def test_la_lista_de_poa_exige_estar_autenticado(backend_client):
+    _, client = backend_client
+
+    listado = await client.get(f"{API}/poa/catalogos-poa")
+
+    assert listado.status_code == 401, listado.text
 
 
 # --- Lo que el alta rechaza -------------------------------------------------
