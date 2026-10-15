@@ -275,15 +275,26 @@ async def _ensure_access(repository, item: PoaForm, current_user, areas) -> None
 async def _detail_response(
     repository, detail: PoaFormDetail, exercises
 ) -> CedulaPoaDetalleRespuesta:
-    objectives = {item.number: item for item in await repository.list_objectives()}
-    strategy = await repository.get_strategy(detail.form.strategy_key)
+    # Las cuatro consultas del catálogo salen del POA de la cédula que se
+    # muestra, igual que en el respaldo de la emisión: la clave `1.1` vale
+    # dentro de un POA y no en todo el sistema, así que corregir el texto del
+    # POA de un año no puede reescribir lo que dice la cédula de otro.
+    catalog_id = detail.form.catalog_id
+    objectives = {
+        item.number: item for item in await repository.list_objectives(catalog_id=catalog_id)
+    }
+    strategy = await repository.get_strategy(catalog_id, detail.form.strategy_key)
     indicator_catalogs = {
         item.key: item
-        for item in await repository.list_indicators(objective_number=detail.form.objective_number)
+        for item in await repository.list_indicators(
+            catalog_id=catalog_id, objective_number=detail.form.objective_number
+        )
     }
     activity_catalogs = {
         item.key: item
-        for item in await repository.list_activity_catalog(strategy_key=detail.form.strategy_key)
+        for item in await repository.list_activity_catalog(
+            catalog_id=catalog_id, strategy_key=detail.form.strategy_key
+        )
     }
     activities_by_id = {item.id: item for item in detail.activities}
     form_data = _form_response(detail.form, detail.quarters).model_dump()
@@ -852,18 +863,29 @@ async def list_follow_ups(
     pending = await request.app.state.evidence_repository.count_pending_review_by_entity(
         FlowEntity.POA_FORM_FOLLOW_UP, ids
     )
-    # Una sola consulta al catálogo para todas las tarjetas: pedirlo por
-    # actividad dentro de la comprensión sería N+1, justo lo que este
-    # endpoint existe para evitar.
-    descriptions: dict[str, str] = {}
-    if cards:
-        catalog_items = await request.app.state.poa_form_repository.list_activity_catalog()
-        descriptions = {item.key: item.description for item in catalog_items}
+    # Una consulta al catálogo por POA a la vista, y no una por tarjeta:
+    # pedirlo por actividad dentro de la comprensión sería N+1, justo lo que
+    # este endpoint existe para evitar.
+    #
+    # No alcanza con una sola: `ejercicio_id` es opcional, así que el tablero
+    # puede mostrar a la vez tarjetas de varios ejercicios y por tanto de
+    # varios POAs, y la clave de una acción sólo vale dentro del suyo. De ahí
+    # que la descripción se busque por `(POA, clave)`. Los POAs distintos de
+    # una página son normalmente uno y como mucho un puñado, así que el número
+    # de consultas sigue acotado por lo que se ve y no por cuántas tarjetas hay.
+    descriptions: dict[tuple[int, str], str] = {}
+    for catalog_id in {card.catalog_id for card in cards}:
+        catalog_items = await request.app.state.poa_form_repository.list_activity_catalog(
+            catalog_id=catalog_id
+        )
+        descriptions.update({(catalog_id, item.key): item.description for item in catalog_items})
     return PaginaSeguimientosRespuesta(
         items=[
             _tarjeta_respuesta(
                 card,
-                descripcion=descriptions.get(card.activity_key, card.activity_key),
+                descripcion=descriptions.get(
+                    (card.catalog_id, card.activity_key), card.activity_key
+                ),
                 evidencias=evidences.get(card.id, 0),
                 sin_revisar=pending.get(card.id, 0),
             )
@@ -907,7 +929,9 @@ async def get_follow_up_card(
     ):
         raise ForbiddenError("El seguimiento del POA no es de tu área.")
 
-    catalogo = await repository.get_activity_catalog(activity.activity_key)
+    # El POA sale de la actividad, igual que al armar la tarjeta más abajo: la
+    # pantalla de captura y el tablero tienen que decir lo mismo.
+    catalogo = await repository.get_activity_catalog(activity.catalog_id, activity.activity_key)
     evidencias = await request.app.state.evidence_repository.count_by_entity(
         FlowEntity.POA_FORM_FOLLOW_UP, [follow_up.id]
     )
@@ -1109,7 +1133,13 @@ async def add_form_indicator(
             actor=actor_from_user(current_user),
         )
     )
-    catalog = await request.app.state.poa_form_repository.get_indicator(item.indicator_key)
+    # El nombre, la fórmula y la unidad se leen del POA que el renglón trae
+    # consigo, y no del único que había antes: la clave `1.1.1` puede existir
+    # en varios POAs con textos distintos. Lo mismo en los otros cinco sitios
+    # de este archivo que resuelven un indicador o una acción recién guardada.
+    catalog = await request.app.state.poa_form_repository.get_indicator(
+        item.catalog_id, item.indicator_key
+    )
     return _indicator_response(item, catalog)
 
 
@@ -1137,7 +1167,9 @@ async def update_form_indicator(
             actor=actor_from_user(current_user),
         )
     )
-    catalog = await request.app.state.poa_form_repository.get_indicator(item.indicator_key)
+    catalog = await request.app.state.poa_form_repository.get_indicator(
+        item.catalog_id, item.indicator_key
+    )
     return _indicator_response(item, catalog)
 
 
@@ -1181,7 +1213,9 @@ async def capture_indicator_total(
             actor=actor_from_user(current_user),
         )
     )
-    catalog = await request.app.state.poa_form_repository.get_indicator(item.indicator_key)
+    catalog = await request.app.state.poa_form_repository.get_indicator(
+        item.catalog_id, item.indicator_key
+    )
     return _indicator_response(item, catalog)
 
 
@@ -1209,7 +1243,9 @@ async def add_form_activity(
             actor=actor_from_user(current_user),
         )
     )
-    catalog = await request.app.state.poa_form_repository.get_activity_catalog(item.activity_key)
+    catalog = await request.app.state.poa_form_repository.get_activity_catalog(
+        item.catalog_id, item.activity_key
+    )
     return _activity_response(item, catalog)
 
 
@@ -1236,7 +1272,9 @@ async def update_form_activity(
             actor=actor_from_user(current_user),
         )
     )
-    catalog = await request.app.state.poa_form_repository.get_activity_catalog(item.activity_key)
+    catalog = await request.app.state.poa_form_repository.get_activity_catalog(
+        item.catalog_id, item.activity_key
+    )
     return _activity_response(item, catalog)
 
 
@@ -1309,7 +1347,9 @@ async def assign_activity_criteria(
             actor=actor_from_user(current_user),
         )
     )
-    catalog = await request.app.state.poa_form_repository.get_activity_catalog(item.activity_key)
+    catalog = await request.app.state.poa_form_repository.get_activity_catalog(
+        item.catalog_id, item.activity_key
+    )
     return _activity_response(item, catalog)
 
 

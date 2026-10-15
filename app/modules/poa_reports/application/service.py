@@ -37,7 +37,22 @@ class PoaReportService:
             objective_number=filters.get("objetivo_numero"),
         )
         rows = []
-        catalogs = {item.key: item for item in await self.forms.list_activity_catalog()}
+        # El catálogo de acciones se pide antes del bucle de cédulas, una vez
+        # por POA y no una por cédula, por la misma razón que el tablero: pedirlo
+        # dentro sería una consulta por renglón del reporte.
+        #
+        # Y es por POA y no una sola vez porque `ejercicio_id` es opcional: un
+        # reporte puede cruzar varios ejercicios y por tanto varios POAs, y la
+        # clave de una acción sólo vale dentro del suyo. De ahí que la
+        # descripción se busque por `(POA, clave)`.
+        catalogs = {}
+        for catalog_id in {form.catalog_id for form in forms}:
+            catalogs.update(
+                {
+                    (catalog_id, item.key): item
+                    for item in await self.forms.list_activity_catalog(catalog_id=catalog_id)
+                }
+            )
         complete = True
         included_forms = 0
         for form in forms:
@@ -66,7 +81,7 @@ class PoaReportService:
             emitted = {issue.quarter for issue in issues}
             complete = complete and emitted == {1, 2, 3}
             for activity in activities:
-                catalog = catalogs.get(activity.activity_key)
+                catalog = catalogs.get((form.catalog_id, activity.activity_key))
                 follow_ups = {
                     f.quarter: f for f in detail.follow_ups if f.form_activity_id == activity.id
                 }

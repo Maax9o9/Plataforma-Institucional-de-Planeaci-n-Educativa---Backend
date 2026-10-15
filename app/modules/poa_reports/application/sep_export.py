@@ -72,16 +72,33 @@ class ExportarFormatoSep:
         if exercise is None:
             raise ResourceNotFoundError("El ejercicio POA no existe.")
 
-        objetivos = {item.number: item for item in await self.forms.list_objectives()}
-        acciones = {item.key: item for item in await self.forms.list_activity_catalog()}
-        indicadores = {item.key: item for item in await self.forms.list_indicators()}
+        # Los tres catálogos salen del POA del que cuelga el ejercicio que se
+        # exporta: el formato de un año tiene que decir lo que decía *ese* POA,
+        # y la clave `1.1.1` puede existir en varios con textos distintos.
+        #
+        # Aquí basta un POA -y no el conjunto distinto, como en el tablero y en
+        # los reportes- porque la exportación está acotada a un ejercicio y la
+        # foránea compuesta de la base no deja que una de sus cédulas apunte a
+        # otro catálogo. Se piden antes del bucle porque no habría cédulas de
+        # las que sacar el dato si el ejercicio estuviera vacío.
+        catalogo_id = exercise.catalog_id
+        objetivos = {
+            item.number: item for item in await self.forms.list_objectives(catalog_id=catalogo_id)
+        }
+        acciones = {
+            item.key: item
+            for item in await self.forms.list_activity_catalog(catalog_id=catalogo_id)
+        }
+        indicadores = {
+            item.key: item for item in await self.forms.list_indicators(catalog_id=catalogo_id)
+        }
 
         cedulas: list[CedulaDelFormato] = []
         for form in await self.forms.list_forms(exercise_id=exercise_id):
             detalle = await self.forms.get_detail(form.id)
             if detalle is None:
                 continue
-            estrategia = await self.forms.get_strategy(form.strategy_key)
+            estrategia = await self.forms.get_strategy(form.catalog_id, form.strategy_key)
             objetivo = objetivos.get(form.objective_number)
             cedulas.append(
                 CedulaDelFormato(
