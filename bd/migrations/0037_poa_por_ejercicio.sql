@@ -27,8 +27,18 @@ COMMENT ON COLUMN poa_catalogos.nombre IS
 
 -- El POA que recoge todo lo que ya existia. El archivo que siembra el catalogo
 -- actual se llama literalmente "Catalogos POA 2026".
+--
+-- Se inserta SOLO si hay catalogo que adoptar: la cabecera existe para
+-- apropiarse de lo que ya estaba, y en una instalacion nueva no hay nada que
+-- apropiarse. Si se insertara igual, `ensure_catalogs()` la encontraria al
+-- arrancar -devuelve el POA mas antiguo y se da por sembrada-, y las cuatro
+-- tablas del catalogo quedarian vacias: la aplicacion levanta sin un solo
+-- error y la pantalla del catalogo sale en blanco. Basta preguntar por los
+-- objetivos: en la 0022 las otras tres cuelgan de ellos con foranea
+-- obligatoria, asi que si no hay objetivos no hay catalogo ninguno.
 INSERT INTO poa_catalogos (nombre, anio, origen)
-VALUES ('POA 2026', 2026, 'Catálogo inicial del sistema');
+SELECT 'POA 2026', 2026, 'Catálogo inicial del sistema'
+WHERE EXISTS (SELECT 1 FROM poa_catalogo_objetivos);
 
 -- 1. Las cuatro tablas del catalogo ganan su dueno.
 ALTER TABLE poa_catalogo_objetivos   ADD COLUMN catalogo_id INTEGER;
@@ -104,6 +114,22 @@ ALTER TABLE poa_catalogo_objetivos
     FOREIGN KEY (catalogo_id) REFERENCES poa_catalogos(id) ON DELETE CASCADE;
 
 -- Dentro del catalogo, cada hijo referencia a su padre llevando el POA consigo.
+--
+-- Las tres aflojan una garantia, y se deja dicho: en la 0022 -lineas 16, 27 y
+-- 39- estas foraneas no declaraban `ON DELETE` -o sea `NO ACTION`-, asi que
+-- Postgres rechazaba borrar un objetivo que tuviera estrategias colgando. De
+-- aqui en adelante se lleva la rama.
+--
+-- Se afloja a proposito porque la cascada es portante: estrategias,
+-- indicadores y acciones no tienen foranea directa a `poa_catalogos` -su unico
+-- anclaje al POA es transitivo, por el objetivo-, asi que sin cascada borrar
+-- un POA como unidad seria imposible.
+--
+-- Y hoy el radio de dano es nulo porque el catalogo retira, no borra:
+-- `PoaCatalogAdmin` no expone ningun borrado -solo alta, edicion y la baja
+-- logica de `activo`- y nada borra un POA. La cascada solo se alcanza con SQL
+-- a mano. El dia que se abra un borrado de verdad, esto es lo que hay que
+-- volver a mirar.
 ALTER TABLE poa_catalogo_estrategias
     ADD CONSTRAINT fk_poa_catalogo_estrategia_objetivo
     FOREIGN KEY (catalogo_id, objetivo_numero)
