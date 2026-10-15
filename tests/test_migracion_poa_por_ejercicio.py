@@ -318,3 +318,16 @@ async def test_una_cedula_no_puede_apuntar_al_catalogo_de_otro_poa(conexion):
                 {"ejercicio": ejercicio_ajeno, "ajeno": ajeno, "cedula": cedula},
             )
     assert "fk_poa_cedula_estrategia" in str(prestada.value)
+
+    # Y su numero de objetivo sigue teniendo que ser el del objetivo de su
+    # estrategia: la '1.1' es del objetivo 1, asi que decir 2 revienta. Esto es
+    # lo que la foranea garantiza por llevar tres columnas y no dos; con dos
+    # -(catalogo_id, estrategia_clave)- este UPDATE pasaria sin ruido y la
+    # cedula quedaria diciendo que su estrategia cuelga de otro objetivo.
+    with pytest.raises(IntegrityError) as descolgada:
+        async with conexion.begin_nested():
+            await conexion.execute(
+                text("UPDATE poa_cedulas SET objetivo_numero = 2 WHERE id = :cedula"),
+                {"cedula": cedula},
+            )
+    assert "fk_poa_cedula_estrategia" in str(descolgada.value)
