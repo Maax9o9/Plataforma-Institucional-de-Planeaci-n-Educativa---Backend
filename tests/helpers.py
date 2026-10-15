@@ -63,6 +63,21 @@ async def anio_libre(client, headers, *, desde: int = 2000) -> int:
     return next(anio for anio in range(desde, 2201) if anio not in ocupados)
 
 
+def cuatrimestres(anio: int) -> list[dict[str, object]]:
+    """Los tres cuatrimestres de un año, como los pide `POST /poa/cedulas`.
+
+    El reparto -enero-abril, mayo-agosto, septiembre-diciembre- es el del
+    formato institucional y no es una elección de cada prueba: el esquema exige
+    exactamente tres, ordenados y sin traslaparse. Estaba copiado literal en
+    ocho sitios.
+    """
+    return [
+        {"numero": 1, "fecha_inicio": f"{anio}-01-01", "fecha_fin": f"{anio}-04-30"},
+        {"numero": 2, "fecha_inicio": f"{anio}-05-01", "fecha_fin": f"{anio}-08-31"},
+        {"numero": 3, "fecha_inicio": f"{anio}-09-01", "fecha_fin": f"{anio}-12-31"},
+    ]
+
+
 async def crear_poa(client, headers, anio: int) -> dict:
     """Un POA vacío con nombre único: el nombre es único en todo el sistema."""
     poa = await client.post(

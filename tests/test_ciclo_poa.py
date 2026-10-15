@@ -29,7 +29,7 @@ from app.modules.poa_planning.domain.entities import PoaExercise
 from app.shared.application.actor import ActorContext
 from app.shared.domain.exceptions import ForbiddenError, InvalidStateError
 from app.shared.infrastructure.db.sql_loader import split_sql
-from helpers import poa_inicial_id
+from helpers import cuatrimestres, poa_inicial_id
 
 
 def _random_year() -> int:
@@ -107,11 +107,7 @@ async def _add_cedula(client, escenario) -> None:
             "ejercicio_id": escenario["exercise_id"],
             "estrategia_clave": "6.1",
             "area_responsable_id": escenario["area_id"],
-            "cuatrimestres": [
-                {"numero": 1, "fecha_inicio": f"{anio}-01-01", "fecha_fin": f"{anio}-04-30"},
-                {"numero": 2, "fecha_inicio": f"{anio}-05-01", "fecha_fin": f"{anio}-08-31"},
-                {"numero": 3, "fecha_inicio": f"{anio}-09-01", "fecha_fin": f"{anio}-12-31"},
-            ],
+            "cuatrimestres": cuatrimestres(anio),
         },
     )
     assert form.status_code == 201, form.text
@@ -440,11 +436,7 @@ async def _new_activity_scenario(app, client) -> dict:
             "ejercicio_id": ejercicio["id"],
             "estrategia_clave": "6.1",
             "area_responsable_id": area_id,
-            "cuatrimestres": [
-                {"numero": 1, "fecha_inicio": f"{anio}-01-01", "fecha_fin": f"{anio}-04-30"},
-                {"numero": 2, "fecha_inicio": f"{anio}-05-01", "fecha_fin": f"{anio}-08-31"},
-                {"numero": 3, "fecha_inicio": f"{anio}-09-01", "fecha_fin": f"{anio}-12-31"},
-            ],
+            "cuatrimestres": cuatrimestres(anio),
         },
     )
     assert form.status_code == 201, form.text

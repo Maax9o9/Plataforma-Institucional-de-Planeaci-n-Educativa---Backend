@@ -22,7 +22,7 @@ from app.modules.poa_planning.infrastructure.cedula_repository import (
 )
 from app.shared.application.actor import ActorContext
 from app.shared.domain.exceptions import ForbiddenError
-from helpers import poa_inicial_id
+from helpers import cuatrimestres, poa_inicial_id
 
 CATALOGO = "/api/v1/poa/catalogos"
 
@@ -173,11 +173,7 @@ async def _cedula_con_la_rama(client, headers, rama, area_id: int) -> dict:
             "ejercicio_id": ejercicio.json()["id"],
             "estrategia_clave": rama["estrategia"],
             "area_responsable_id": area_id,
-            "cuatrimestres": [
-                {"numero": 1, "fecha_inicio": f"{anio}-01-01", "fecha_fin": f"{anio}-04-30"},
-                {"numero": 2, "fecha_inicio": f"{anio}-05-01", "fecha_fin": f"{anio}-08-31"},
-                {"numero": 3, "fecha_inicio": f"{anio}-09-01", "fecha_fin": f"{anio}-12-31"},
-            ],
+            "cuatrimestres": cuatrimestres(anio),
         },
     )
     assert cedula.status_code == 201, cedula.text
@@ -300,23 +296,7 @@ async def test_lo_deshabilitado_ya_no_se_puede_elegir(backend_client):
             "ejercicio_id": cedula["ejercicio_id"],
             "estrategia_clave": rama["estrategia"],
             "area_responsable_id": area_id,
-            "cuatrimestres": [
-                {
-                    "numero": 1,
-                    "fecha_inicio": f"{cedula['anio']}-01-01",
-                    "fecha_fin": f"{cedula['anio']}-04-30",
-                },
-                {
-                    "numero": 2,
-                    "fecha_inicio": f"{cedula['anio']}-05-01",
-                    "fecha_fin": f"{cedula['anio']}-08-31",
-                },
-                {
-                    "numero": 3,
-                    "fecha_inicio": f"{cedula['anio']}-09-01",
-                    "fecha_fin": f"{cedula['anio']}-12-31",
-                },
-            ],
+            "cuatrimestres": cuatrimestres(cedula["anio"]),
         },
     )
     assert otra.status_code == 404, otra.text

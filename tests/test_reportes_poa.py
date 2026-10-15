@@ -15,7 +15,7 @@ import pytest
 from app.modules.identity_access.application.dto import RegisterUserCommand
 from app.modules.identity_access.application.use_cases.create_user import CreateUser
 from app.modules.identity_access.domain.value_objects import Role
-from helpers import poa_inicial_id
+from helpers import cuatrimestres, poa_inicial_id
 
 API = "/api/v1"
 
@@ -61,11 +61,7 @@ async def _cedula_con_actividad(client, headers, *, ejercicio_id, anio, estrateg
             "ejercicio_id": ejercicio_id,
             "estrategia_clave": estrategia,
             "area_responsable_id": area_id,
-            "cuatrimestres": [
-                {"numero": 1, "fecha_inicio": f"{anio}-01-01", "fecha_fin": f"{anio}-04-30"},
-                {"numero": 2, "fecha_inicio": f"{anio}-05-01", "fecha_fin": f"{anio}-08-31"},
-                {"numero": 3, "fecha_inicio": f"{anio}-09-01", "fecha_fin": f"{anio}-12-31"},
-            ],
+            "cuatrimestres": cuatrimestres(anio),
         },
     )
     assert cedula.status_code == 201, cedula.text

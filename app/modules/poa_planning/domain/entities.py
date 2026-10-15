@@ -32,8 +32,12 @@ class PoaExercise(BaseEntity):
             raise ValidationError("El año del ejercicio POA no es válido.")
         # El esquema de entrada ya lo exige, pero la entidad no puede depender de
         # que algo más la proteja: sin POA no hay de dónde leer las estrategias.
-        if catalog_id is None:
-            raise ValidationError("El ejercicio POA necesita el POA del que cuelga.")
+        #
+        # Se rechaza `< 1` y no sólo `None`: los seriales de la base empiezan en
+        # 1, así que el cero y los negativos no son ids de POA. Mismo criterio
+        # que `IdDePoa` en el borde HTTP y que `PoaForm.create`.
+        if catalog_id is None or catalog_id < 1:
+            raise ValidationError("El POA del que cuelga el ejercicio no es válido.")
         return cls(year=year, catalog_id=catalog_id, formulation_deadline=formulation_deadline)
 
     def ensure_editable(self, today: date) -> None:

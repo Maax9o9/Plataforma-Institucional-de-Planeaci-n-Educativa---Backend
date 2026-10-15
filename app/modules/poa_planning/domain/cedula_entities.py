@@ -183,8 +183,13 @@ class PoaForm(BaseEntity):
         # El caso de uso lo toma del ejercicio, pero la entidad no puede
         # depender de que algo más la proteja: sin POA no hay de dónde leer la
         # estrategia ni los indicadores que la cédula nombra.
-        if catalog_id is None:
-            raise ValidationError("La cédula POA necesita el POA del que cuelga.")
+        #
+        # Se rechaza `< 1` y no sólo `None`: los seriales de la base empiezan en
+        # 1, así que el cero y los negativos no son ids de POA, y un `None` ya
+        # lo era por la anotación. Es el mismo criterio que `IdDePoa` aplica en
+        # el borde HTTP; aquí cierra el paso a quien no venga por ahí.
+        if catalog_id is None or catalog_id < 1:
+            raise ValidationError("El POA del que cuelga la cédula no es válido.")
         # El PSE 2025-2030 trae seis objetivos, pero el catálogo es
         # administrable: si la SEP agrega un objetivo, el formato no puede
         # quedar atado a ese seis. Que el objetivo *exista* lo garantiza el

@@ -25,7 +25,7 @@ import pytest
 
 from app.modules.identity_access.domain.value_objects import Role
 from app.modules.poa_planning.domain.cedula_entities import PoaFormIssue
-from helpers import poa_inicial_id
+from helpers import cuatrimestres, poa_inicial_id
 from test_ciclo_poa import _account
 from test_poa_cedula_flow import _open_poa_period
 
@@ -65,11 +65,7 @@ async def _cedula_con_piezas(client, admin_headers, exercise_id: int, anio: int,
             "ejercicio_id": exercise_id,
             "estrategia_clave": "6.1",
             "area_responsable_id": area_id,
-            "cuatrimestres": [
-                {"numero": 1, "fecha_inicio": f"{anio}-01-01", "fecha_fin": f"{anio}-04-30"},
-                {"numero": 2, "fecha_inicio": f"{anio}-05-01", "fecha_fin": f"{anio}-08-31"},
-                {"numero": 3, "fecha_inicio": f"{anio}-09-01", "fecha_fin": f"{anio}-12-31"},
-            ],
+            "cuatrimestres": cuatrimestres(anio),
         },
     )
     assert form.status_code == 201, form.text

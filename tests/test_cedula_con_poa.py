@@ -14,15 +14,14 @@ el router, que es el mismo cableado sin el armado de la respuesta.
 
 from __future__ import annotations
 
-import os
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.modules.identity_access.domain.value_objects import Role
 from app.modules.institutional_catalogs.domain.entities import Area
 from app.modules.poa_planning.api.cedula_dependencies import (
     get_add_form_activity_use_case,
@@ -36,19 +35,28 @@ from app.modules.poa_planning.domain.cedula_entities import (
     PoaActivityFollowUp,
     PoaForm,
 )
-from app.modules.poa_planning.infrastructure.cedula_sql_repository import (
-    SqlAlchemyPoaFormRepository,
-)
+from app.modules.poa_planning.domain.entities import PoaExercise
 from app.shared.application.actor import ActorContext
 from app.shared.domain.calendar import institutional_today
+from app.shared.domain.exceptions import ValidationError
+from app.shared.infrastructure.db.constraints import viola_la_restriccion
 from helpers import (
     API,
     POA_INEXISTENTE,
     anio_libre,
     crear_ejercicio,
     crear_poa,
+    cuatrimestres,
     poa_inicial_id,
 )
+from test_ciclo_poa import _account
+from test_poa_cedula_flow import _attach_follow_up_file, _open_poa_period
+
+#: Las dos foráneas compuestas que existen para que una cédula no pueda apuntar
+#: al catálogo de otro año. Cuál de las dos reporta PostgreSQL cuando las dos
+#: están violadas depende del orden en que dispara los disparadores, y eso no es
+#: contrato: la prueba afirma que es una de ellas, no cuál.
+_FORANEAS_DEL_POA = ("fk_poa_cedula_ejercicio_catalogo", "fk_poa_cedula_estrategia")
 
 #: El objetivo, la estrategia, el indicador y la acción que se dan de alta en
 #: el POA nuevo. Ninguna de estas claves existe en el POA que siembra el
@@ -129,15 +137,12 @@ async def _area(app) -> int:
     return area.id
 
 
-def _cuatrimestres(anio: int) -> list[dict[str, object]]:
-    return [
-        {"numero": 1, "fecha_inicio": f"{anio}-01-01", "fecha_fin": f"{anio}-04-30"},
-        {"numero": 2, "fecha_inicio": f"{anio}-05-01", "fecha_fin": f"{anio}-08-31"},
-        {"numero": 3, "fecha_inicio": f"{anio}-09-01", "fecha_fin": f"{anio}-12-31"},
-    ]
-
-
-async def _crear_cedula(client, headers, *, ejercicio: int, anio: int, area: int, clave: str):
+async def _crear_cedula(
+    client, headers, *, ejercicio: int, anio: int, area: int, clave: str, **extra
+):
+    """El POST de la cédula. `extra` es para lo que una prueba concreta
+    necesite añadir al cuerpo -el tipo de estrategia y los firmantes, que la
+    emisión exige-."""
     return await client.post(
         f"{API}/poa/cedulas",
         headers=headers,
@@ -146,7 +151,8 @@ async def _crear_cedula(client, headers, *, ejercicio: int, anio: int, area: int
             "estrategia_clave": clave,
             "area_responsable_id": area,
             "alcance_efecto_socioeconomico": "Lo que se espera lograr.",
-            "cuatrimestres": _cuatrimestres(anio),
+            "cuatrimestres": cuatrimestres(anio),
+            **extra,
         },
     )
 
@@ -362,28 +368,184 @@ async def test_una_cedula_repetida_sigue_siendo_un_conflicto(backend_client, pla
     assert repetida.status_code == 409, repetida.text
 
 
-@pytest.mark.skipif(not os.getenv("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL no configurada")
+@pytest.mark.parametrize("backend_client", ["postgresql"], indirect=True)
 @pytest.mark.asyncio
-async def test_guardar_una_cedula_de_un_poa_que_no_existe_no_es_un_duplicado():
+async def test_una_cedula_que_apunta_al_poa_equivocado_no_se_reporta_como_duplicada(
+    backend_client, planeacion_headers
+):
     """Un `except IntegrityError` que traduce *todo* a «ya existe una cédula»
     manda a buscar un duplicado cuando lo que falló fue la foránea del POA.
 
-    Se prueba contra el adaptador de PostgreSQL porque es ahí donde vive la
-    traducción: la variante en memoria no tiene foráneas que violar.
+    Sólo contra PostgreSQL -de ahí el `backend_client` fijado a esa variante-,
+    porque es donde vive la traducción y donde hay foráneas que violar; la
+    variante en memoria no tiene ninguna. Con la URL puesta corre; sin ella se
+    salta diciéndolo, igual que el resto de las pruebas de PostgreSQL.
+
+    El escenario es real salvo el POA: el ejercicio existe, el área existe y el
+    usuario existe, así que la única violación posible es la del catálogo. Si
+    se dejaran también esos ids inventados, la restricción que PostgreSQL
+    reportaría primero sería cualquiera de sus foráneas sueltas y la prueba no
+    diría lo que su nombre promete.
     """
-    motor = create_async_engine(os.environ["TEST_DATABASE_URL"])
-    try:
-        repositorio = SqlAlchemyPoaFormRepository(async_sessionmaker(motor, expire_on_commit=False))
-        cedula = PoaForm.create(
-            catalog_id=POA_INEXISTENTE,
-            exercise_id=POA_INEXISTENTE,
+    app, client = backend_client
+    _, ejercicio, area = await _escenario(client, planeacion_headers, app)
+    # Una cédula de verdad, para tomar de ella el id de un usuario que existe.
+    legitima = await _crear_cedula(
+        client,
+        planeacion_headers,
+        ejercicio=ejercicio["id"],
+        anio=ejercicio["anio"],
+        area=area,
+        clave=_ESTRATEGIA,
+    )
+    assert legitima.status_code == 201, legitima.text
+    extraviada = PoaForm.create(
+        catalog_id=POA_INEXISTENTE,
+        exercise_id=ejercicio["id"],
+        objective_number=_OBJETIVO,
+        strategy_key=_ESTRATEGIA,
+        # Otro área, para que un 409 legítimo no pueda hacerse pasar por el que
+        # se está buscando.
+        responsible_area_id=await _area(app),
+        created_by=legitima.json()["creado_por"],
+    )
+
+    with pytest.raises(IntegrityError) as fallo:
+        await app.state.poa_form_repository.add_form(extraviada)
+
+    assert any(viola_la_restriccion(fallo.value, nombre) for nombre in _FORANEAS_DEL_POA), (
+        fallo.value
+    )
+
+
+@pytest.mark.asyncio
+async def test_la_emision_respalda_los_nombres_del_poa_de_su_cedula(
+    backend_client, planeacion_headers
+):
+    """El único camino del cambio donde la base no ataja una resolución
+    equivocada.
+
+    Las escrituras las frenan las foráneas compuestas: una cédula, un indicador
+    o una actividad que apunten al catálogo de otro año no entran. El respaldo
+    cuatrimestral, en cambio, es un `dict` en una columna JSON: si
+    `_build_snapshot` resolviera los nombres en el POA equivocado, la emisión
+    se guardaría con el texto de otro año y nadie se enteraría. Es exactamente
+    el defecto que toda esta entrega existe para cerrar.
+
+    Una sola emisión cubre las cuatro consultas al catálogo que hace
+    `_build_snapshot`: el objetivo, la estrategia, el indicador y la acción.
+    """
+    app, client = backend_client
+    poa, ejercicio, area = await _escenario(client, planeacion_headers, app)
+    creada = await _crear_cedula(
+        client,
+        planeacion_headers,
+        ejercicio=ejercicio["id"],
+        anio=ejercicio["anio"],
+        area=area,
+        clave=_ESTRATEGIA,
+        # Lo que `emission_errors` exige además de un indicador, una actividad
+        # y su seguimiento completo con evidencia.
+        tipo_estrategia="Eficacia",
+        firmantes=[
+            {"nombre": "Titular Rectoría", "cargo": "Rectoría"},
+            {"nombre": "Titular Planeación", "cargo": "Dirección de Planeación"},
+        ],
+    )
+    assert creada.status_code == 201, creada.text
+    cedula = creada.json()
+    peticion = _peticion(app)
+    await get_add_form_indicator_use_case(peticion).execute(
+        AddPoaFormIndicatorCommand(
+            form_id=cedula["id"],
+            indicator_key=_INDICADOR,
+            institutional_goal=Decimal(10),
+            baseline_year=None,
+            baseline_value=None,
+            current_percentage=None,
+            target_value=None,
+            target_percentage=None,
+            actor=_planeacion(cedula),
+        )
+    )
+    actividad = await get_add_form_activity_use_case(peticion).execute(
+        AddPoaFormActivityCommand(
+            form_id=cedula["id"],
+            activity_key=_ACCION,
+            unit="Documento",
+            annual_goal=Decimal(1),
+            executing_area_id=area,
+            observations=None,
+            actor=_planeacion(cedula),
+        )
+    )
+
+    # El informe del cuatrimestre lo escribe el área, no Planeación
+    # (`can_report_progress`), así que hace falta un capturista del área.
+    periodo_id = cedula["cuatrimestres"][0]["periodo_id"]
+    await _open_poa_period(client, planeacion_headers, periodo_id)
+    _, capturista = await _account(app, client, Role.CAPTURISTA_POA, uuid4().hex[:8], area_id=area)
+    seguimiento = await client.put(
+        f"{API}/poa/cedulas/actividades/{actividad.id}/seguimientos/1",
+        headers=capturista,
+        json={
+            "periodo_id": periodo_id,
+            "programado": 1,
+            "alcanzado": 1,
+            "progreso": "Documento entregado",
+            "alcance": "Comunidad universitaria",
+        },
+    )
+    assert seguimiento.status_code == 200, seguimiento.text
+    await _attach_follow_up_file(
+        client,
+        capturista,
+        seguimiento.json()["id"],
+        f"t6b-{uuid4().hex[:6]}",
+        f"{ejercicio['anio']}-04-30",
+    )
+
+    emision = await client.post(
+        f"{API}/poa/cedulas/{cedula['id']}/emisiones",
+        headers=planeacion_headers,
+        json={"cuatrimestre": 1, "periodo_id": periodo_id},
+    )
+
+    assert emision.status_code == 201, emision.text
+    respaldo = emision.json()["snapshot"]
+    estrategia = respaldo["seccion_1_estrategia"]
+    # Las cuatro consultas de `_build_snapshot`, una por aserción. Los textos
+    # son los del POA `9.x` que esta prueba creó: el POA que siembra el sistema
+    # no tiene ninguna de estas cuatro claves.
+    # Las llaves del respaldo son los nombres de campo de las entidades, que es
+    # lo que `asdict` produce: `denomination`, `name`, `description`.
+    assert estrategia["objetivo"]["denomination"] == "El objetivo de este POA"
+    assert estrategia["estrategia"]["denomination"] == f"La {_ESTRATEGIA} de este POA"
+    assert estrategia["estrategia"]["catalog_id"] == poa["id"]
+    assert (
+        respaldo["seccion_2_indicadores"][0]["catalogo"]["name"]
+        == f"El indicador {_INDICADOR} de este POA"
+    )
+    assert (
+        respaldo["seccion_4_calendarizacion_y_seguimiento"][0]["catalogo"]["description"]
+        == f"La acción {_ACCION} de este POA"
+    )
+
+
+@pytest.mark.parametrize("catalogo_id", [0, -1], ids=["cero", "negativo"])
+def test_un_poa_que_no_puede_ser_no_se_acepta_ni_en_la_cedula_ni_en_el_ejercicio(catalogo_id):
+    """Los seriales de la base empiezan en 1, así que el cero y los negativos no
+    son ids de POA. Las dos entidades lo rechazan con el mismo criterio que
+    `IdDePoa` aplica en el borde HTTP, para que quien entre por otro lado -una
+    migración, un script, una prueba- no cuelgue filas de un POA imposible."""
+    with pytest.raises(ValidationError):
+        PoaForm.create(
+            catalog_id=catalogo_id,
+            exercise_id=1,
             objective_number=1,
             strategy_key="1.1",
-            responsible_area_id=POA_INEXISTENTE,
-            created_by=POA_INEXISTENTE,
+            responsible_area_id=1,
+            created_by=1,
         )
-
-        with pytest.raises(IntegrityError):
-            await repositorio.add_form(cedula)
-    finally:
-        await motor.dispose()
+    with pytest.raises(ValidationError):
+        PoaExercise.create(2030, catalog_id=catalogo_id)
