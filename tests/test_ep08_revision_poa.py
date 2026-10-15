@@ -15,6 +15,7 @@ import pytest
 from app.modules.identity_access.application.dto import RegisterUserCommand
 from app.modules.identity_access.application.use_cases.create_user import CreateUser
 from app.modules.identity_access.domain.value_objects import Role
+from conftest import poa_inicial_id
 from test_poa_cedula_flow import _attach_follow_up_file, _open_poa_period
 
 
@@ -40,7 +41,12 @@ async def _account(app, client, role: Role, suffix: str, area_id: int | None = N
 
 
 async def _ejercicio(client, headers, anio: int) -> int:
-    creado = await client.post("/api/v1/poa/ejercicios", headers=headers, json={"anio": anio})
+    catalogo_id = await poa_inicial_id(client, headers)
+    creado = await client.post(
+        "/api/v1/poa/ejercicios",
+        headers=headers,
+        json={"anio": anio, "catalogo_id": catalogo_id},
+    )
     if creado.status_code == 201:
         return creado.json()["id"]
     assert creado.status_code == 409, creado.text

@@ -29,6 +29,7 @@ from app.modules.poa_planning.domain.entities import PoaExercise
 from app.shared.application.actor import ActorContext
 from app.shared.domain.exceptions import ForbiddenError, InvalidStateError
 from app.shared.infrastructure.db.sql_loader import split_sql
+from conftest import poa_inicial_id
 
 
 def _random_year() -> int:
@@ -59,9 +60,10 @@ async def _account(app, client, role: Role, suffix: str, area_id: int | None = N
 
 
 async def _new_exercise(client, headers, *, with_deadline: bool = False) -> dict:
+    catalogo_id = await poa_inicial_id(client, headers)
     for _ in range(8):
         anio = _random_year()
-        body = {"anio": anio}
+        body = {"anio": anio, "catalogo_id": catalogo_id}
         if with_deadline:
             body["fecha_limite_formulacion"] = f"{anio}-02-20"
         response = await client.post("/api/v1/poa/ejercicios", headers=headers, json=body)
@@ -394,13 +396,14 @@ async def test_historial_queda_en_cambios_estado_con_entidad_poa_ejercicio(backe
 
 
 def test_ensure_editable_bloquea_fuera_de_borrador_o_tras_la_fecha_limite():
-    activo = PoaExercise.create(2199, formulation_deadline=date(2199, 2, 20))
+    # El POA del que cuelga no importa aquí, sólo el ciclo de estados.
+    activo = PoaExercise.create(2199, catalog_id=1, formulation_deadline=date(2199, 2, 20))
     activo.ensure_editable(date(2199, 2, 19))  # no debe lanzar: sigue en borrador y a tiempo
 
     with pytest.raises(InvalidStateError):
         activo.ensure_editable(date(2199, 2, 21))  # ya paso la fecha limite
 
-    enviado = PoaExercise.create(2198)
+    enviado = PoaExercise.create(2198, catalog_id=1)
     enviado.send(has_forms=True)
     with pytest.raises(InvalidStateError):
         enviado.ensure_editable(date(2198, 1, 1))  # ya no esta en borrador

@@ -10,11 +10,27 @@ from ..domain.entities import PoaExercise
 from ..domain.value_objects import PoaExerciseStatus
 from .models import PoaExerciseModel
 
+#: La única del año del ejercicio: es el nombre que Postgres le dio al `UNIQUE`
+#: en línea de `poa_ejercicios.anio` en la migración 0007.
+_UNICA_DEL_ANIO = "poa_ejercicios_anio_key"
+
+
+def _viola_la_unica_del_anio(exc: IntegrityError) -> bool:
+    """¿Esta violación es la del año repetido, y no otra?
+
+    Con asyncpg el nombre de la restricción viaja en la excepción original
+    (`orig.__cause__`), no en el texto: preguntarlo ahí evita adivinar por el
+    mensaje, que cambia con el idioma del servidor.
+    """
+    causa = getattr(exc.orig, "__cause__", None)
+    return getattr(causa, "constraint_name", None) == _UNICA_DEL_ANIO
+
 
 def _to_entity(model: PoaExerciseModel) -> PoaExercise:
     return PoaExercise(
         id=model.id,
         year=model.anio,
+        catalog_id=model.catalogo_id,
         status=PoaExerciseStatus(model.estado),
         formulation_deadline=model.fecha_limite_formulacion,
         review_comment=model.comentario_revision,
@@ -31,6 +47,7 @@ class SqlAlchemyPoaRepository:
             try:
                 model = PoaExerciseModel(
                     anio=item.year,
+                    catalogo_id=item.catalog_id,
                     estado=item.status.value,
                     fecha_limite_formulacion=item.formulation_deadline,
                     comentario_revision=item.review_comment,
@@ -40,7 +57,13 @@ class SqlAlchemyPoaRepository:
                 await commit_or_flush(session)
             except IntegrityError as exc:
                 await session.rollback()
-                raise ConflictError("El ejercicio POA ya existe.") from exc
+                # Sólo la del año es un conflicto. Cualquier otra -la foránea al
+                # POA por un `catalogo_id` inexistente, por ejemplo- se levanta
+                # tal cual: decir «ya existe» cuando lo que falló fue otra cosa
+                # manda a buscar un duplicado que no está.
+                if _viola_la_unica_del_anio(exc):
+                    raise ConflictError("El ejercicio POA ya existe.") from exc
+                raise
             item.id = model.id
 
     async def get_exercise(self, item_id: int) -> PoaExercise | None:

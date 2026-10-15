@@ -233,7 +233,7 @@ async def test_postgresql_directory_roles_and_form_quarter_transaction():
     )
     suffix = uuid4().hex[:8]
     try:
-        await application.state.poa_form_repository.ensure_catalogs()
+        catalogo_id = await application.state.poa_form_repository.ensure_catalogs()
         await CreateUser(
             repository=application.state.user_repository,
             password_hasher=application.state.password_hasher,
@@ -284,7 +284,7 @@ async def test_postgresql_directory_roles_and_form_quarter_transaction():
             )
             exercise = await client.post(
                 "/api/v1/poa/ejercicios",
-                json={"anio": 2198},
+                json={"anio": 2198, "catalogo_id": catalogo_id},
                 headers=headers,
             )
             form = await client.post(

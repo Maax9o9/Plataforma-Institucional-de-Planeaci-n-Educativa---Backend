@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from uuid import uuid4
 
 import asyncpg
 import pytest
@@ -9,6 +10,9 @@ from httpx import ASGITransport, AsyncClient
 
 from app.core.config import Settings
 from app.main import create_app
+from app.modules.identity_access.application.dto import RegisterUserCommand
+from app.modules.identity_access.application.use_cases.create_user import CreateUser
+from app.modules.identity_access.domain.value_objects import Role
 
 # Tablas con datos sembrados por una migracion (no por las pruebas). Si se
 # vaciaran junto con el resto, nada las repuebla: `unidades_medida` perderia
@@ -89,6 +93,47 @@ async def backend_client(request, tmp_path):
         await application.state.notification_service.close()
         if application.state.db_engine is not None:
             await application.state.db_engine.dispose()
+
+
+@pytest.fixture
+async def planeacion_headers(backend_client) -> dict[str, str]:
+    """Las cabeceras de una cuenta de Planeación recién creada.
+
+    Trabaja con la aplicación y el cliente de `backend_client`, así que corre
+    en las dos variantes (memoria y PostgreSQL) sin crear una aplicación propia.
+    El correo lleva sufijo único porque la base de PostgreSQL persiste durante
+    la corrida y los correos son únicos.
+    """
+    app, client = backend_client
+    correo = f"planeacion-{uuid4().hex[:8]}@example.com"
+    await CreateUser(
+        app.state.user_repository, app.state.password_hasher, app.state.event_bus
+    ).execute(
+        RegisterUserCommand(
+            email=correo,
+            full_name="Planeación de pruebas",
+            password="password-seguro",
+            roles={Role.PLANEACION},
+            area_id=None,
+        )
+    )
+    login = await client.post(
+        "/api/v1/auth/login", json={"correo": correo, "contrasena": "password-seguro"}
+    )
+    assert login.status_code == 200, login.text
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+async def poa_inicial_id(client, headers) -> int:
+    """El id del POA que siembra el sistema, para las pruebas que sólo necesitan
+    *un* POA del que colgar un ejercicio.
+
+    Se pide por el nombre y por la API, no por el repositorio: así sirve igual
+    en cualquier variante, y a quien sólo tiene cliente y cabeceras en la mano.
+    """
+    listado = await client.get("/api/v1/poa/catalogos-poa", headers=headers)
+    assert listado.status_code == 200, listado.text
+    return next(poa["id"] for poa in listado.json() if poa["nombre"] == "POA 2026")
 
 
 @pytest.fixture

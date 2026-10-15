@@ -15,6 +15,7 @@ import pytest
 from app.modules.identity_access.application.dto import RegisterUserCommand
 from app.modules.identity_access.application.use_cases.create_user import CreateUser
 from app.modules.identity_access.domain.value_objects import Role
+from conftest import poa_inicial_id
 
 API = "/api/v1"
 
@@ -105,9 +106,14 @@ async def test_el_cuatrimestre_filtra_todo_el_ejercicio_y_el_periodo_una_sola_ce
     assert area.status_code == 201, area.text
     area_id = area.json()["id"]
 
+    catalogo_id = await poa_inicial_id(client, headers)
     anio = 2000 + (uuid4().int % 200)
     for _ in range(8):
-        ejercicio = await client.post(f"{API}/poa/ejercicios", headers=headers, json={"anio": anio})
+        ejercicio = await client.post(
+            f"{API}/poa/ejercicios",
+            headers=headers,
+            json={"anio": anio, "catalogo_id": catalogo_id},
+        )
         if ejercicio.status_code == 201:
             break
         assert ejercicio.status_code == 409, ejercicio.text
@@ -208,9 +214,14 @@ async def test_rectoria_lee_los_reportes_de_todas_las_areas(backend_client):
     )
     assert area.status_code == 201, area.text
 
+    catalogo_id = await poa_inicial_id(client, headers)
     anio = 2000 + (uuid4().int % 200)
     for _ in range(8):
-        ejercicio = await client.post(f"{API}/poa/ejercicios", headers=headers, json={"anio": anio})
+        ejercicio = await client.post(
+            f"{API}/poa/ejercicios",
+            headers=headers,
+            json={"anio": anio, "catalogo_id": catalogo_id},
+        )
         if ejercicio.status_code == 201:
             break
         anio = 2000 + (uuid4().int % 200)
@@ -246,9 +257,14 @@ async def test_rectoria_descarga_el_formato_que_tiene_que_validar(backend_client
     headers = await _admin(app, client, suffix)
     rectoria = await _rectoria(app, client, suffix)
 
+    catalogo_id = await poa_inicial_id(client, headers)
     anio = 2000 + (uuid4().int % 200)
     for _ in range(8):
-        ejercicio = await client.post(f"{API}/poa/ejercicios", headers=headers, json={"anio": anio})
+        ejercicio = await client.post(
+            f"{API}/poa/ejercicios",
+            headers=headers,
+            json={"anio": anio, "catalogo_id": catalogo_id},
+        )
         if ejercicio.status_code == 201:
             break
         anio = 2000 + (uuid4().int % 200)
@@ -323,9 +339,14 @@ async def test_planeacion_filtra_por_el_area_que_pide(backend_client):
         assert area.status_code == 201, area.text
         areas.append(area.json()["id"])
 
+    catalogo_id = await poa_inicial_id(client, headers)
     anio = 2000 + (uuid4().int % 200)
     for _ in range(8):
-        ejercicio = await client.post(f"{API}/poa/ejercicios", headers=headers, json={"anio": anio})
+        ejercicio = await client.post(
+            f"{API}/poa/ejercicios",
+            headers=headers,
+            json={"anio": anio, "catalogo_id": catalogo_id},
+        )
         if ejercicio.status_code == 201:
             break
         anio = 2000 + (uuid4().int % 200)
@@ -377,9 +398,14 @@ async def test_rectoria_abre_el_poa_que_tiene_que_dictaminar(backend_client):
         json={"codigo": f"DIC-{suffix}", "nombre": f"Área dictamen {suffix}"},
     )
     assert area.status_code == 201, area.text
+    catalogo_id = await poa_inicial_id(client, headers)
     anio = 2000 + (uuid4().int % 200)
     for _ in range(8):
-        ejercicio = await client.post(f"{API}/poa/ejercicios", headers=headers, json={"anio": anio})
+        ejercicio = await client.post(
+            f"{API}/poa/ejercicios",
+            headers=headers,
+            json={"anio": anio, "catalogo_id": catalogo_id},
+        )
         if ejercicio.status_code == 201:
             break
         anio = 2000 + (uuid4().int % 200)

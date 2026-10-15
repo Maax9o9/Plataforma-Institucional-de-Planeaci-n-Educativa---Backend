@@ -157,10 +157,13 @@ async def _deshabilitar(client, headers, rama) -> None:
 
 
 async def _cedula_con_la_rama(client, headers, rama, area_id: int) -> dict:
+    catalogo_id = await _poa_inicial(client, headers)
     anio = 2000 + (uuid4().int % 200)
     for _ in range(8):
         ejercicio = await client.post(
-            "/api/v1/poa/ejercicios", headers=headers, json={"anio": anio}
+            "/api/v1/poa/ejercicios",
+            headers=headers,
+            json={"anio": anio, "catalogo_id": catalogo_id},
         )
         if ejercicio.status_code == 201:
             break

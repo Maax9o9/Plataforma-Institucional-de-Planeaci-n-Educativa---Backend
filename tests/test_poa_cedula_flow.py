@@ -15,6 +15,7 @@ from app.modules.poa_planning.infrastructure.reference_data import (
     POA_OBJECTIVES,
     POA_STRATEGIES,
 )
+from conftest import poa_inicial_id
 
 
 @pytest.mark.asyncio
@@ -59,7 +60,11 @@ async def test_multiple_children_area_permissions_and_snapshots(backend_client):
     capturer, capturer_headers = await account(Role.CAPTURISTA_POA, area_id)
     _, reviewer_headers = await account(Role.REVISOR_POA, area_id)
     planner, planner_headers = await account(Role.PLANEACION)
-    exercise = await client.post("/api/v1/poa/ejercicios", headers=headers, json={"anio": 2197})
+    exercise = await client.post(
+        "/api/v1/poa/ejercicios",
+        headers=headers,
+        json={"anio": 2197, "catalogo_id": await poa_inicial_id(client, headers)},
+    )
     assert exercise.status_code == 201, exercise.text
     response = await client.post(
         "/api/v1/poa/cedulas",
@@ -445,16 +450,16 @@ async def test_poa_form_catalogs_quarters_and_immutable_issues(client, app, monk
     capturer_headers = {"Authorization": f"Bearer {capturer_login.json()['access_token']}"}
     other_headers = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
     planning_headers = {"Authorization": f"Bearer {planning_login.json()['access_token']}"}
+    # El catálogo se pide siempre de un POA, y el ejercicio cuelga de uno. Este
+    # cliente no pasa por el arranque, que es quien siembra el inicial, así que
+    # se siembra aquí y se usa su id.
+    catalogo_id = await app.state.poa_form_repository.ensure_catalogs()
     exercise = await client.post(
         "/api/v1/poa/ejercicios",
-        json={"anio": 2036},
+        json={"anio": 2036, "catalogo_id": catalogo_id},
         headers=headers,
     )
     assert exercise.status_code == 201, exercise.text
-
-    # El catálogo se pide siempre de un POA. Este cliente no pasa por el arranque,
-    # que es quien siembra el inicial, así que se siembra aquí y se usa su id.
-    catalogo_id = await app.state.poa_form_repository.ensure_catalogs()
 
     strategies = await client.get(
         f"/api/v1/poa/catalogos/estrategias?catalogo_id={catalogo_id}&objetivo_numero=6",

@@ -25,6 +25,7 @@ import pytest
 
 from app.modules.identity_access.domain.value_objects import Role
 from app.modules.poa_planning.domain.cedula_entities import PoaFormIssue
+from conftest import poa_inicial_id
 from test_ciclo_poa import _account
 from test_poa_cedula_flow import _open_poa_period
 
@@ -36,7 +37,8 @@ async def _exercise(client, admin_headers, anio: int, *, with_deadline: bool = F
     # para no chocar con los años fijos que usan otras suites. Ir por un año
     # propio y determinista evita el mismo riesgo de colisión entre pruebas
     # que ya existe en el generador aleatorio.
-    body = {"anio": anio}
+    catalogo_id = await poa_inicial_id(client, admin_headers)
+    body = {"anio": anio, "catalogo_id": catalogo_id}
     if with_deadline:
         body["fecha_limite_formulacion"] = f"{anio}-02-20"
     response = await client.post("/api/v1/poa/ejercicios", headers=admin_headers, json=body)
