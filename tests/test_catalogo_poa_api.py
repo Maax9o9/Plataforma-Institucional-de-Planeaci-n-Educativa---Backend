@@ -187,6 +187,27 @@ async def test_un_poa_que_no_existe_es_404_en_los_doce(backend_client, metodo, r
     assert f"El POA {POA_INEXISTENTE} no existe." == respuesta.json()["message"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("metodo", "ruta", "cuerpo"), LOS_DOCE)
+async def test_un_poa_fuera_del_rango_de_la_base_es_422_y_no_500(
+    backend_client, metodo, ruta, cuerpo
+):
+    """El id es un entero de 32 bits en la base. Uno mayor no es un POA que no
+    existe sino un valor que PostgreSQL ni acepta como parámetro: sin tope en la
+    consulta llega hasta ahí y contesta 500, justo donde el contrato es 404."""
+    app, client = backend_client
+    headers = await _planeacion(app, client, uuid4().hex[:8])
+
+    respuesta = await client.request(
+        metodo, f"{CATALOGO}/{ruta}?catalogo_id={2**31}", headers=headers, json=cuerpo
+    )
+
+    assert respuesta.status_code == 422, respuesta.text
+    assert [(d["field"], d["type"]) for d in respuesta.json()["details"]] == [
+        ("catalogo_id", "less_than_equal")
+    ]
+
+
 async def _poa_inicial(client, headers) -> int:
     listado = await client.get(f"{API}/poa/catalogos-poa", headers=headers)
     assert listado.status_code == 200, listado.text

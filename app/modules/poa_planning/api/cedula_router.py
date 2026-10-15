@@ -374,8 +374,16 @@ def _actividad_catalogo(item: PoaActivityCatalog) -> ActividadPoaCatalogoRespues
 #: doce endpoints del catálogo: la «1.1» del 2026 y la del 2027 son dos filas
 #: distintas, y adivinar de cuál hablan es justo lo que hizo que editar un año
 #: cambiara los demás. Lo exige Pydantic: sin él, 422 con el parámetro que falta.
+#:
+#: El tope es el de la columna (un entero de 32 bits): un id mayor no es un POA
+#: que no existe sino un valor que PostgreSQL ni acepta, y llegaría hasta allá
+#: para contestar 500 donde el contrato es 404.
 CatalogoQuery = Annotated[
-    int, Query(description="El POA al que pertenece lo que se consulta o se edita.")
+    int,
+    Query(
+        le=2_147_483_647,
+        description="El POA al que pertenece lo que se consulta o se edita.",
+    ),
 ]
 
 
