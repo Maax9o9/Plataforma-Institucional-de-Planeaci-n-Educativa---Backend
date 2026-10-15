@@ -12,7 +12,13 @@ from app.modules.poa_planning.application.use_cases.manage_poa_catalog import (
     CrearCatalogoPoa,
     ListarCatalogosPoa,
 )
-from app.modules.poa_planning.domain.cedula_entities import PoaCatalogo
+from app.modules.poa_planning.domain.cedula_entities import (
+    PoaActivityCatalog,
+    PoaCatalogo,
+    PoaIndicatorCatalog,
+    PoaObjectiveCatalog,
+    PoaStrategyCatalog,
+)
 from app.modules.poa_planning.infrastructure.cedula_repository import (
     InMemoryPoaFormRepository,
 )
@@ -111,75 +117,166 @@ async def test_editar_una_estrategia_mueve_la_fecha_de_su_poa():
     assert (await repo.get_catalog(inicial)).updated_at > antes
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("que", ["objetivo", "indicador", "acción"])
-async def test_las_otras_tres_ediciones_del_catálogo_también_mueven_la_fecha(que):
-    """La estrategia ya la cubre la prueba de arriba. Las otras tres llevan su
-    propia llamada a `touch_catalog`, y olvidar una dejaría a Planeación viendo
-    una fecha que no se mueve justo al editar esa parte."""
-    repo = InMemoryPoaFormRepository()
-    inicial = await repo.ensure_catalogs()
-    antes = (await repo.get_catalog(inicial)).updated_at
-    admin = PoaCatalogAdmin(repo)
+# --- Las ediciones, sobre un POA que no es el 1 -----------------------------
+#
+# El POA inicial es el id 1, y un `1` fijo dentro de un caso de uso lo
+# encontraría "bien" sin que nadie lo note. Por eso estas pruebas editan un
+# POA aparte, cuyos elementos llevan claves que el inicial no tiene: si el caso
+# de uso mirara el POA equivocado, no hallaría lo que va a editar.
 
-    if que == "objetivo":
-        await admin.save_objective(
-            catalog_id=inicial,
-            number=1,
-            key="OBJ-1",
-            denomination="Texto corregido",
-            is_active=True,
-            actor=PLANEACION,
-            creating=False,
+#: Una edición válida de cada tipo de elemento, sobre `_poa_con_contenido`:
+#: (método del caso de uso, método del repositorio al que llama, campos).
+_EDICIONES = {
+    "objetivo": (
+        "save_objective",
+        "save_objective",
+        {"number": 7, "key": "OBJ-7", "denomination": "Texto corregido"},
+    ),
+    "estrategia": (
+        "save_strategy",
+        "save_strategy",
+        {"key": "7.1", "objective_number": 7, "denomination": "Texto corregido"},
+    ),
+    "indicador": (
+        "save_indicator",
+        "save_indicator",
+        {
+            "key": "7.1.1",
+            "objective_number": 7,
+            "name": "Texto corregido",
+            "formula": "Fórmula",
+            "unit": "Porcentaje",
+        },
+    ),
+    "acción": (
+        "save_activity",
+        "save_activity_catalog",
+        {"key": "7.1.2", "strategy_key": "7.1", "description": "Texto corregido"},
+    ),
+}
+
+
+async def _poa_con_contenido(repo: InMemoryPoaFormRepository) -> int:
+    """Un POA aparte con un elemento de cada tipo, sembrado directo en el
+    repositorio para que no dependa de los casos de uso que se están probando."""
+    otro = await CrearCatalogoPoa(repo).execute(
+        name="POA 2027", year=2027, origin=None, actor=PLANEACION
+    )
+    await repo.save_objective(
+        PoaObjectiveCatalog(catalog_id=otro.id, key="OBJ-7", number=7, denomination="Original")
+    )
+    await repo.save_strategy(
+        PoaStrategyCatalog(
+            catalog_id=otro.id, key="7.1", objective_number=7, denomination="Original"
         )
-    elif que == "indicador":
-        await admin.save_indicator(
-            catalog_id=inicial,
-            key="1.1.14",
-            objective_number=1,
-            name="Texto corregido",
+    )
+    await repo.save_indicator(
+        PoaIndicatorCatalog(
+            catalog_id=otro.id,
+            key="7.1.1",
+            objective_number=7,
+            name="Original",
             formula="Fórmula",
             unit="Porcentaje",
-            is_active=True,
-            actor=PLANEACION,
-            creating=False,
         )
-    else:
-        await admin.save_activity(
-            catalog_id=inicial,
-            key="1.1.2",
-            strategy_key="1.1",
-            description="Texto corregido",
-            is_active=True,
-            actor=PLANEACION,
-            creating=False,
+    )
+    await repo.save_activity_catalog(
+        PoaActivityCatalog(
+            catalog_id=otro.id, key="7.1.2", strategy_key="7.1", description="Original"
         )
+    )
+    return otro.id
 
-    assert (await repo.get_catalog(inicial)).updated_at > antes
+
+async def _editar(admin: PoaCatalogAdmin, que: str, catalog_id: int):
+    metodo, _, campos = _EDICIONES[que]
+    return await getattr(admin, metodo)(
+        catalog_id=catalog_id, **campos, is_active=True, actor=PLANEACION, creating=False
+    )
 
 
 @pytest.mark.asyncio
-async def test_si_el_guardado_falla_la_fecha_del_poa_no_se_mueve():
-    """La fecha se mueve al terminar, no al empezar: lo que Planeación entiende
-    por «última modificación» es que alguien tocó una estrategia, no que
-    alguien lo intentó."""
+@pytest.mark.parametrize("que", list(_EDICIONES))
+async def test_cada_edición_del_catálogo_mueve_la_fecha_de_su_poa_y_sólo_la_suya(que):
+    """Cada `save_*` lleva su propia llamada a `touch_catalog`, y olvidar una
+    dejaría a Planeación viendo una fecha que no se mueve justo al editar esa
+    parte. Tampoco puede moverle la fecha a otro POA ni guardar la edición en
+    otro."""
     repo = InMemoryPoaFormRepository()
     inicial = await repo.ensure_catalogs()
-    antes = (await repo.get_catalog(inicial)).updated_at
+    otro = await _poa_con_contenido(repo)
+    fecha_otro = (await repo.get_catalog(otro)).updated_at
+    fecha_inicial = (await repo.get_catalog(inicial)).updated_at
 
-    # El objetivo 99 no existe: el caso de uso rechaza el alta antes de guardar.
+    guardado = await _editar(PoaCatalogAdmin(repo), que, otro)
+
+    assert guardado.catalog_id == otro
+    assert (await repo.get_catalog(otro)).updated_at > fecha_otro
+    assert (await repo.get_catalog(inicial)).updated_at == fecha_inicial
+
+
+class _FallaDeGuardado(Exception):
+    pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("que", list(_EDICIONES))
+async def test_si_el_guardado_falla_la_fecha_del_poa_no_se_mueve(que):
+    """La fecha se mueve al terminar, no al empezar: lo que Planeación entiende
+    por «última modificación» es que alguien tocó el catálogo, no que alguien lo
+    intentó. Lo que falla aquí es el guardado del repositorio, no la validación
+    del caso de uso: en SQL, una violación de restricción al guardar no puede
+    haber movido ya la fecha."""
+    repo = InMemoryPoaFormRepository()
+    await repo.ensure_catalogs()
+    otro = await _poa_con_contenido(repo)
+    fecha_otro = (await repo.get_catalog(otro)).updated_at
+
+    async def guardado_que_falla(item):
+        raise _FallaDeGuardado
+
+    setattr(repo, _EDICIONES[que][1], guardado_que_falla)
+
+    with pytest.raises(_FallaDeGuardado):
+        await _editar(PoaCatalogAdmin(repo), que, otro)
+
+    assert (await repo.get_catalog(otro)).updated_at == fecha_otro
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("metodo", "campos"),
+    [
+        ("save_strategy", {"key": "1.1", "objective_number": 1, "denomination": "Texto"}),
+        (
+            "save_indicator",
+            {
+                "key": "1.1.14",
+                "objective_number": 1,
+                "name": "Texto",
+                "formula": "Fórmula",
+                "unit": "Porcentaje",
+            },
+        ),
+        ("save_activity", {"key": "1.1.2", "strategy_key": "1.1", "description": "Texto"}),
+    ],
+    ids=["estrategia", "indicador", "acción"],
+)
+async def test_lo_que_cuelga_de_otro_elemento_lo_busca_en_su_propio_poa(metodo, campos):
+    """El objetivo 1 y la estrategia 1.1 existen en el POA inicial, no en uno
+    nuevo y vacío. Colgar de ellos tiene que dar un error de validación que
+    nombre el dato: en PostgreSQL, un caso de uso que mirara el POA inicial
+    dejaría pasar el alta y acabaría en un 500 por la llave foránea."""
+    repo = InMemoryPoaFormRepository()
+    await repo.ensure_catalogs()
+    vacio = await CrearCatalogoPoa(repo).execute(
+        name="POA 2027", year=2027, origin=None, actor=PLANEACION
+    )
+
     with pytest.raises(ValidationError):
-        await PoaCatalogAdmin(repo).save_strategy(
-            catalog_id=inicial,
-            key="9.9",
-            objective_number=99,
-            denomination="Nunca se guarda",
-            is_active=True,
-            actor=PLANEACION,
-            creating=True,
+        await getattr(PoaCatalogAdmin(repo), metodo)(
+            catalog_id=vacio.id, **campos, is_active=True, actor=PLANEACION, creating=True
         )
-
-    assert (await repo.get_catalog(inicial)).updated_at == antes
 
 
 @pytest.mark.asyncio
