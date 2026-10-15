@@ -40,8 +40,13 @@ async def _admin(app, client, suffix: str) -> dict[str, str]:
 
 
 async def _primera_accion(client, headers, estrategia: str) -> str:
+    # El catálogo se pide siempre de un POA: aquí, el que siembra el sistema.
+    poas = await client.get(f"{API}/poa/catalogos-poa", headers=headers)
+    assert poas.status_code == 200, poas.text
+    catalogo_id = next(p["id"] for p in poas.json() if p["nombre"] == "POA 2026")
     catalogo = await client.get(
-        f"{API}/poa/catalogos/actividades?estrategia_clave={estrategia}", headers=headers
+        f"{API}/poa/catalogos/actividades?catalogo_id={catalogo_id}&estrategia_clave={estrategia}",
+        headers=headers,
     )
     assert catalogo.status_code == 200, catalogo.text
     acciones = catalogo.json()

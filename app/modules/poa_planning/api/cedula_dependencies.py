@@ -19,6 +19,7 @@ from ..application.use_cases.manage_cedula import (
     UpdatePoaFormActivity,
     UpdatePoaFormIndicator,
 )
+from ..application.use_cases.manage_poa_catalog import CrearCatalogoPoa, ListarCatalogosPoa
 
 
 def get_create_form_use_case(request: Request) -> CreatePoaForm:
@@ -153,3 +154,11 @@ def get_issue_form_use_case(request: Request) -> IssuePoaForm:
 
 def get_catalog_admin_use_case(request: Request) -> PoaCatalogAdmin:
     return PoaCatalogAdmin(request.app.state.poa_form_repository)
+
+
+def get_list_poa_catalogs_use_case(request: Request) -> ListarCatalogosPoa:
+    return ListarCatalogosPoa(request.app.state.poa_form_repository)
+
+
+def get_create_poa_catalog_use_case(request: Request) -> CrearCatalogoPoa:
+    return CrearCatalogoPoa(request.app.state.poa_form_repository)

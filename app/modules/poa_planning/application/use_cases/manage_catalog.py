@@ -31,6 +31,12 @@ class PoaCatalogAdmin:
     **Todo ocurre dentro de un POA** (`catalog_id`): la clave «1.1» del 2027 y
     la del 2026 son dos filas distintas, y editar una no toca la otra. Cada
     guardado mueve la fecha de modificación de su POA, y sólo la de ese.
+
+    **El POA tiene que existir**, y lo comprueba cada guardado. El router
+    también lo hace en las lecturas, pero la regla no puede depender de él: sin
+    ella, en memoria un `catalog_id` inventado deja filas colgando de la nada,
+    y en PostgreSQL revienta con la llave foránea cruda, sin decir que el POA
+    es lo que no está.
     """
 
     def __init__(self, repository: PoaFormRepository) -> None:
@@ -48,6 +54,7 @@ class PoaCatalogAdmin:
         creating: bool,
     ) -> PoaObjectiveCatalog:
         ensure_planning(actor)
+        await ensure_catalog_exists(self.repository, catalog_id)
         _texto("la denominación", denomination)
         existente = await self.repository.get_objective(catalog_id, number)
         _verificar_existencia("El objetivo", existente, creating)
@@ -76,6 +83,7 @@ class PoaCatalogAdmin:
         creating: bool,
     ) -> PoaStrategyCatalog:
         ensure_planning(actor)
+        await ensure_catalog_exists(self.repository, catalog_id)
         _texto("la denominación", denomination)
         existente = await self.repository.get_strategy(catalog_id, key)
         _verificar_existencia("La estrategia", existente, creating)
@@ -110,6 +118,7 @@ class PoaCatalogAdmin:
         creating: bool,
     ) -> PoaIndicatorCatalog:
         ensure_planning(actor)
+        await ensure_catalog_exists(self.repository, catalog_id)
         _texto("el nombre", name)
         _texto("la fórmula", formula)
         _texto("la unidad de medida", unit)
@@ -144,6 +153,7 @@ class PoaCatalogAdmin:
         creating: bool,
     ) -> PoaActivityCatalog:
         ensure_planning(actor)
+        await ensure_catalog_exists(self.repository, catalog_id)
         _texto("la descripción", description)
         existente = await self.repository.get_activity_catalog(catalog_id, key)
         _verificar_existencia("La acción", existente, creating)
@@ -161,6 +171,17 @@ class PoaCatalogAdmin:
         # Al terminar, no al empezar: si el guardado falla, la fecha no se mueve.
         await self.repository.touch_catalog(catalog_id)
         return guardado
+
+
+async def ensure_catalog_exists(repository: PoaFormRepository, catalog_id: int) -> None:
+    """Falla con 404 si el POA no existe.
+
+    Es la misma comprobación para quien escribe (los `save_*`) y para quien
+    sólo lee (el router): una lista vacía se leería en pantalla como «este POA
+    no tiene estrategias» cuando la verdad es que el POA no existe.
+    """
+    if await repository.get_catalog(catalog_id) is None:
+        raise ResourceNotFoundError(f"El POA {catalog_id} no existe.")
 
 
 def _texto(cual: str, valor: str) -> None:

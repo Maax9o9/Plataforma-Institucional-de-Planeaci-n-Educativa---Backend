@@ -26,6 +26,19 @@ from app.shared.domain.exceptions import ForbiddenError
 CATALOGO = "/api/v1/poa/catalogos"
 
 
+def _poa(catalogo_id: int, ruta: str) -> str:
+    """La URL de un elemento del catálogo dentro de su POA, que es obligatorio."""
+    separador = "&" if "?" in ruta else "?"
+    return f"{CATALOGO}/{ruta}{separador}catalogo_id={catalogo_id}"
+
+
+async def _poa_inicial(client, headers) -> int:
+    """El POA que siembra el sistema, sobre el que estas pruebas trabajan."""
+    listado = await client.get("/api/v1/poa/catalogos-poa", headers=headers)
+    assert listado.status_code == 200, listado.text
+    return next(p["id"] for p in listado.json() if p["nombre"] == "POA 2026")
+
+
 async def _account(app, client, role: Role, suffix: str, area_id: int | None = None):
     email = f"catalogo-pse-{role.value}-{suffix}@example.com"
     await CreateUser(
@@ -54,7 +67,8 @@ async def _nueva_rama(client, headers) -> dict[str, str | int]:
     prueba puede deshabilitar lo que acaba de crear sin dejar inservible el
     catalogo real para las demas pruebas de la misma base.
     """
-    objetivos = await client.get(f"{CATALOGO}/objetivos?solo_activos=false", headers=headers)
+    catalogo_id = await _poa_inicial(client, headers)
+    objetivos = await client.get(_poa(catalogo_id, "objetivos?solo_activos=false"), headers=headers)
     assert objetivos.status_code == 200, objetivos.text
     numero = max((item["numero"] for item in objetivos.json()), default=0) + 1
     estrategia = f"{numero}.1"
@@ -62,7 +76,7 @@ async def _nueva_rama(client, headers) -> dict[str, str | int]:
     accion = f"{numero}.1.1"
 
     creado = await client.post(
-        f"{CATALOGO}/objetivos/{numero}",
+        _poa(catalogo_id, f"objetivos/{numero}"),
         headers=headers,
         json={"clave": f"OBJ-{numero}", "denominacion": f"Objetivo de prueba {numero}"},
     )
@@ -93,10 +107,11 @@ async def _nueva_rama(client, headers) -> dict[str, str | int]:
             {"estrategia_clave": estrategia, "descripcion": f"Accion de prueba {accion}"},
         ),
     ):
-        respuesta = await client.post(f"{CATALOGO}/{ruta}", headers=headers, json=cuerpo)
+        respuesta = await client.post(_poa(catalogo_id, ruta), headers=headers, json=cuerpo)
         assert respuesta.status_code == 201, respuesta.text
 
     return {
+        "catalogo_id": catalogo_id,
         "objetivo": numero,
         "estrategia": estrategia,
         "indicador": indicador,
@@ -134,7 +149,9 @@ async def _deshabilitar(client, headers, rama) -> None:
         ),
     )
     for ruta, cuerpo in peticiones:
-        respuesta = await client.patch(f"{CATALOGO}/{ruta}", headers=headers, json=cuerpo)
+        respuesta = await client.patch(
+            _poa(rama["catalogo_id"], ruta), headers=headers, json=cuerpo
+        )
         assert respuesta.status_code == 200, respuesta.text
         assert respuesta.json()["activo"] is False
 
@@ -266,12 +283,14 @@ async def test_lo_deshabilitado_ya_no_se_puede_elegir(backend_client):
         (f"indicadores?objetivo_numero={rama['objetivo']}", rama["indicador"]),
         (f"actividades?estrategia_clave={rama['estrategia']}", rama["accion"]),
     ):
-        vigentes = await client.get(f"{CATALOGO}/{ruta}", headers=headers)
+        vigentes = await client.get(_poa(rama["catalogo_id"], ruta), headers=headers)
         assert vigentes.status_code == 200, vigentes.text
         assert clave not in [item["clave"] for item in vigentes.json()]
 
         separador = "&" if "?" in ruta else "?"
-        todo = await client.get(f"{CATALOGO}/{ruta}{separador}solo_activos=false", headers=headers)
+        todo = await client.get(
+            _poa(rama["catalogo_id"], f"{ruta}{separador}solo_activos=false"), headers=headers
+        )
         assert todo.status_code == 200, todo.text
         retirado = next(item for item in todo.json() if item["clave"] == clave)
         assert retirado["activo"] is False
@@ -333,7 +352,7 @@ async def test_lo_deshabilitado_se_vuelve_a_habilitar(backend_client):
     await _deshabilitar(client, headers, rama)
 
     revivida = await client.patch(
-        f"{CATALOGO}/estrategias/{rama['estrategia']}",
+        _poa(rama["catalogo_id"], f"estrategias/{rama['estrategia']}"),
         headers=headers,
         json={
             "objetivo_numero": rama["objetivo"],
@@ -346,7 +365,8 @@ async def test_lo_deshabilitado_se_vuelve_a_habilitar(backend_client):
     assert revivida.json()["denominacion"] == "Estrategia corregida"
 
     vigentes = await client.get(
-        f"{CATALOGO}/estrategias?objetivo_numero={rama['objetivo']}", headers=headers
+        _poa(rama["catalogo_id"], f"estrategias?objetivo_numero={rama['objetivo']}"),
+        headers=headers,
     )
     assert rama["estrategia"] in [item["clave"] for item in vigentes.json()]
 
@@ -360,14 +380,14 @@ async def test_alta_duplicada_y_edicion_de_lo_inexistente(backend_client):
 
     # Un alta nunca pisa en silencio lo que ya esta capturado.
     duplicado = await client.post(
-        f"{CATALOGO}/estrategias/{rama['estrategia']}",
+        _poa(rama["catalogo_id"], f"estrategias/{rama['estrategia']}"),
         headers=headers,
         json={"objetivo_numero": rama["objetivo"], "denominacion": "Otra cosa"},
     )
     assert duplicado.status_code == 409, duplicado.text
 
     ausente = await client.patch(
-        f"{CATALOGO}/estrategias/99.9",
+        _poa(rama["catalogo_id"], "estrategias/99.9"),
         headers=headers,
         json={"objetivo_numero": rama["objetivo"], "denominacion": "No existe"},
     )
@@ -375,7 +395,7 @@ async def test_alta_duplicada_y_edicion_de_lo_inexistente(backend_client):
 
     # Y el padre tiene que existir: el error dice cual de los dos datos esta mal.
     huerfana = await client.post(
-        f"{CATALOGO}/estrategias/{rama['objetivo']}.9",
+        _poa(rama["catalogo_id"], f"estrategias/{rama['objetivo']}.9"),
         headers=headers,
         json={"objetivo_numero": 999, "denominacion": "Sin objetivo"},
     )
@@ -393,7 +413,7 @@ async def test_solo_planeacion_administra_el_catalogo(backend_client):
     capturista = await _account(app, client, Role.CAPTURISTA_POA, suffix, area_id=area_id)
 
     denegado = await client.patch(
-        f"{CATALOGO}/estrategias/{rama['estrategia']}",
+        _poa(rama["catalogo_id"], f"estrategias/{rama['estrategia']}"),
         headers=capturista,
         json={
             "objetivo_numero": rama["objetivo"],
@@ -404,7 +424,7 @@ async def test_solo_planeacion_administra_el_catalogo(backend_client):
     assert denegado.status_code == 403, denegado.text
 
     # Pero si puede consultarlo: formular requiere leer el catalogo.
-    lectura = await client.get(f"{CATALOGO}/estrategias", headers=capturista)
+    lectura = await client.get(_poa(rama["catalogo_id"], "estrategias"), headers=capturista)
     assert lectura.status_code == 200, lectura.text
 
 

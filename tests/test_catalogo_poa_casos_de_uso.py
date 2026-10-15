@@ -23,7 +23,12 @@ from app.modules.poa_planning.infrastructure.cedula_repository import (
     InMemoryPoaFormRepository,
 )
 from app.shared.application.actor import ActorContext
-from app.shared.domain.exceptions import ConflictError, ForbiddenError, ValidationError
+from app.shared.domain.exceptions import (
+    ConflictError,
+    ForbiddenError,
+    ResourceNotFoundError,
+    ValidationError,
+)
 
 PLANEACION = ActorContext(id=1, roles=frozenset({"planeacion"}), area_id=None)
 AREA = ActorContext(id=2, roles=frozenset({"capturista_poa"}), area_id=3)
@@ -277,6 +282,35 @@ async def test_lo_que_cuelga_de_otro_elemento_lo_busca_en_su_propio_poa(metodo, 
         await getattr(PoaCatalogAdmin(repo), metodo)(
             catalog_id=vacio.id, **campos, is_active=True, actor=PLANEACION, creating=True
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("creando", [True, False], ids=["alta", "edición"])
+@pytest.mark.parametrize("que", list(_EDICIONES))
+async def test_guardar_en_un_poa_que_no_existe_es_un_404_y_no_deja_nada(que, creando):
+    """La regla vive también en el caso de uso, no sólo en el router, para que un
+    router nuevo no la pueda saltar. Sin ella, una alta en memoria deja filas
+    colgando de un POA que no está, y en PostgreSQL revienta con la llave
+    foránea cruda. Una edición sí daría 404 —el elemento tampoco existe—, pero
+    con un mensaje que habla del elemento y no del POA: por eso se compara el
+    mensaje y no sólo el tipo de error."""
+    repo = InMemoryPoaFormRepository()
+    await repo.ensure_catalogs()
+    metodo, _, campos = _EDICIONES[que]
+
+    with pytest.raises(ResourceNotFoundError) as fallo:
+        await getattr(PoaCatalogAdmin(repo), metodo)(
+            catalog_id=999, **campos, is_active=True, actor=PLANEACION, creating=creando
+        )
+
+    assert str(fallo.value) == "El POA 999 no existe."
+    colgando = [
+        llave
+        for tabla in (repo.objectives, repo.strategies, repo.indicators, repo.activity_catalog)
+        for llave in tabla
+        if llave[0] == 999
+    ]
+    assert colgando == []
 
 
 @pytest.mark.asyncio

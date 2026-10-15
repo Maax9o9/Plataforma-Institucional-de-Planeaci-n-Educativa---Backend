@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi import Path as PathParam
@@ -32,7 +32,7 @@ from ..application.cedula_dto import (
     UpdatePoaFormCommand,
     UpdatePoaFormIndicatorCommand,
 )
-from ..application.use_cases.manage_catalog import PoaCatalogAdmin
+from ..application.use_cases.manage_catalog import PoaCatalogAdmin, ensure_catalog_exists
 from ..application.use_cases.manage_cedula import (
     AddPoaFormActivity,
     AddPoaFormIndicator,
@@ -49,6 +49,7 @@ from ..application.use_cases.manage_cedula import (
     UpdatePoaFormActivity,
     UpdatePoaFormIndicator,
 )
+from ..application.use_cases.manage_poa_catalog import CrearCatalogoPoa, ListarCatalogosPoa
 from ..application.use_cases.review_follow_up import (
     ENTITY as FOLLOW_UP_ENTITY,
 )
@@ -63,6 +64,7 @@ from ..domain.cedula_entities import (
     STRATEGY_TYPES,
     PoaActivityCatalog,
     PoaActivityFollowUp,
+    PoaCatalogo,
     PoaFollowUpCard,
     PoaForm,
     PoaFormActivity,
@@ -82,10 +84,12 @@ from .cedula_dependencies import (
     get_capture_indicator_total_use_case,
     get_catalog_admin_use_case,
     get_create_form_use_case,
+    get_create_poa_catalog_use_case,
     get_delete_form_activity_use_case,
     get_delete_form_indicator_use_case,
     get_delete_form_use_case,
     get_issue_form_use_case,
+    get_list_poa_catalogs_use_case,
     get_record_follow_up_use_case,
     get_update_follow_up_justification_use_case,
     get_update_form_activity_use_case,
@@ -106,6 +110,8 @@ from .cedula_schemas import (
     AsignarCriteriosSeaesRequest,
     CambioEstadoSeguimientoRespuesta,
     CapturarTotalIndicadorRequest,
+    CatalogoPoaRequest,
+    CatalogoPoaRespuesta,
     CedulaPoaDetalleRespuesta,
     CedulaPoaRespuesta,
     CrearCedulaPoaRequest,
@@ -364,13 +370,76 @@ def _actividad_catalogo(item: PoaActivityCatalog) -> ActividadPoaCatalogoRespues
     )
 
 
+#: De qué POA se lee o se escribe. Obligatorio y sin valor por omisión, en los
+#: doce endpoints del catálogo: la «1.1» del 2026 y la del 2027 son dos filas
+#: distintas, y adivinar de cuál hablan es justo lo que hizo que editar un año
+#: cambiara los demás. Lo exige Pydantic: sin él, 422 con el parámetro que falta.
+CatalogoQuery = Annotated[
+    int, Query(description="El POA al que pertenece lo que se consulta o se edita.")
+]
+
+
+def _catalogo_poa(item: PoaCatalogo) -> CatalogoPoaRespuesta:
+    return CatalogoPoaRespuesta(
+        id=item.id,
+        nombre=item.name,
+        anio=item.year,
+        origen=item.origin,
+        creado_en=item.created_at,
+        actualizado_en=item.updated_at,
+    )
+
+
+@router.get(
+    "/catalogos-poa",
+    response_model=list[CatalogoPoaRespuesta],
+    responses={status.HTTP_403_FORBIDDEN: {"model": ErrorResponse}},
+    summary="Consultar los POA",
+)
+async def list_poa_catalogs(
+    # Los mismos que leen las cédulas, Rectoría incluida: para dictaminar tiene
+    # que poder ver contra qué POA se formuló lo que va a aprobar.
+    current_user=Depends(require_roles(*FORM_READ_ROLES)),
+    use_case: ListarCatalogosPoa = Depends(get_list_poa_catalogs_use_case),
+):
+    items = await use_case.execute(actor_from_user(current_user))
+    return [_catalogo_poa(item) for item in items]
+
+
+@router.post(
+    "/catalogos-poa",
+    response_model=CatalogoPoaRespuesta,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_403_FORBIDDEN: {"model": ErrorResponse},
+        status.HTTP_409_CONFLICT: {"model": ErrorResponse},
+    },
+    summary="Crear un POA vacío",
+)
+async def create_poa_catalog(
+    body: CatalogoPoaRequest,
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
+    use_case: CrearCatalogoPoa = Depends(get_create_poa_catalog_use_case),
+):
+    return _catalogo_poa(
+        await use_case.execute(
+            name=body.nombre,
+            year=body.anio,
+            origin=body.origen,
+            actor=actor_from_user(current_user),
+        )
+    )
+
+
 @router.get(
     "/catalogos/objetivos",
     response_model=list[ObjetivoPoaCatalogoRespuesta],
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
     summary="Consultar objetivos del formato POA",
 )
 async def list_objectives(
     request: Request,
+    catalogo_id: CatalogoQuery,
     solo_activos: bool = Query(
         default=True,
         description=(
@@ -380,23 +449,29 @@ async def list_objectives(
     ),
     _user=Depends(get_current_user),
 ):
-    items = await request.app.state.poa_form_repository.list_objectives(only_active=solo_activos)
+    repository = request.app.state.poa_form_repository
+    await ensure_catalog_exists(repository, catalogo_id)
+    items = await repository.list_objectives(catalog_id=catalogo_id, only_active=solo_activos)
     return [_objetivo_catalogo(item) for item in items]
 
 
 @router.get(
     "/catalogos/estrategias",
     response_model=list[EstrategiaPoaCatalogoRespuesta],
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
     summary="Consultar denominaciones de estrategia",
 )
 async def list_strategies(
     request: Request,
+    catalogo_id: CatalogoQuery,
     objetivo_numero: int | None = Query(default=None, ge=1),
     solo_activos: bool = Query(default=True),
     _user=Depends(get_current_user),
 ):
-    items = await request.app.state.poa_form_repository.list_strategies(
-        objective_number=objetivo_numero, only_active=solo_activos
+    repository = request.app.state.poa_form_repository
+    await ensure_catalog_exists(repository, catalogo_id)
+    items = await repository.list_strategies(
+        catalog_id=catalogo_id, objective_number=objetivo_numero, only_active=solo_activos
     )
     return [_estrategia_catalogo(item) for item in items]
 
@@ -404,16 +479,20 @@ async def list_strategies(
 @router.get(
     "/catalogos/indicadores",
     response_model=list[IndicadorPoaCatalogoRespuesta],
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
     summary="Consultar indicadores, fórmulas y unidades predefinidas",
 )
 async def list_indicators(
     request: Request,
+    catalogo_id: CatalogoQuery,
     objetivo_numero: int | None = Query(default=None, ge=1),
     solo_activos: bool = Query(default=True),
     _user=Depends(get_current_user),
 ):
-    items = await request.app.state.poa_form_repository.list_indicators(
-        objective_number=objetivo_numero, only_active=solo_activos
+    repository = request.app.state.poa_form_repository
+    await ensure_catalog_exists(repository, catalogo_id)
+    items = await repository.list_indicators(
+        catalog_id=catalogo_id, objective_number=objetivo_numero, only_active=solo_activos
     )
     return [_indicador_catalogo(item) for item in items]
 
@@ -421,16 +500,20 @@ async def list_indicators(
 @router.get(
     "/catalogos/actividades",
     response_model=list[ActividadPoaCatalogoRespuesta],
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
     summary="Consultar actividades predefinidas por estrategia",
 )
 async def list_activity_catalog(
     request: Request,
+    catalogo_id: CatalogoQuery,
     estrategia_clave: str | None = None,
     solo_activos: bool = Query(default=True),
     _user=Depends(get_current_user),
 ):
-    items = await request.app.state.poa_form_repository.list_activity_catalog(
-        strategy_key=estrategia_clave, only_active=solo_activos
+    repository = request.app.state.poa_form_repository
+    await ensure_catalog_exists(repository, catalogo_id)
+    items = await repository.list_activity_catalog(
+        catalog_id=catalogo_id, strategy_key=estrategia_clave, only_active=solo_activos
     )
     return [_actividad_catalogo(item) for item in items]
 
@@ -444,12 +527,14 @@ async def list_activity_catalog(
 )
 async def create_objective(
     body: ObjetivoPoaCatalogoRequest,
+    catalogo_id: CatalogoQuery,
     numero: int = PathParam(ge=1),
     current_user=Depends(require_roles(*PLANNING_ROLES)),
     use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
 ):
     return _objetivo_catalogo(
         await use_case.save_objective(
+            catalog_id=catalogo_id,
             number=numero,
             key=body.clave,
             denomination=body.denominacion,
@@ -468,12 +553,14 @@ async def create_objective(
 )
 async def update_objective(
     body: ObjetivoPoaCatalogoRequest,
+    catalogo_id: CatalogoQuery,
     numero: int = PathParam(ge=1),
     current_user=Depends(require_roles(*PLANNING_ROLES)),
     use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
 ):
     return _objetivo_catalogo(
         await use_case.save_objective(
+            catalog_id=catalogo_id,
             number=numero,
             key=body.clave,
             denomination=body.denominacion,
@@ -493,12 +580,14 @@ async def update_objective(
 )
 async def create_strategy(
     body: EstrategiaPoaCatalogoRequest,
+    catalogo_id: CatalogoQuery,
     clave: str = PathParam(min_length=1, max_length=20),
     current_user=Depends(require_roles(*PLANNING_ROLES)),
     use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
 ):
     return _estrategia_catalogo(
         await use_case.save_strategy(
+            catalog_id=catalogo_id,
             key=clave,
             objective_number=body.objetivo_numero,
             denomination=body.denominacion,
@@ -517,12 +606,14 @@ async def create_strategy(
 )
 async def update_strategy(
     body: EstrategiaPoaCatalogoRequest,
+    catalogo_id: CatalogoQuery,
     clave: str = PathParam(min_length=1, max_length=20),
     current_user=Depends(require_roles(*PLANNING_ROLES)),
     use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
 ):
     return _estrategia_catalogo(
         await use_case.save_strategy(
+            catalog_id=catalogo_id,
             key=clave,
             objective_number=body.objetivo_numero,
             denomination=body.denominacion,
@@ -542,12 +633,14 @@ async def update_strategy(
 )
 async def create_indicator(
     body: IndicadorPoaCatalogoRequest,
+    catalogo_id: CatalogoQuery,
     clave: str = PathParam(min_length=1, max_length=20),
     current_user=Depends(require_roles(*PLANNING_ROLES)),
     use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
 ):
     return _indicador_catalogo(
         await use_case.save_indicator(
+            catalog_id=catalogo_id,
             key=clave,
             objective_number=body.objetivo_numero,
             name=body.nombre,
@@ -568,12 +661,14 @@ async def create_indicator(
 )
 async def update_indicator(
     body: IndicadorPoaCatalogoRequest,
+    catalogo_id: CatalogoQuery,
     clave: str = PathParam(min_length=1, max_length=20),
     current_user=Depends(require_roles(*PLANNING_ROLES)),
     use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
 ):
     return _indicador_catalogo(
         await use_case.save_indicator(
+            catalog_id=catalogo_id,
             key=clave,
             objective_number=body.objetivo_numero,
             name=body.nombre,
@@ -595,12 +690,14 @@ async def update_indicator(
 )
 async def create_activity_catalog(
     body: ActividadPoaCatalogoRequest,
+    catalogo_id: CatalogoQuery,
     clave: str = PathParam(min_length=1, max_length=20),
     current_user=Depends(require_roles(*PLANNING_ROLES)),
     use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
 ):
     return _actividad_catalogo(
         await use_case.save_activity(
+            catalog_id=catalogo_id,
             key=clave,
             strategy_key=body.estrategia_clave,
             description=body.descripcion,
@@ -619,12 +716,14 @@ async def create_activity_catalog(
 )
 async def update_activity_catalog(
     body: ActividadPoaCatalogoRequest,
+    catalogo_id: CatalogoQuery,
     clave: str = PathParam(min_length=1, max_length=20),
     current_user=Depends(require_roles(*PLANNING_ROLES)),
     use_case: PoaCatalogAdmin = Depends(get_catalog_admin_use_case),
 ):
     return _actividad_catalogo(
         await use_case.save_activity(
+            catalog_id=catalogo_id,
             key=clave,
             strategy_key=body.estrategia_clave,
             description=body.descripcion,

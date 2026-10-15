@@ -452,15 +452,19 @@ async def test_poa_form_catalogs_quarters_and_immutable_issues(client, app, monk
     )
     assert exercise.status_code == 201, exercise.text
 
+    # El catálogo se pide siempre de un POA. Este cliente no pasa por el arranque,
+    # que es quien siembra el inicial, así que se siembra aquí y se usa su id.
+    catalogo_id = await app.state.poa_form_repository.ensure_catalogs()
+
     strategies = await client.get(
-        "/api/v1/poa/catalogos/estrategias?objetivo_numero=6",
+        f"/api/v1/poa/catalogos/estrategias?catalogo_id={catalogo_id}&objetivo_numero=6",
         headers=headers,
     )
     assert strategies.status_code == 200, strategies.text
     assert [item["clave"] for item in strategies.json()] == ["6.1", "6.2", "6.3", "6.4"]
 
     indicators = await client.get(
-        "/api/v1/poa/catalogos/indicadores?objetivo_numero=6",
+        f"/api/v1/poa/catalogos/indicadores?catalogo_id={catalogo_id}&objetivo_numero=6",
         headers=headers,
     )
     assert indicators.status_code == 200, indicators.text
@@ -468,7 +472,7 @@ async def test_poa_form_catalogs_quarters_and_immutable_issues(client, app, monk
     assert all(item["formula"] and item["unidad_medida"] for item in indicators.json())
 
     activities = await client.get(
-        "/api/v1/poa/catalogos/actividades?estrategia_clave=6.1",
+        f"/api/v1/poa/catalogos/actividades?catalogo_id={catalogo_id}&estrategia_clave=6.1",
         headers=headers,
     )
     assert activities.status_code == 200, activities.text

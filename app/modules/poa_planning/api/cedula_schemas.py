@@ -23,6 +23,25 @@ class FirmantePoaSchema(PoaRequest):
     cargo: str = Field(min_length=1, max_length=200)
 
 
+class CatalogoPoaRespuesta(BaseModel):
+    id: int
+    nombre: str
+    anio: int
+    origen: str | None
+    creado_en: datetime
+    actualizado_en: datetime
+
+
+class CatalogoPoaRequest(PoaRequest):
+    #: El tope es el de la columna (VARCHAR(120)): sin él, PostgreSQL contestaría
+    #: 500 a un nombre largo en vez de pedirle al usuario que lo acorte.
+    nombre: str = Field(min_length=1, max_length=120)
+    anio: int = Field(ge=2000, le=2200)
+    #: De dónde salió: «capturado a mano», «copiado del POA 2026»... Es lo que
+    #: deja saber qué se está mirando al elegirlo.
+    origen: str | None = None
+
+
 class ObjetivoPoaCatalogoRespuesta(BaseModel):
     clave: str
     numero: int
