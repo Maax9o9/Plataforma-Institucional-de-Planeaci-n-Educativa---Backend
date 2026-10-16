@@ -20,19 +20,24 @@ una base de pruebas, y dejó filas en `planeacion`, una de las cuales rompió la
 pestaña de indicadores del POA 2026. Las 522 pruebas de entonces pasaron sin
 notar nada, porque **ninguna miraba a qué base estaban conectadas**.
 
-Las dos pruebas de abajo son los dos lados de lo mismo: una mira el **código**
-—que el argumento esté escrito, incluso en un fixture que todavía no existe— y
-la otra mira el **resultado** —a qué base apuntan de verdad las aplicaciones que
-la suite construye—. Las dos mueren si alguien le quita el `database_url=None`
-explícito al fixture `app` de `tests/conftest.py`.
+Las tres pruebas de abajo son las tres caras de lo mismo: la primera mira el
+**código** —que el argumento esté escrito, incluso en un fixture que todavía no
+existe—, la segunda mira el **resultado** —a qué base apuntan de verdad las
+aplicaciones que la suite construye— y la tercera mira la que existe **por el
+solo hecho de importar**, que es la que nadie buscaba. Las dos primeras mueren
+si alguien le quita el `database_url=None` explícito al fixture `app` de
+`tests/conftest.py`.
 
 **El agujero de esta red, dicho aquí para que nadie la crea cerrada:** no caza
-una prueba que **sí** diga a qué base va y nombre una real. La de arriba mira
-que el argumento esté escrito, y ahí lo está; la de abajo sólo mira los dos
-fixtures, y una prueba puede construir su propia aplicación. Pasó:
-`tests/test_db_wiring.py` tenía la URL de desarrollo escrita a mano, esta red lo
-dejaba pasar -medido- y se arregló a mano poniendo allí una URL imposible. Si
-mañana vuelve a aparecer una base real en `tests/`, esto no lo va a decir.
+una prueba que **sí** diga a qué base va y nombre una real. La primera mira que
+el argumento esté escrito, y ahí lo está; la segunda sólo mira los dos fixtures,
+y una prueba puede construir su propia aplicación. Pasó **dos veces**, las dos
+arregladas a mano y ninguna por esta red: `tests/test_db_wiring.py` tenía la URL
+de desarrollo escrita a mano -medido: volver a ponerla deja la suite entera en
+verde-, y `tests/test_cors.py` nombraba `planeacion` en el **5432**, donde en la
+máquina de desarrollo hay un PostgreSQL escuchando de verdad. Las dos llevan
+ahora una URL imposible. Si mañana vuelve a aparecer una base real en `tests/`,
+esto no lo va a decir.
 """
 
 from __future__ import annotations
@@ -159,4 +164,43 @@ async def test_las_aplicaciones_de_la_suite_no_apuntan_a_la_base_de_desarrollo(
     assert _url_visible(motor.url) == _url_visible(esperada), (
         f"El fixture `backend_client` apunta a {_url_visible(motor.url)} y "
         f"TEST_DATABASE_URL es {_url_visible(esperada)}. {_QUE_HACER}"
+    )
+
+
+def test_la_aplicacion_de_modulo_no_abre_conexion_contra_su_base():
+    """La tercera cara: la aplicación que existe **por el solo hecho de
+    importar**, y que nadie estaba mirando.
+
+    `app/core/app_factory.py` termina con `app = create_app()` —sin argumentos,
+    o sea el `.env`—, `app/main.py` la reexporta y `tests/conftest.py` importa
+    de `app.main`. Así que en **cada** corrida de la suite existe una aplicación
+    apuntando a la base de desarrollo, con sus adaptadores de SQLAlchemy ya
+    armados. Hoy no abre un solo socket —nadie la usa; es la que sirve uvicorn
+    en producción—, y eso es justo lo que esto sujeta: está a una línea de ser
+    real.
+
+    Que `create_app()` sin argumentos lea el `.env` **es lo correcto**: es lo
+    que hace al desplegar. Lo que no puede volver a pasar desapercibido es que
+    la suite empiece a conectarse por ahí.
+
+    Se miran los **dos** contadores del pool y no sólo `checkedout()`: una
+    conexión que se abrió y se devolvió deja `checkedout() == 0` y
+    `checkedin() == 1`, así que `checkedout()` por su cuenta no vería la que ya
+    terminó. Los dos en cero significan «nunca se conectó», que es la
+    afirmación que hace falta.
+    """
+    from app.main import app as aplicacion_de_modulo
+
+    motor = aplicacion_de_modulo.state.db_engine
+    if motor is None:
+        pytest.skip("Sin `.env` no hay motor de módulo que vigilar (es el caso de CI).")
+
+    pool = motor.sync_engine.pool
+    assert (pool.checkedin(), pool.checkedout()) == (0, 0), (
+        "La aplicación de módulo abrió conexiones contra "
+        f"{_url_visible(motor.url)}: checkedin={pool.checkedin()}, "
+        f"checkedout={pool.checkedout()}. Esa aplicación sale de `create_app()` "
+        "sin argumentos (`app/core/app_factory.py`), o sea del `.env`, y existe "
+        "sólo porque `tests/conftest.py` importa de `app.main`. Si la suite se "
+        "conecta por ahí, está escribiendo en la base de desarrollo."
     )
