@@ -25,6 +25,14 @@ Las dos pruebas de abajo son los dos lados de lo mismo: una mira el **código**
 la otra mira el **resultado** —a qué base apuntan de verdad las aplicaciones que
 la suite construye—. Las dos mueren si alguien le quita el `database_url=None`
 explícito al fixture `app` de `tests/conftest.py`.
+
+**El agujero de esta red, dicho aquí para que nadie la crea cerrada:** no caza
+una prueba que **sí** diga a qué base va y nombre una real. La de arriba mira
+que el argumento esté escrito, y ahí lo está; la de abajo sólo mira los dos
+fixtures, y una prueba puede construir su propia aplicación. Pasó:
+`tests/test_db_wiring.py` tenía la URL de desarrollo escrita a mano, esta red lo
+dejaba pasar -medido- y se arregló a mano poniendo allí una URL imposible. Si
+mañana vuelve a aparecer una base real en `tests/`, esto no lo va a decir.
 """
 
 from __future__ import annotations
