@@ -8,12 +8,16 @@ cédulas, esto cambie la que contiene el 2026».
 
 Las escrituras ya las ataja la base -las foráneas compuestas impiden que una
 cédula, un indicador o una actividad cuelguen del catálogo de otro año-. Lo que
-queda son las **lecturas que resuelven nombres**, y de ésas aquí están las tres
-que nada cubría: el detalle de la cédula, el tablero de seguimiento y el
-servicio de reportes. Las dos últimas son las difíciles, porque pueden abarcar
-varios POAs a la vez: `ejercicio_id` es opcional en las dos. El formato de la
-SEP resuelve nombres también, pero está acotado a un ejercicio y ya lo cubre
-`test_formato_sep.py`.
+queda son las **lecturas que resuelven nombres**, y de ésas aquí están las
+cuatro que nada cubría: el detalle de la cédula, el tablero de seguimiento -el
+listado y la tarjeta suelta, que se arman igual pero se piden por separado-, el
+servicio de reportes y el formato de la SEP. El tablero y los reportes son los
+difíciles, porque pueden abarcar varios POAs a la vez: `ejercicio_id` es
+opcional en los dos. El formato de la SEP está acotado a un ejercicio, y aun así
+no lo cubría nada: `test_formato_sep.py` ejercita `llenar_formato` sobre cédulas
+armadas a mano y **nunca llama a `ExportarFormatoSep.execute()`**, que es donde
+se decide de qué POA salen los nombres. Esa afirmación estuvo escrita aquí y era
+falsa; la prueba que faltaba es la última de este archivo.
 
 Cada prueba crea **dos POAs con la misma clave y texto distinto**. Es lo único
 que distingue «resolví en el POA de esta cédula» de «resolví en el primero que
@@ -23,10 +27,13 @@ encontré»: con el mismo texto en los dos, las dos implementaciones pasarían.
 from __future__ import annotations
 
 from decimal import Decimal
+from io import BytesIO
 
 import pytest
+from openpyxl import load_workbook
 
 from app.modules.poa_planning.domain.cedula_entities import PoaActivityFollowUp
+from app.modules.poa_reports.application.sep_format import localizar_bloques
 from helpers import API, crear_ejercicio, crear_poa
 from test_cedula_con_poa import _anio_formulable, _area, _crear_cedula
 
@@ -123,6 +130,56 @@ async def _cedula_con_su_accion(client, headers, *, ejercicio: dict, area: int) 
     return {**cedula, "actividad_id": actividad.json()["id"]}
 
 
+async def _dos_tarjetas_en_dos_poas(app, client, headers, *, area: int) -> dict[int, dict]:
+    """Dos cédulas de dos POAs distintos, cada una con su acción `1.1.1` ya
+    seguida, y lo que la tarjeta de cada una tiene que decir.
+
+    Devuelve `{cedula_id: {"seguimiento": id, "descripcion": texto}}`. El
+    escenario lo piden las dos lecturas del seguimiento -el listado del tablero
+    y la tarjeta suelta de la captura del avance-, que resuelven la descripción
+    por su cuenta y por eso se miden por separado: cada una tiene que poder
+    morir sola. Las dos tarjetas comparten área ejecutora, así que el filtro por
+    área del tablero las trae a las dos y a nada más.
+    """
+    repositorio = app.state.poa_form_repository
+    sembradas: dict[int, dict] = {}
+    for texto in ("del POA de esta tarjeta", "del otro POA"):
+        _, ejercicio = await _poa_con_su_ejercicio(client, headers, texto=texto)
+        cedula = await _cedula_con_su_accion(client, headers, ejercicio=ejercicio, area=area)
+        seguimiento = await repositorio.upsert_follow_up(
+            PoaActivityFollowUp.create(
+                form_activity_id=cedula["actividad_id"],
+                quarter=1,
+                period_id=cedula["cuatrimestres"][0]["periodo_id"],
+                captured_by=cedula["creado_por"],
+                scheduled=Decimal(1),
+            )
+        )
+        sembradas[cedula["id"]] = {
+            "seguimiento": seguimiento.id,
+            "descripcion": f"La acción {_ACCION} {texto}",
+        }
+    return sembradas
+
+
+def _unico_bloque_escrito(libro):
+    """La hoja y el bloque donde quedó la única cédula del archivo exportado.
+
+    No se busca por la denominación -como hace `_bloque_de` de
+    `tests/test_formato_sep.py`- porque aquí la denominación es justo lo que se
+    está comprobando: localizar el bloque por ella daría por bueno lo que falta
+    por mirar. Se busca por «el único bloque que no quedó en blanco», que
+    `limpiar_bloque` hace posible al vaciar todos antes de escribir.
+    """
+    escritos = [
+        (libro[bloque.hoja], bloque)
+        for bloque in localizar_bloques(libro)
+        if libro[bloque.hoja].cell(row=bloque.estrategia + 2, column=2).value
+    ]
+    assert len(escritos) == 1, [bloque.hoja for _, bloque in escritos]
+    return escritos[0]
+
+
 @pytest.mark.asyncio
 async def test_editar_el_poa_nuevo_no_toca_la_cedula_vieja(backend_client, planeacion_headers):
     """Comprobado en vivo antes de esta entrega: hoy el texto de la cédula
@@ -186,24 +243,8 @@ async def test_el_tablero_resuelve_cada_tarjeta_en_el_poa_de_su_cedula(
     """
     app, client = backend_client
     area = await _area(app)
-    repositorio = app.state.poa_form_repository
-
-    esperado = {}
-    for texto in ("del POA de esta tarjeta", "del otro POA"):
-        _, ejercicio = await _poa_con_su_ejercicio(client, planeacion_headers, texto=texto)
-        cedula = await _cedula_con_su_accion(
-            client, planeacion_headers, ejercicio=ejercicio, area=area
-        )
-        await repositorio.upsert_follow_up(
-            PoaActivityFollowUp.create(
-                form_activity_id=cedula["actividad_id"],
-                quarter=1,
-                period_id=cedula["cuatrimestres"][0]["periodo_id"],
-                captured_by=cedula["creado_por"],
-                scheduled=Decimal(1),
-            )
-        )
-        esperado[cedula["id"]] = f"La acción {_ACCION} {texto}"
+    sembradas = await _dos_tarjetas_en_dos_poas(app, client, planeacion_headers, area=area)
+    esperado = {cedula: datos["descripcion"] for cedula, datos in sembradas.items()}
 
     tablero = await client.get(
         f"{API}/poa/seguimientos", headers=planeacion_headers, params={"area_id": area}
@@ -249,3 +290,100 @@ async def test_el_reporte_resuelve_cada_cedula_en_el_poa_de_la_suya(
     filas = reporte.json()["filas"]
     assert filas, reporte.text
     assert {(fila["cedula_id"], fila["descripcion"]) for fila in filas} == esperado
+
+
+@pytest.mark.asyncio
+async def test_la_tarjeta_suelta_resuelve_su_descripcion_en_el_poa_de_su_cedula(
+    backend_client, planeacion_headers
+):
+    """`GET /poa/seguimientos/{id}` es la pantalla donde un área captura su
+    avance cuatrimestral, y tiene URL propia: «tiene que poder cargarse sola,
+    sin haber pasado antes por el tablero», dice la propia función.
+
+    Se arma con el mismo `_tarjeta_respuesta` que el listado, pero resuelve la
+    descripción por su cuenta -`get_activity_catalog(activity.catalog_id, …)`-,
+    así que la prueba del tablero no la toca. Con el POA equivocado hay dos
+    salidas y las dos son malas: si el otro POA no tiene la clave se muestra la
+    clave desnuda en vez de la descripción, y si la tiene con otro texto se
+    muestra la acción de otro año sin que nada lo diga.
+
+    Las dos tarjetas se piden una por una y se comparan contra la pareja
+    completa: así una regla de «un solo catálogo para todas» falla en al menos
+    una, sea el primer POA, el último o cualquier otro fijo.
+    """
+    app, client = backend_client
+    area = await _area(app)
+    sembradas = await _dos_tarjetas_en_dos_poas(app, client, planeacion_headers, area=area)
+
+    descripciones = {}
+    for cedula, datos in sembradas.items():
+        tarjeta = await client.get(
+            f"{API}/poa/seguimientos/{datos['seguimiento']}", headers=planeacion_headers
+        )
+        assert tarjeta.status_code == 200, tarjeta.text
+        cuerpo = tarjeta.json()
+        # Que la tarjeta pedida es la de esta cédula, y no otra: sin esto la
+        # comparación de abajo podría cuadrar por casualidad.
+        assert cuerpo["cedula_id"] == cedula, cuerpo
+        descripciones[cedula] = cuerpo["actividad"]["descripcion"]
+
+    assert descripciones == {cedula: datos["descripcion"] for cedula, datos in sembradas.items()}
+
+
+@pytest.mark.asyncio
+async def test_el_formato_de_la_sep_lleva_los_nombres_del_poa_de_su_ejercicio(
+    backend_client, planeacion_headers
+):
+    """El `.xlsm` que se entrega a Rectoría y a la SEP, el peor sitio posible
+    para este defecto: el archivo sale del sistema y nadie puede compararlo con
+    nada.
+
+    Lo que no cubría nada hasta aquí. `tests/test_formato_sep.py` ejercita
+    `llenar_formato` sobre `CedulaDelFormato` armadas a mano -el relleno del
+    Excel está bien probado- y nunca llama a `ExportarFormatoSep.execute()`, que
+    es quien decide de qué POA salen los nombres; y
+    `tests/test_reportes_poa.py` pide el endpoint sobre un ejercicio **sin
+    cédulas**, así que el bucle donde vive la resolución no corre ni una vez.
+
+    El ejercicio que se exporta es el del **primero de los dos POAs que crea
+    esta prueba**, elegido así para que las reglas equivocadas no acierten por
+    casualidad: no es el primer POA del sistema -el sembrado va antes y tiene su
+    propia `1.1`, con el texto de la SEP-, ni el último, ni el más reciente, ni
+    el del año más alto -`anio_libre` reparte de abajo arriba, así que el
+    segundo POA se lleva el año mayor-, ni el del año más bajo -ése es el
+    sembrado, 2026-, ni el del id más alto o más bajo. Las siete reglas
+    devuelven un texto distinto del que se afirma; la única que acierta es
+    «resuelve en el POA del que cuelga el ejercicio».
+    """
+    app, client = backend_client
+    area = await _area(app)
+    texto = "del POA que se exporta"
+
+    _, ejercicio = await _poa_con_su_ejercicio(client, planeacion_headers, texto=texto)
+    await _cedula_con_su_accion(client, planeacion_headers, ejercicio=ejercicio, area=area)
+    # El segundo POA existe para que el que se exporta no sea ni el último, ni
+    # el más reciente, ni el del año mayor. No le hace falta cédula: lo que se
+    # resuelve contra un POA es el catálogo, y éste ya trae el suyo.
+    await _poa_con_su_ejercicio(client, planeacion_headers, texto="del POA de después")
+
+    descarga = await client.get(
+        f"{API}/poa/reportes/formato-sep",
+        headers=planeacion_headers,
+        params={"ejercicio_id": ejercicio["id"]},
+    )
+
+    assert descarga.status_code == 200, descarga.text[:200]
+    hoja, bloque = _unico_bloque_escrito(load_workbook(BytesIO(descarga.content), keep_vba=True))
+    # Las tres denominaciones que el exportador resuelve contra el catálogo: la
+    # de la estrategia (`get_strategy`), la del objetivo (`list_objectives`) y
+    # la de la acción (`list_activity_catalog`). Las tres salen de la misma
+    # local de `sep_export.py`, así que basta una para cazar la resolución; van
+    # las tres porque son tres consultas distintas y cada una puede desviarse
+    # sola.
+    assert hoja.cell(row=bloque.estrategia + 2, column=2).value == f"La {_ESTRATEGIA} {texto}"
+    assert hoja.cell(row=bloque.objetivo, column=3).value == f"El objetivo {texto}"
+    # `con_clave` antepone la clave cuando la descripción no la trae ya.
+    assert (
+        hoja.cell(row=bloque.actividades_desde, column=2).value
+        == f"{_ACCION} La acción {_ACCION} {texto}"
+    )
