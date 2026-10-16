@@ -163,6 +163,35 @@ async def test_el_catalogo_exige_decir_de_qué_poa(backend_client, metodo, ruta,
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("parte", LECTURAS)
+async def test_leer_el_catalogo_exige_estar_autenticado(backend_client, parte):
+    """«Leer el catálogo lo puede hacer cualquier autenticado» es una decisión
+    -está razonada en `cedula_router.py:410-415`-, y hasta aquí nada la
+    distinguía de dejarlo **público**: quitar las cuatro
+    `_user=Depends(get_current_user)` de `list_objectives`, `list_strategies`,
+    `list_indicators` y `list_activity_catalog` dejaba la suite entera en verde.
+    Son exactamente los cuatro endpoints que durante este plan quedaron abiertos
+    a cualquier autenticado por una afirmación falsa, así que lo que no está
+    sujeto es el «autenticado».
+
+    La misma petición se hace dos veces, con sesión y sin ella: el 200 de la
+    primera es lo que demuestra que el 401 de la segunda mide la sesión y no la
+    ruta, el POA ni el parámetro. Los cuatro se recorren porque basta que a uno
+    le falte la guarda para que el catálogo entero se lea sin cuenta, igual que
+    `/poa/catalogos-poa` tiene la suya.
+    """
+    app, client = backend_client
+    headers = await _planeacion(app, client, uuid4().hex[:8])
+    poa = await poa_inicial_id(client, headers)
+
+    con_sesion = await client.get(f"{CATALOGO}/{parte}?catalogo_id={poa}", headers=headers)
+    sin_sesion = await client.get(f"{CATALOGO}/{parte}?catalogo_id={poa}")
+
+    assert con_sesion.status_code == 200, con_sesion.text
+    assert sin_sesion.status_code == 401, sin_sesion.text
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(("metodo", "ruta", "cuerpo"), LOS_DOCE)
 async def test_un_poa_que_no_existe_es_404_en_los_doce(backend_client, metodo, ruta, cuerpo):
     """Una lista vacía se leería en pantalla como «este POA no tiene
