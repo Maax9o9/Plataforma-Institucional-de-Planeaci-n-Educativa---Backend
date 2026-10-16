@@ -10,7 +10,12 @@ import pytest
 from app.modules.identity_access.application.dto import RegisterUserCommand
 from app.modules.identity_access.application.use_cases.create_user import CreateUser
 from app.modules.identity_access.domain.value_objects import Role
-from helpers import IDS_QUE_NO_PUEDEN_SER_DE_UN_POA, POA_INEXISTENTE, poa_inicial_id
+from helpers import (
+    IDS_QUE_NO_PUEDEN_SER_DE_UN_POA,
+    POA_INEXISTENTE,
+    crear_poa,
+    poa_inicial_id,
+)
 
 API = "/api/v1"
 CATALOGO = f"{API}/poa/catalogos"
@@ -420,3 +425,93 @@ async def test_el_alta_de_un_poa_rechaza_lo_que_la_base_no_admite(backend_client
     respuesta = await client.post(f"{API}/poa/catalogos-poa", headers=headers, json=cuerpo)
 
     assert respuesta.status_code == 422, respuesta.text
+
+
+# --- Una clave que no sea de dígitos y puntos ------------------------------
+
+#: Lo que cada listado del catálogo tiene que devolver, en orden, y el orden en
+#: que se da de alta (el inverso del texto, para que ni la inserción ni el
+#: `ORDER BY clave` de la consulta acierten por su cuenta).
+#:
+#: `IND-1` no es un ejemplo inventado: es la forma que
+#: `tests/test_instalacion_nueva.py` siembra como «un catálogo mínimo como el
+#: que una instalación viva ya tenía». Y es alcanzable desde la interfaz: los
+#: seis endpoints de administración declaran
+#: `clave: str = PathParam(min_length=1, max_length=20)`, y el frontend sólo
+#: exige dígitos para el objetivo.
+CLAVES_ORDENADAS = {
+    "estrategias": ["1.2", "1.10", "ESTR-A"],
+    "indicadores": ["1.1.2", "1.1.10", "IND-1"],
+    "actividades": ["1.2.2", "1.2.10", "ACC-A"],
+}
+
+#: El cuerpo que pide el alta de cada uno de los tres.
+CUERPOS_DEL_ALTA = {
+    "estrategias": lambda clave: {
+        "objetivo_numero": 1,
+        "denominacion": f"La estrategia {clave}",
+    },
+    "indicadores": lambda clave: {
+        "objetivo_numero": 1,
+        "nombre": f"El indicador {clave}",
+        "formula": "(a / b) * 100",
+        "unidad_medida": "Porcentaje",
+    },
+    "actividades": lambda clave: {
+        "estrategia_clave": "1.2",
+        "descripcion": f"La acción {clave}",
+    },
+}
+
+
+@pytest.mark.asyncio
+async def test_una_clave_que_no_es_de_digitos_no_tira_el_listado_del_catalogo(backend_client):
+    """El catálogo es administrable y la clave la elige quien captura, así que
+    un tramo puede no ser un número. Con `int()` a secas en la clave de orden,
+    una sola fila como `IND-1` dejaba el listado entero en **500**
+    (`ValueError: invalid literal for int() with base 10`), y no hay vuelta: no
+    hay borrado -«retirar no borra»- y retirar exige listar, que es justo lo que
+    revienta. La pestaña del POA se queda inservible hasta que alguien entre a
+    la base a mano.
+
+    Lo que se exige aquí es que **ordenar degrade con elegancia**, no que la
+    clave se restrinja: qué forma puede tener una clave es decisión de producto.
+    La parte numérica donde la haya, el texto como desempate y detrás.
+
+    Las tres listas que ordenan por clave van en la misma prueba -estrategias,
+    indicadores y acciones; los objetivos ordenan por número- y se da de alta en
+    orden inverso al del texto, así que las reglas equivocadas no aciertan por
+    casualidad: «como texto» daría `1.1.10` antes de `1.1.2`, «sin ordenar»
+    devolvería el orden de inserción o el del `ORDER BY clave`, «numérico a
+    secas» sigue siendo el 500, y «el texto primero» pondría `IND-1` al frente.
+    """
+    app, client = backend_client
+    headers = await _planeacion(app, client, uuid4().hex[:8])
+    poa = (await crear_poa(client, headers, 2033))["id"]
+    catalogo = {"catalogo_id": poa}
+
+    objetivo = await client.post(
+        f"{CATALOGO}/objetivos/1",
+        headers=headers,
+        params=catalogo,
+        json={"clave": "OBJ-1", "denominacion": "El objetivo 1"},
+    )
+    assert objetivo.status_code == 201, objetivo.text
+    # Las estrategias primero: la acción exige que la suya exista.
+    for parte in ("estrategias", "indicadores", "actividades"):
+        for clave in sorted(CLAVES_ORDENADAS[parte], reverse=True):
+            alta = await client.post(
+                f"{CATALOGO}/{parte}/{clave}",
+                headers=headers,
+                params=catalogo,
+                json=CUERPOS_DEL_ALTA[parte](clave),
+            )
+            assert alta.status_code == 201, alta.text
+
+    listados = {}
+    for parte in CLAVES_ORDENADAS:
+        listado = await client.get(f"{CATALOGO}/{parte}", headers=headers, params=catalogo)
+        assert listado.status_code == 200, listado.text
+        listados[parte] = [item["clave"] for item in listado.json()]
+
+    assert listados == CLAVES_ORDENADAS

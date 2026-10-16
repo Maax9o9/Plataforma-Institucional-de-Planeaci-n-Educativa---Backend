@@ -29,13 +29,34 @@ from .reference_data import (
 )
 
 
-def _catalog_key(item) -> tuple[int, ...]:
-    """Ordena la clave punteada por número y no como texto.
+def _catalog_key(item) -> tuple[tuple[int, int, str], ...]:
+    """Ordena la clave punteada por número y no como texto, sin reventar cuando
+    un tramo no es un número.
 
     Como texto, «1.1.10» se colaría antes de «1.1.2» y el listado saldría en un
-    orden distinto al del adaptador SQL, que ya ordena así.
+    orden distinto al del otro adaptador.
+
+    Y el tramo puede no ser un número: el catálogo es administrable, la clave la
+    elige quien captura y el borde HTTP acepta cualquier texto de 1 a 20
+    caracteres. Con un `int()` a secas, una sola fila como `IND-1` dejaba el
+    listado entero en 500 -«invalid literal for int()»-, y eso no tiene vuelta:
+    no hay borrado -«retirar no borra»- y retirar exige listar, que es justo lo
+    que revienta, así que el POA se quedaba inservible hasta que alguien entrara
+    a la base a mano.
+
+    Cada tramo se compara por `(es texto, número, texto)`: los numéricos
+    conservan su orden numérico, los demás van detrás y alfabéticos entre sí, y
+    nunca se compara un entero con una cadena. Degradar el orden es recuperable;
+    tirar la pantalla no. Qué forma puede tener una clave es otra pregunta, y es
+    de producto: esto no restringe nada.
+
+    Se usa `isdecimal()` y no `isdigit()` porque `"²".isdigit()` es verdadero e
+    `int("²")` revienta igual.
     """
-    return tuple(int(part) for part in item.key.split("."))
+    return tuple(
+        (0, int(parte), "") if parte.isdecimal() else (1, 0, parte)
+        for parte in item.key.split(".")
+    )
 
 
 class InMemoryPoaFormRepository:
