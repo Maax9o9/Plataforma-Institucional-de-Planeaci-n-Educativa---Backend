@@ -50,11 +50,19 @@ _OBJETIVO = 1
 _ESTRATEGIA = "1.1"
 _ACCION = "1.1.1"
 
+#: El indicador, elegido con el criterio opuesto al de la acción: `1.1.14` **sí**
+#: existe entre los 11 sembrados (`reference_data.py`), con el nombre de la SEP y
+#: el objetivo 1. Así, resolverlo en el POA equivocado devuelve un texto distinto
+#: en vez de quedarse vacío, que es más difícil de confundir con un fallo de
+#: armado.
+_INDICADOR = "1.1.14"
+
 
 async def _poa_con_catalogo(client, headers, *, anio: int, texto: str) -> dict:
-    """Un POA nuevo con su objetivo, su estrategia y su acción propios.
+    """Un POA nuevo con su objetivo, su estrategia, su indicador y su acción
+    propios.
 
-    `texto` entra en las tres denominaciones y es lo que cada prueba compara:
+    `texto` entra en las cuatro denominaciones y es lo que cada prueba compara:
     las claves son iguales en los dos POAs que crea, el texto no.
     """
     poa = await crear_poa(client, headers, anio)
@@ -76,6 +84,18 @@ async def _poa_con_catalogo(client, headers, *, anio: int, texto: str) -> dict:
         },
     )
     assert estrategia.status_code == 201, estrategia.text
+    indicador = await client.post(
+        f"{API}/poa/catalogos/indicadores/{_INDICADOR}",
+        headers=headers,
+        params=catalogo,
+        json={
+            "objetivo_numero": _OBJETIVO,
+            "nombre": f"El indicador {_INDICADOR} {texto}",
+            "formula": "(a / b) * 100",
+            "unidad_medida": "Porcentaje",
+        },
+    )
+    assert indicador.status_code == 201, indicador.text
     accion = await client.post(
         f"{API}/poa/catalogos/actividades/{_ACCION}",
         headers=headers,
@@ -360,7 +380,18 @@ async def test_el_formato_de_la_sep_lleva_los_nombres_del_poa_de_su_ejercicio(
     texto = "del POA que se exporta"
 
     _, ejercicio = await _poa_con_su_ejercicio(client, planeacion_headers, texto=texto)
-    await _cedula_con_su_accion(client, planeacion_headers, ejercicio=ejercicio, area=area)
+    cedula = await _cedula_con_su_accion(
+        client, planeacion_headers, ejercicio=ejercicio, area=area
+    )
+    # El indicador se cuelga aquí y no en `_cedula_con_su_accion` porque sólo
+    # esta prueba lo mira: es la cuarta consulta al catálogo del exportador, y
+    # las otras dos pruebas que usan ese ayudante no leen indicadores.
+    indicador = await client.post(
+        f"{API}/poa/cedulas/{cedula['id']}/indicadores",
+        headers=planeacion_headers,
+        json={"indicador_clave": _INDICADOR},
+    )
+    assert indicador.status_code == 201, indicador.text
     # El segundo POA existe para que el que se exporta no sea ni el último, ni
     # el más reciente, ni el del año mayor. No le hace falta cédula: lo que se
     # resuelve contra un POA es el catálogo, y éste ya trae el suyo.
@@ -374,16 +405,21 @@ async def test_el_formato_de_la_sep_lleva_los_nombres_del_poa_de_su_ejercicio(
 
     assert descarga.status_code == 200, descarga.text[:200]
     hoja, bloque = _unico_bloque_escrito(load_workbook(BytesIO(descarga.content), keep_vba=True))
-    # Las tres denominaciones que el exportador resuelve contra el catálogo: la
-    # de la estrategia (`get_strategy`), la del objetivo (`list_objectives`) y
-    # la de la acción (`list_activity_catalog`). Las tres salen de la misma
-    # local de `sep_export.py`, así que basta una para cazar la resolución; van
-    # las tres porque son tres consultas distintas y cada una puede desviarse
-    # sola.
+    # Las **cuatro** consultas que el exportador hace al catálogo: la
+    # denominación de la estrategia (`get_strategy`), la del objetivo
+    # (`list_objectives`), la descripción de la acción
+    # (`list_activity_catalog`) y el nombre del indicador (`list_indicators`).
+    # Las cuatro salen de la misma local de `sep_export.py`, así que basta una
+    # para cazar al mutante; van las cuatro porque son cuatro consultas
+    # distintas y cada una puede desviarse sola.
     assert hoja.cell(row=bloque.estrategia + 2, column=2).value == f"La {_ESTRATEGIA} {texto}"
     assert hoja.cell(row=bloque.objetivo, column=3).value == f"El objetivo {texto}"
-    # `con_clave` antepone la clave cuando la descripción no la trae ya.
+    # `con_clave` antepone la clave cuando el texto no la trae ya.
     assert (
         hoja.cell(row=bloque.actividades_desde, column=2).value
         == f"{_ACCION} La acción {_ACCION} {texto}"
+    )
+    assert (
+        hoja.cell(row=bloque.indicadores[0] + 1, column=2).value
+        == f"{_INDICADOR} El indicador {_INDICADOR} {texto}"
     )
