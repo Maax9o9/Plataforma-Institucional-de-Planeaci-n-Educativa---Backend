@@ -439,9 +439,19 @@ async def test_el_alta_de_un_poa_rechaza_lo_que_la_base_no_admite(backend_client
 #: seis endpoints de administración declaran
 #: `clave: str = PathParam(min_length=1, max_length=20)`, y el frontend sólo
 #: exige dígitos para el objetivo.
+#:
+#: `1.1.²` tampoco es decorado: es el único de estos datos que distingue
+#: `isdecimal()` de `isdigit()`, que es la condición con la que `_catalog_key`
+#: decide si un tramo es un número. `"²".isdigit()` es **verdadero** e
+#: `int("²")` revienta igual, así que con `isdigit()` vuelve el 500. Son **128**
+#: los caracteres que son `isdigit()` y no `isdecimal()` -exponentes, subíndices,
+#: los dígitos etíopes-, y ningún otro archivo de `tests/` contiene uno, así que
+#: sin esta clave nada puede medir esa elección. El tramo tiene que ser el `²`
+#: **solo**: `ESTR-²` no sirve, porque `"ESTR-²".isdigit()` ya es falso y las dos
+#: condiciones coinciden.
 CLAVES_ORDENADAS = {
     "estrategias": ["1.2", "1.10", "ESTR-A"],
-    "indicadores": ["1.1.2", "1.1.10", "IND-1"],
+    "indicadores": ["1.1.2", "1.1.10", "1.1.²", "IND-1"],
     "actividades": ["1.2.2", "1.2.10", "ACC-A"],
 }
 
