@@ -19,8 +19,14 @@ from app.modules.periods.infrastructure.sql_repository import SqlAlchemyPeriodRe
 def database_settings() -> Settings:
     return Settings(
         environment="testing",
+            indicators_module_enabled=True,
         secret_key="test-secret-key-with-more-than-32-characters",
-        database_url="postgresql+asyncpg://planeacion:planeacion_dev@localhost:5433/planeacion",
+        # Imposible a propósito -puerto 1, usuario y base que no existen-: lo que
+        # esta prueba demuestra es que la URL elige los adaptadores de SQLAlchemy
+        # **sin conectar**, así que no hay que «arreglarla» poniendo una que
+        # funcione. Nombrar aquí una base real es dejar puesta la trampa que ya
+        # costó filas en `planeacion` y una pantalla rota.
+        database_url="postgresql+asyncpg://nadie:nada@127.0.0.1:1/base-que-no-existe",
         email_provider="console",
         cors_origins=["http://localhost:5173"],
     )

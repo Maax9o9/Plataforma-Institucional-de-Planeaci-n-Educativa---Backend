@@ -144,6 +144,7 @@ class SqlAlchemyIndicatorRepository:
         responsible_id: int | None,
         instrument_id: int | None,
         criterion_id: int | None,
+        periodicity: IndicatorPeriodicity | None,
         sort: str,
         descending: bool,
         offset: int,
@@ -178,6 +179,8 @@ class SqlAlchemyIndicatorRepository:
                         )
                     )
                 )
+            if periodicity is not None:
+                filters.append(IndicatorModel.periodicidad == periodicity.value)
             total = int(
                 await session.scalar(
                     select(func.count()).select_from(IndicatorModel).where(*filters)

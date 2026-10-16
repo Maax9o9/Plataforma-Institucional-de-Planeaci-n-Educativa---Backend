@@ -15,6 +15,7 @@ from app.core.config import get_settings
 from app.shared.infrastructure.db.base import Base
 
 for _model_module in (
+    "app.modules.email_templates.infrastructure.models",
     "app.modules.audit.infrastructure.models",
     "app.modules.identity_access.infrastructure.models",
     "app.modules.indicators_catalog.infrastructure.models",

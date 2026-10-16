@@ -17,6 +17,19 @@ class EvidenceRepository(Protocol):
 
     async def has_for(self, entity: FlowEntity, entity_id: int) -> bool: ...
 
+    async def count_by_entity(
+        self, entity: FlowEntity, entity_ids: list[int]
+    ) -> dict[int, int]: ...
+
+    #: Cuántas evidencias siguen esperando dictamen, por entidad.
+    #:
+    #: El tablero lo necesita para decir qué queda por revisar: un conteo total
+    #: no distingue el informe con tres archivos ya dictaminados del que tiene
+    #: tres sin mirar, y es justo esa diferencia la que decide dónde entrar.
+    async def count_pending_review_by_entity(
+        self, entity: FlowEntity, entity_ids: list[int]
+    ) -> dict[int, int]: ...
+
     async def get(self, evidence_id: int) -> Evidence | None: ...
 
     async def list_all(self) -> list[Evidence]: ...

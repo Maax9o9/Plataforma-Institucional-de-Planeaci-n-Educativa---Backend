@@ -7,6 +7,7 @@ from app.modules.evidence_management.domain.value_objects import EvidenceType, F
 from app.modules.indicators_reports.application.service import ReportResult
 from app.modules.institutional_catalogs.domain.ports.repositories import AreaRepository
 from app.modules.poa_planning.application.access_control import can_edit_structure
+from app.modules.poa_planning.domain.cedula_entities import PoaActivityCatalog
 from app.modules.poa_planning.domain.ports.cedula_repository import PoaFormRepository
 from app.shared.application.actor import ActorContext
 from app.shared.domain.exceptions import ForbiddenError
@@ -23,15 +24,36 @@ class PoaReportService:
     async def generate(self, report_type: str, filters: dict, current_user) -> ReportResult:
         actor = ActorContext.from_user(current_user)
         planning = await can_edit_structure(actor, self.areas)
-        if not planning and (not actor.has_any_role("capturista_poa") or actor.area_id is None):
+        # Rectoría es quien valida el POA de la universidad: tiene que poder
+        # leer los reportes de todas las áreas, igual que Planeación, aunque no
+        # pueda escribir nada. Es la misma regla que ya gobierna el tablero.
+        sin_filtro_de_area = planning or actor.has_any_role("rectoria")
+        if not sin_filtro_de_area and (
+            not actor.has_any_role("capturista_poa") or actor.area_id is None
+        ):
             raise ForbiddenError("El usuario no puede consultar reportes de cédulas POA.")
-        area_id = filters.get("area_id") if planning else actor.area_id
+        area_id = filters.get("area_id") if sin_filtro_de_area else actor.area_id
         forms = await self.forms.list_forms(
             exercise_id=filters.get("ejercicio_id"),
             objective_number=filters.get("objetivo_numero"),
         )
         rows = []
-        catalogs = {item.key: item for item in await self.forms.list_activity_catalog()}
+        # El catálogo de acciones se pide antes del bucle de cédulas, una vez
+        # por POA y no una por cédula, por la misma razón que el tablero: pedirlo
+        # dentro sería una consulta por renglón del reporte.
+        #
+        # Y es por POA y no una sola vez porque `ejercicio_id` es opcional: un
+        # reporte puede cruzar varios ejercicios y por tanto varios POAs, y la
+        # clave de una acción sólo vale dentro del suyo. De ahí que la
+        # descripción se busque por `(POA, clave)`.
+        catalogs: dict[tuple[int, str], PoaActivityCatalog] = {}
+        for catalog_id in {form.catalog_id for form in forms}:
+            catalogs.update(
+                {
+                    (catalog_id, item.key): item
+                    for item in await self.forms.list_activity_catalog(catalog_id=catalog_id)
+                }
+            )
         complete = True
         included_forms = 0
         for form in forms:
@@ -43,7 +65,10 @@ class PoaReportService:
             if detail is None:
                 continue
             quarters = [
-                q for q in detail.quarters if filters.get("periodo_id") in (None, q.period_id)
+                q
+                for q in detail.quarters
+                if filters.get("periodo_id") in (None, q.period_id)
+                and filters.get("cuatrimestre") in (None, q.quarter)
             ]
             if not quarters:
                 continue
@@ -57,7 +82,7 @@ class PoaReportService:
             emitted = {issue.quarter for issue in issues}
             complete = complete and emitted == {1, 2, 3}
             for activity in activities:
-                catalog = catalogs.get(activity.activity_key)
+                catalog = catalogs.get((form.catalog_id, activity.activity_key))
                 follow_ups = {
                     f.quarter: f for f in detail.follow_ups if f.form_activity_id == activity.id
                 }
@@ -128,7 +153,7 @@ class PoaReportService:
                         }
                     )
         result_filters = {**filters, "fuente": "cedulas_actuales", "datos": "captura_actual"}
-        if not planning:
+        if not sin_filtro_de_area:
             result_filters["area_id"] = actor.area_id
         if report_type == "anual":
             result_filters["completo"] = bool(included_forms) and complete

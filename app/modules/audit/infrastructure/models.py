@@ -16,6 +16,7 @@ class AuditModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     usuario_id: Mapped[int | None] = mapped_column(Integer)
+    usuario_nombre: Mapped[str | None] = mapped_column(String(200))
     evento: Mapped[str | None] = mapped_column(String(100))
     accion: Mapped[str] = mapped_column(String(100), nullable=False)
     entidad: Mapped[str] = mapped_column(String(100), nullable=False)

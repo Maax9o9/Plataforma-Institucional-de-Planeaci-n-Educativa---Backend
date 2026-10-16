@@ -30,3 +30,7 @@ class InMemoryPeriodRepository:
         async with self._lock:
             period.version += 1
             self._periods[period.id] = period
+
+    async def delete(self, period_id: int) -> None:
+        async with self._lock:
+            self._periods.pop(period_id, None)

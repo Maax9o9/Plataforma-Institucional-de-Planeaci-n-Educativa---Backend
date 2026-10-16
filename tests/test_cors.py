@@ -18,7 +18,23 @@ def make_settings(
     return Settings(
         environment=environment,
         secret_key="test-secret-key-with-more-than-32-characters",
-        database_url=None,
+        # Produccion exige DATABASE_URL: sin ella la API arrancaria con
+        # repositorios en memoria y create_app aborta antes de llegar a CORS.
+        #
+        # La URL es imposible a proposito -puerto 1, usuario y base que no
+        # existen-: aqui lo unico que importa es que **haya** una, porque estas
+        # pruebas comprueban el rechazo de CORS y de la cookie, no la base.
+        # Antes nombraba `planeacion` en el 5432, donde en la maquina de
+        # desarrollo hay un PostgreSQL escuchando de verdad, y dos de estas
+        # pruebas llegan a construir el motor antes de que `create_app` aborte.
+        # No hay que «arreglarla» poniendo una que funcione: un archivo de
+        # pruebas que nombre una base real es lo que ya costo filas en
+        # `planeacion` y una pantalla rota.
+        database_url=(
+            "postgresql+asyncpg://nadie:nada@127.0.0.1:1/base-que-no-existe"
+            if environment in {"staging", "production"}
+            else None
+        ),
         email_provider="console",
         cors_allow_all=allow_all,
         cors_origins=origins if origins is not None else ["http://localhost:5173"],

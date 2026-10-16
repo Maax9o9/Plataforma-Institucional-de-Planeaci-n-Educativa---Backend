@@ -7,7 +7,7 @@ from itertools import count
 from app.shared.domain.exceptions import ConflictError
 
 from ..domain.entities import Evidence, EvidenceLink, EvidenceVersion
-from ..domain.value_objects import FlowEntity
+from ..domain.value_objects import EvidenceReviewStatus, FlowEntity
 
 
 class InMemoryEvidenceRepository:
@@ -20,6 +20,11 @@ class InMemoryEvidenceRepository:
     async def add(self, evidence: Evidence) -> None:
         if evidence.id == 0:
             evidence.id = next(self._next_id)
+        self._evidences[evidence.id] = evidence
+
+    async def save_review(self, evidence: Evidence) -> None:
+        # Guarda la misma instancia que ya tiene el diccionario; se deja
+        # explícito para que el puerto sea el mismo que el del adaptador SQL.
         self._evidences[evidence.id] = evidence
 
     async def add_version(self, version: EvidenceVersion) -> None:
@@ -36,6 +41,33 @@ class InMemoryEvidenceRepository:
             item_entity == entity and item_id == entity_id
             for _, item_entity, item_id in self._links
         )
+
+    async def count_by_entity(
+        self, entity: FlowEntity, entity_ids: list[int]
+    ) -> dict[int, int]:
+        if not entity_ids:
+            return {}
+        buscados = set(entity_ids)
+        conteo: dict[int, int] = {}
+        for _, item_entity, item_id in self._links:
+            if item_entity == entity and item_id in buscados:
+                conteo[item_id] = conteo.get(item_id, 0) + 1
+        return conteo
+
+    async def count_pending_review_by_entity(
+        self, entity: FlowEntity, entity_ids: list[int]
+    ) -> dict[int, int]:
+        if not entity_ids:
+            return {}
+        buscados = set(entity_ids)
+        conteo: dict[int, int] = {}
+        for evidence_id, item_entity, item_id in self._links:
+            if item_entity != entity or item_id not in buscados:
+                continue
+            evidencia = self._evidences.get(evidence_id)
+            if evidencia is not None and evidencia.review_status is EvidenceReviewStatus.PENDING:
+                conteo[item_id] = conteo.get(item_id, 0) + 1
+        return conteo
 
     async def get(self, evidence_id: int) -> Evidence | None:
         return self._evidences.get(evidence_id)

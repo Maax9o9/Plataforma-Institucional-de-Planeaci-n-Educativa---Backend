@@ -17,11 +17,13 @@ class InMemoryStateChangeRepository:
             change.id = next(self._next_id)
         self._items.append(change)
 
-    async def list_for_capture(self, capture_id: int) -> list[StateChange]:
+    async def list_for_capture(
+        self, capture_id: int, entity: str = "captura"
+    ) -> list[StateChange]:
         return [
             item
             for item in self._items
-            if item.entity == "captura" and item.entity_id == capture_id
+            if item.entity == entity and item.entity_id == capture_id
         ]
 
     async def list_for_capture_page(
@@ -31,7 +33,8 @@ class InMemoryStateChangeRepository:
         offset: int,
         limit: int,
         descending: bool,
+        entity: str = "captura",
     ) -> tuple[list[StateChange], int]:
-        items = await self.list_for_capture(capture_id)
+        items = await self.list_for_capture(capture_id, entity)
         items.sort(key=lambda item: (item.created_at, item.id), reverse=descending)
         return items[offset : offset + limit], len(items)

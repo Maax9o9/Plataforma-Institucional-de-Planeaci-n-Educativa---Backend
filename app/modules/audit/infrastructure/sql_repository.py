@@ -21,6 +21,7 @@ class SqlAlchemyAuditRepository:
         async with session_scope(self.session_factory) as session:
             model = AuditModel(
                 usuario_id=entry.actor_id,
+                usuario_nombre=entry.actor_name,
                 evento=entry.event_name,
                 accion=entry.action or entry.event_name,
                 entidad=entry.aggregate_type,
@@ -73,6 +74,7 @@ class SqlAlchemyAuditRepository:
                     event_name=model.evento or model.accion,
                     occurred_at=model.fecha,
                     actor_id=model.usuario_id,
+                    actor_name=model.usuario_nombre,
                     aggregate_type=model.entidad,
                     aggregate_id=model.entidad_id,
                     action=model.accion,

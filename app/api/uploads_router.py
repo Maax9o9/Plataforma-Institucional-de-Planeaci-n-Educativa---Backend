@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+import zipfile
 from hashlib import sha256
+from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
@@ -28,7 +30,21 @@ SIGNATURES = (
     (b"\x89PNG\r\n\x1a\n", "image/png", ".png"),
     (b"\xff\xd8\xff", "image/jpeg", ".jpg"),
 )
-SAFE_FILE_NAME = re.compile(r"^[0-9a-f]{32}\.(?:pdf|png|jpg)$")
+
+#: El formato institucional del informe cuatrimestral se entrega en Word, así
+#: que tiene que poder subirse: el área descarga la plantilla, la completa y la
+#: adjunta. Antes rebotaba con un 415 y el formato era inservible.
+#:
+#: Un `.docx` es un ZIP, y aceptar «cualquier cosa que empiece por PK» abriría
+#: la puerta a todo archivo comprimido —incluido un `.xlsm` con macros—. Por eso
+#: no basta la firma: se abre el contenedor y se comprueba que trae de verdad un
+#: documento de Word dentro.
+DOCX_SIGNATURE = b"PK\x03\x04"
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+DOCX_PART = "word/document.xml"
+DOCX_CONTENT_TYPE = b"wordprocessingml.document"
+
+SAFE_FILE_NAME = re.compile(r"^[0-9a-f]{32}\.(?:pdf|png|jpg|docx)$")
 
 
 class ArchivoRespuesta(BaseModel):
@@ -43,7 +59,27 @@ def _detect_type(content: bytes) -> tuple[str, str]:
     for signature, mime_type, extension in SIGNATURES:
         if content.startswith(signature):
             return mime_type, extension
+    if content.startswith(DOCX_SIGNATURE) and _es_docx(content):
+        return DOCX_MIME, ".docx"
     raise UnsupportedMediaTypeError()
+
+
+def _es_docx(content: bytes) -> bool:
+    """Que el ZIP sea de verdad un documento de Word.
+
+    Se comprueba por dentro y no por el nombre del archivo: la extensión la
+    elige quien sube, y un `.xlsm` renombrado a `.docx` pasaría. Lo que no
+    engaña es que el contenedor traiga `word/document.xml` y que su manifiesto
+    declare el tipo de WordprocessingML.
+    """
+    try:
+        with zipfile.ZipFile(BytesIO(content)) as contenedor:
+            nombres = set(contenedor.namelist())
+            if DOCX_PART not in nombres or "[Content_Types].xml" not in nombres:
+                return False
+            return DOCX_CONTENT_TYPE in contenedor.read("[Content_Types].xml")
+    except (zipfile.BadZipFile, KeyError, OSError):
+        return False
 
 
 @router.post(
@@ -68,9 +104,7 @@ async def upload_file(
     settings = request.app.state.settings
     content = await archivo.read(settings.upload_max_bytes + 1)
     if len(content) > settings.upload_max_bytes:
-        raise PayloadTooLargeError(
-            details={"max_bytes": settings.upload_max_bytes}
-        )
+        raise PayloadTooLargeError(details={"max_bytes": settings.upload_max_bytes})
     mime_type, extension = _detect_type(content)
     file_id = uuid4().hex
     storage = Path(settings.upload_directory).resolve()
@@ -112,5 +146,6 @@ async def download_file(
         ".pdf": "application/pdf",
         ".png": "image/png",
         ".jpg": "image/jpeg",
+        ".docx": DOCX_MIME,
     }[source.suffix]
     return FileResponse(source, media_type=media_type, filename=file_name)

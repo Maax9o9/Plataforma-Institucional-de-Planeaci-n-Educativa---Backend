@@ -44,6 +44,17 @@ class CriteriaSeaesModel(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
+class UnitOfMeasureModel(Base):
+    __tablename__ = "unidades_medida"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    clave: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    nombre: Mapped[str] = mapped_column(String(100), nullable=False)
+    plural: Mapped[str] = mapped_column(String(100), nullable=False)
+    activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
 class IndicatorTypeModel(Base):
     __tablename__ = "tipos_indicador"
 

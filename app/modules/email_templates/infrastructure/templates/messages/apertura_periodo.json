@@ -1,0 +1,9 @@
+{
+  "etiqueta": "Periodo de captura",
+  "contenido": {
+    "asunto": "Se abrió un periodo de captura",
+    "titulo": "Un nuevo periodo comienza",
+    "cuerpo": "Revisa el periodo disponible y organiza el registro de los indicadores que tienes asignados.",
+    "texto_boton": "Consultar la plataforma"
+  }
+}

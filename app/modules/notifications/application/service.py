@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from html import escape
 
 from app.shared.application.event_bus import EventBus
+from app.shared.application.ports.email_composer import EmailComposer
 from app.shared.application.ports.email_sender import EmailSender
 from app.shared.domain.domain_event import DomainEvent
 from app.shared.infrastructure.db.unit_of_work import run_after_commit
@@ -25,12 +25,17 @@ class NotificationService:
         email_sender: EmailSender,
         indicator_repository=None,
         poa_recipients=None,
+        *,
+        email_composer: EmailComposer,
+        frontend_url: str = "",
     ) -> None:
         self.repository = repository
         self.user_repository = user_repository
         self.email_sender = email_sender
         self.indicator_repository = indicator_repository
         self.poa_recipients = poa_recipients
+        self.email_composer = email_composer
+        self.frontend_url = frontend_url
         self._delivery_tasks: set[asyncio.Task] = set()
 
     def register(self, event_bus: EventBus) -> None:
@@ -112,11 +117,21 @@ class NotificationService:
             if not await self.repository.claim_email(notification.id):
                 return
             async with asyncio.timeout(60):
+                user = await self.user_repository.get_by_id(notification.user_id)
+                if user is None or not user.is_active or not user.notify_email:
+                    await self.repository.release_email(notification.id)
+                    return
+                email = await self.email_composer.render(
+                    notification.notification_type,
+                    recipient_name=user.full_name,
+                    detail=notification.message,
+                    action_url=self.frontend_url or None,
+                )
                 await self.email_sender.send(
-                    recipient,
-                    f"Plataforma de Planeacion: {notification.notification_type}",
-                    f"<p>{escape(notification.message)}</p>",
-                    notification.message,
+                    user.email.value,
+                    email.subject,
+                    email.html,
+                    email.text,
                 )
             await self.repository.mark_email_sent(notification.id)
         except Exception:

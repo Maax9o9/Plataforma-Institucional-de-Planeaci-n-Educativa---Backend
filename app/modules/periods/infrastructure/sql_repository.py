@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -95,3 +95,8 @@ class SqlAlchemyPeriodRepository:
                 )
             await commit_or_flush(session)
             period.version += 1
+
+    async def delete(self, period_id: int) -> None:
+        async with session_scope(self.session_factory) as session:
+            await session.execute(delete(PeriodModel).where(PeriodModel.id == period_id))
+            await commit_or_flush(session)

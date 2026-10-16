@@ -90,6 +90,7 @@ def get_invite_user_use_case(request: Request) -> InviteUser:
         request.app.state.settings,
         request.app.state.area_repository,
         request.app.state.institutional_directory,
+        request.app.state.email_template_service,
     )
 
 

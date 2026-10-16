@@ -155,7 +155,12 @@ async def test_notification_delivery_retry_and_atomic_claim(backend_client):
     await repository.release_email(notification.id)
     sender = AsyncMock()
     sender.send.side_effect = RuntimeError("SMTP temporalmente no disponible")
-    service = NotificationService(repository, app.state.user_repository, sender)
+    service = NotificationService(
+        repository,
+        app.state.user_repository,
+        sender,
+        email_composer=app.state.email_template_service,
+    )
     await service._send_email(notification, user.email.value)
     assert not (await repository.list_for_user(user.id))[0].sent_by_email
     sender.send.side_effect = None
@@ -167,7 +172,9 @@ async def test_notification_delivery_retry_and_atomic_claim(backend_client):
 
 
 def test_no_invented_indicator_formula_and_valid_signatory_data():
-    indicator = PoaFormIndicator.create(form_id=1, indicator_key="6.1.2", target_value=Decimal(100))
+    indicator = PoaFormIndicator.create(
+        catalog_id=1, form_id=1, indicator_key="6.1.2", target_value=Decimal(100)
+    )
     with pytest.raises(ValidationError):
         indicator.capture_total(total_achieved=Decimal(20), achieved_percentage=None)
     indicator.capture_total(total_achieved=Decimal(20), achieved_percentage=Decimal(5))

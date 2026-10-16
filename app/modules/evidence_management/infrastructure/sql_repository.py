@@ -12,8 +12,13 @@ from app.shared.domain.exceptions import ConflictError
 from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
 
 from ..domain.entities import Evidence, EvidenceLink, EvidenceVersion
-from ..domain.value_objects import EvidenceType, FlowEntity
-from .models import EvidenceLinkModel, EvidenceModel, EvidenceVersionModel
+from ..domain.value_objects import EvidenceReviewStatus, EvidenceType, FlowEntity
+from .models import (
+    EvidenceCriterionModel,
+    EvidenceLinkModel,
+    EvidenceModel,
+    EvidenceVersionModel,
+)
 
 
 class SqlAlchemyEvidenceRepository:
@@ -32,7 +37,27 @@ class SqlAlchemyEvidenceRepository:
             )
             session.add(model)
             await commit_or_flush(session)
+            for criterio in evidence.criteria_seaes_ids:
+                session.add(
+                    EvidenceCriterionModel(
+                        evidencia_id=model.id, criterio_seaes_id=criterio
+                    )
+                )
+            await commit_or_flush(session)
         evidence.id = model.id
+
+    async def save_review(self, evidence: Evidence) -> None:
+        """Guarda sólo el dictamen. No toca el contenido de la evidencia: quien
+        revisa no reescribe lo que revisa."""
+        async with session_scope(self.session_factory) as session:
+            model = await session.get(EvidenceModel, evidence.id)
+            if model is None:
+                return
+            model.estado_revision = evidence.review_status.value
+            model.revisado_por = evidence.reviewed_by
+            model.revisado_en = evidence.reviewed_at
+            model.comentario_revision = evidence.review_comment
+            await commit_or_flush(session)
 
     async def add_version(self, version: EvidenceVersion) -> None:
         async with session_scope(self.session_factory) as session:
@@ -76,34 +101,53 @@ class SqlAlchemyEvidenceRepository:
             )
             return result.scalar_one_or_none() is not None
 
+    async def count_by_entity(
+        self, entity: FlowEntity, entity_ids: list[int]
+    ) -> dict[int, int]:
+        if not entity_ids:
+            return {}
+        async with session_scope(self.session_factory) as session:
+            rows = await session.execute(
+                select(EvidenceLinkModel.entidad_id, func.count())
+                .where(
+                    EvidenceLinkModel.entidad == entity.value,
+                    EvidenceLinkModel.entidad_id.in_(entity_ids),
+                )
+                .group_by(EvidenceLinkModel.entidad_id)
+            )
+            return {entity_id: total for entity_id, total in rows.all()}
+
+    async def count_pending_review_by_entity(
+        self, entity: FlowEntity, entity_ids: list[int]
+    ) -> dict[int, int]:
+        if not entity_ids:
+            return {}
+        async with session_scope(self.session_factory) as session:
+            rows = await session.execute(
+                select(EvidenceLinkModel.entidad_id, func.count())
+                .join(EvidenceModel, EvidenceModel.id == EvidenceLinkModel.evidencia_id)
+                .where(
+                    EvidenceLinkModel.entidad == entity.value,
+                    EvidenceLinkModel.entidad_id.in_(entity_ids),
+                    EvidenceModel.estado_revision == "pendiente",
+                )
+                .group_by(EvidenceLinkModel.entidad_id)
+            )
+            return {entity_id: total for entity_id, total in rows.all()}
+
     async def get(self, evidence_id: int) -> Evidence | None:
         async with session_scope(self.session_factory) as session:
             model = await session.get(EvidenceModel, evidence_id)
             if model is None:
                 return None
-            return Evidence(
-                id=model.id,
-                name=model.nombre,
-                description=model.descripcion,
-                evidence_date=model.fecha,
-                evidence_type=EvidenceType(model.tipo),
-                uploaded_by=model.subida_por,
-            )
+            criterios = await _criterios_por_evidencia(session, [model.id])
+            return _a_entidad(model, criterios)
 
     async def list_all(self) -> list[Evidence]:
         async with session_scope(self.session_factory) as session:
             models = (await session.scalars(select(EvidenceModel).order_by(EvidenceModel.id))).all()
-            return [
-                Evidence(
-                    id=model.id,
-                    name=model.nombre,
-                    description=model.descripcion,
-                    evidence_date=model.fecha,
-                    evidence_type=EvidenceType(model.tipo),
-                    uploaded_by=model.subida_por,
-                )
-                for model in models
-            ]
+            criterios = await _criterios_por_evidencia(session, [m.id for m in models])
+            return [_a_entidad(model, criterios) for model in models]
 
     async def list_for(self, entity: FlowEntity, entity_id: int) -> list[Evidence]:
         async with session_scope(self.session_factory) as session:
@@ -118,17 +162,8 @@ class SqlAlchemyEvidenceRepository:
                     .order_by(EvidenceModel.id)
                 )
             ).all()
-            return [
-                Evidence(
-                    id=model.id,
-                    name=model.nombre,
-                    description=model.descripcion,
-                    evidence_date=model.fecha,
-                    evidence_type=EvidenceType(model.tipo),
-                    uploaded_by=model.subida_por,
-                )
-                for model in models
-            ]
+            criterios = await _criterios_por_evidencia(session, [m.id for m in models])
+            return [_a_entidad(model, criterios) for model in models]
 
     async def list_versions(self, evidence_id: int) -> list[EvidenceVersion]:
         async with session_scope(self.session_factory) as session:
@@ -248,3 +283,44 @@ class SqlAlchemyEvidenceRepository:
             )
             await commit_or_flush(session)
             return bool(result.rowcount)
+
+
+async def _criterios_por_evidencia(
+    session: AsyncSession, evidence_ids: list[int]
+) -> dict[int, tuple[int, ...]]:
+    """Los criterios SEAES de varias evidencias, en una sola consulta.
+
+    Se piden en bloque y no una por una: el listado de un seguimiento trae
+    todas sus evidencias, y una consulta por cada una convertiría abrir la
+    pantalla en una ráfaga de viajes a la base.
+    """
+    if not evidence_ids:
+        return {}
+    filas = await session.execute(
+        select(
+            EvidenceCriterionModel.evidencia_id,
+            EvidenceCriterionModel.criterio_seaes_id,
+        )
+        .where(EvidenceCriterionModel.evidencia_id.in_(evidence_ids))
+        .order_by(EvidenceCriterionModel.criterio_seaes_id)
+    )
+    agrupados: dict[int, list[int]] = {}
+    for evidencia_id, criterio_id in filas.all():
+        agrupados.setdefault(evidencia_id, []).append(criterio_id)
+    return {clave: tuple(valores) for clave, valores in agrupados.items()}
+
+
+def _a_entidad(model: EvidenceModel, criterios: dict[int, tuple[int, ...]]) -> Evidence:
+    return Evidence(
+        id=model.id,
+        name=model.nombre,
+        description=model.descripcion,
+        evidence_date=model.fecha,
+        evidence_type=EvidenceType(model.tipo),
+        uploaded_by=model.subida_por,
+        criteria_seaes_ids=criterios.get(model.id, ()),
+        review_status=EvidenceReviewStatus(model.estado_revision),
+        reviewed_by=model.revisado_por,
+        reviewed_at=model.revisado_en,
+        review_comment=model.comentario_revision,
+    )

@@ -21,6 +21,13 @@ from app.core.logging import configure_logging
 from app.core.middleware import RequestIdMiddleware, SecurityHeadersMiddleware
 from app.core.openapi import custom_openapi
 from app.core.rate_limit import LoginRateLimiter
+from app.modules.email_templates.application.service import EmailTemplateService
+from app.modules.email_templates.infrastructure.rendering import (
+    ASSETS,
+    TEMPLATE_ROOT,
+    FileTemplateCatalog,
+    HtmlEmailRenderer,
+)
 from app.modules.identity_access.infrastructure.security import (
     Argon2PasswordHasher,
     JwtTokenService,
@@ -37,11 +44,17 @@ def _validate_security_settings(settings: Settings) -> None:
     elif settings.environment == "production" and len(settings.secret_key.get_secret_value()) < 32:
         raise RuntimeError("SECRET_KEY debe tener al menos 32 caracteres en produccion.")
     if settings.environment in {"staging", "production"} and not settings.refresh_cookie_secure:
-        raise RuntimeError(
-            "REFRESH_COOKIE_SECURE debe estar habilitado en staging y produccion."
-        )
+        raise RuntimeError("REFRESH_COOKIE_SECURE debe estar habilitado en staging y produccion.")
     if settings.refresh_cookie_samesite == "none" and not settings.refresh_cookie_secure:
         raise RuntimeError("SameSite=None requiere REFRESH_COOKIE_SECURE=true.")
+    if settings.environment in {"staging", "production"} and not settings.database_url:
+        # Sin DATABASE_URL el contenedor selecciona repositorios en memoria. En un
+        # ambiente compartido eso arranca sano, responde 200 y pierde toda la
+        # informacion al reiniciar: debe fallar aqui, no descubrirse despues.
+        raise RuntimeError(
+            "DATABASE_URL debe estar configurada en staging y produccion: "
+            "sin ella la API arrancaria con repositorios en memoria."
+        )
 
 
 def _bind_resources(app: FastAPI, resources: Resources) -> None:
@@ -49,7 +62,17 @@ def _bind_resources(app: FastAPI, resources: Resources) -> None:
         setattr(app.state, resource.name, getattr(resources, resource.name))
     app.state.password_hasher = Argon2PasswordHasher()
     app.state.token_service = JwtTokenService(app.state.settings)
-    app.state.email_sender = create_email_sender(app.state.settings)
+    app.state.email_sender = create_email_sender(
+        app.state.settings,
+        inline_assets={cid: TEMPLATE_ROOT / "assets" / name for cid, name in ASSETS.items()},
+    )
+    app.state.email_template_service = EmailTemplateService(
+        resources.email_template_repository,
+        FileTemplateCatalog(),
+        HtmlEmailRenderer(),
+        app.state.event_bus,
+        resources.unit_of_work,
+    )
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -80,13 +103,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.event_bus,
         resources,
         app.state.email_sender,
+        app.state.email_template_service,
+        settings.frontend_url,
     )
     app.add_middleware(RequestIdMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(CORSMiddleware, **build_cors_options(settings))
     register_exception_handlers(app)
     app.include_router(system_router)
-    include_api_routers(app, settings.api_v1_prefix)
+    include_api_routers(
+        app,
+        settings.api_v1_prefix,
+        incluir_indicadores=settings.indicators_module_enabled,
+    )
     app.openapi = lambda: custom_openapi(app)
     return app
 

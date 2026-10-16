@@ -23,6 +23,8 @@ class AttachEvidenceCommand:
     mime_type: str | None = None
     size_bytes: int | None = None
     checksum_sha256: str | None = None
+    #: Opcional: a qué criterios del SEAES responde la evidencia.
+    criteria_seaes_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -49,3 +51,17 @@ class UnlinkEvidenceCommand:
     entity: FlowEntity
     entity_id: int
     actor: ActorContext
+
+
+@dataclass(frozen=True)
+class ReviewEvidenceCommand:
+    """El dictamen de Planeación sobre una evidencia.
+
+    `comment` es obligatorio al rechazar y se ignora al aprobar: lo que hay que
+    explicar es por qué algo no sirve.
+    """
+
+    evidence_id: int
+    approved: bool
+    actor: ActorContext
+    comment: str | None = None

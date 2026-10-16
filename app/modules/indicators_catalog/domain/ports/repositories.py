@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from ..entities import Baseline, Goal, Indicator
+from ..value_objects import IndicatorPeriodicity
 
 
 class IndicatorRepository(Protocol):
@@ -25,6 +26,7 @@ class IndicatorRepository(Protocol):
         responsible_id: int | None,
         instrument_id: int | None,
         criterion_id: int | None,
+        periodicity: IndicatorPeriodicity | None,
         sort: str,
         descending: bool,
         offset: int,

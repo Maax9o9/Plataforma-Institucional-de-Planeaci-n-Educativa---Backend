@@ -21,6 +21,7 @@ async def test_postgres_password_change_rolls_back_on_audit_failure(monkeypatch)
     application = create_app(
         Settings(
             environment="testing",
+            indicators_module_enabled=True,
             database_url=os.environ["TEST_DATABASE_URL"],
             secret_key="test-secret-key-with-more-than-32-characters",
             email_provider="console",

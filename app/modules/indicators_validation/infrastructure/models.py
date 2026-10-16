@@ -15,16 +15,29 @@ class StateChangeModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     entidad: Mapped[str] = mapped_column(
-        Enum("captura", "poa_avance", name="entidad_flujo", native_enum=True, create_type=False),
+        Enum(
+            "captura",
+            "poa_avance",
+            "poa_cedula_seguimiento",
+            "poa_ejercicio",
+            name="entidad_flujo",
+            native_enum=True,
+            create_type=False,
+        ),
         nullable=False,
     )
     entidad_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 'vigente' y 'cerrado' son del ciclo del ejercicio POA (migracion 0030):
+    # el ejercicio no reutiliza este enum para su propio estado, pero el
+    # historial compartido en cambios_estado si necesita esos valores.
     de_estado: Mapped[str | None] = mapped_column(
         Enum(
             "borrador",
             "enviado",
             "validado",
             "rechazado",
+            "vigente",
+            "cerrado",
             name="estado_captura",
             native_enum=True,
             create_type=False,
@@ -36,6 +49,8 @@ class StateChangeModel(Base):
             "enviado",
             "validado",
             "rechazado",
+            "vigente",
+            "cerrado",
             name="estado_captura",
             native_enum=True,
             create_type=False,

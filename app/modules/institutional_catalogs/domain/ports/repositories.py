@@ -6,6 +6,7 @@ from typing import Protocol
 
 from ..entities import Area, Instrument
 from ..reference_entities import ReferenceItem
+from ..unit_of_measure_entities import UnitOfMeasure
 
 
 class AreaRepository(Protocol):
@@ -36,3 +37,13 @@ class ReferenceRepository(Protocol):
     async def list(self, *, active_only: bool = True) -> list[ReferenceItem]: ...
 
     async def update(self, item: ReferenceItem) -> None: ...
+
+
+class UnitOfMeasureRepository(Protocol):
+    async def add(self, item: UnitOfMeasure) -> None: ...
+
+    async def get_by_id(self, item_id: int) -> UnitOfMeasure | None: ...
+
+    async def list(self, *, active_only: bool = True) -> list[UnitOfMeasure]: ...
+
+    async def update(self, item: UnitOfMeasure) -> None: ...

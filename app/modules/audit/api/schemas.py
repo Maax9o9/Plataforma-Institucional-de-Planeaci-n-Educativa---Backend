@@ -16,6 +16,7 @@ class EntradaAuditoriaResponse(BaseModel):
     evento: str
     fecha: datetime
     usuario_id: int | None
+    usuario_nombre: str | None
     entidad: str
     entidad_id: int | None
     accion: str
@@ -28,6 +29,7 @@ class EntradaAuditoriaResponse(BaseModel):
             evento=entry.event_name,
             fecha=entry.occurred_at,
             usuario_id=entry.actor_id,
+            usuario_nombre=entry.actor_name,
             entidad=entry.aggregate_type,
             entidad_id=entry.aggregate_id,
             accion=entry.action,

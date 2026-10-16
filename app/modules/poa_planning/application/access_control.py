@@ -6,6 +6,27 @@ from app.shared.domain.exceptions import ForbiddenError
 
 PLANNING_AREA_NAME = "Dirección de Planeación Educativa"
 
+#: Quien aprueba o devuelve el ejercicio POA: sólo Rectoría, sin atajos
+#: administrativos.
+#:
+#: Este paso existe para que Planeación no apruebe su propio trabajo -es
+#: separación de responsabilidades, no un trámite-. `admin_sistema` y
+#: `planeacion_admin` no entran aquí a propósito: son roles de soporte de
+#: Planeación (por eso `ActorContext.is_planning` los incluye), así que
+#: admitirlos aquí dejaría aprobar a una cuenta de Planeación y el control
+#: quedaría decorativo. Si algún día Rectoría necesita delegar la
+#: aprobación a alguien más, que sea un rol propio de Rectoría, no el
+#: comodín de sistema. No "arreglar" agregando esos roles de vuelta.
+#:
+#: Única fuente de verdad: la usan tanto el router (para bloquear la
+#: petición HTTP) como los casos de uso `ApproveExercise`/`RejectExercise`
+#: (para no depender únicamente de esa puerta de entrada).
+APPROVAL_ROLES = ("rectoria",)
+
+
+def can_approve_exercise(actor: ActorContext) -> bool:
+    return actor.has_any_role(*APPROVAL_ROLES)
+
 
 def ensure_planning(actor: ActorContext) -> None:
     if not actor.is_planning:
@@ -16,7 +37,37 @@ def ensure_planning(actor: ActorContext) -> None:
 
 
 def can_capture_activity(actor: ActorContext, executing_area_id: int | None) -> bool:
+    """Quién puede escribir en el seguimiento de una actividad.
+
+    Planeación entra porque la programación —cuánto toca en cada cuatrimestre—
+    es suya: la precarga al formular el POA y la ajusta si el plan cambia. Lo
+    que reporta el área se gobierna aparte, en `can_report_progress`.
+    """
     return actor.is_planning or (
+        actor.has_any_role("capturista_poa")
+        and actor.area_id is not None
+        and actor.area_id == executing_area_id
+    )
+
+
+def can_report_progress(actor: ActorContext, executing_area_id: int | None) -> bool:
+    """Quién puede escribir el informe: lo alcanzado, el progreso, el alcance y
+    la justificación de la desviación.
+
+    Sólo el área que ejecuta la actividad. Planeación queda fuera a propósito,
+    aunque pueda tocar el mismo renglón para programar: es quien dictamina ese
+    informe, y si además pudiera redactarlo estaría aprobando su propio texto
+    —la bitácora diría que lo capturó el área, y el dictamen dejaría de
+    significar nada—. Es la otra mitad de la separación que ya sostiene
+    `APPROVAL_ROLES`: Rectoría aprueba el POA para que Planeación no apruebe su
+    propio trabajo.
+
+    No se admite a `admin_sistema` ni a `planeacion_admin` por la misma razón
+    que no se admiten en la aprobación del ejercicio: son roles de soporte de
+    Planeación. Si un área se queda sin quien capture, la salida es darle un
+    `capturista_poa`, no abrir la puerta a quien revisa.
+    """
+    return (
         actor.has_any_role("capturista_poa")
         and actor.area_id is not None
         and actor.area_id == executing_area_id
