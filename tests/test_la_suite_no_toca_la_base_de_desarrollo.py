@@ -188,6 +188,11 @@ def test_la_aplicacion_de_modulo_no_abre_conexion_contra_su_base():
     `checkedin() == 1`, así que `checkedout()` por su cuenta no vería la que ya
     terminó. Los dos en cero significan «nunca se conectó», que es la
     afirmación que hace falta.
+
+    Lo que **no** promete, para no dejarlo creído: mira el pool en **su** punto
+    de la corrida. Una prueba que se conectara por ahí **después** de esta no la
+    vería; para eso haría falta un cierre de sesión, que es otro mecanismo. Lo
+    que sujeta es lo que hay hoy: que nadie se conecte antes.
     """
     from app.main import app as aplicacion_de_modulo
 
