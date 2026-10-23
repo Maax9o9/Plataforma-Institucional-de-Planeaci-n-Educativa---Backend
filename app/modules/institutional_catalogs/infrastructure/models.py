@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, Date, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.shared.infrastructure.db.base import Base
@@ -32,6 +32,42 @@ class InstrumentModel(Base):
     codigo: Mapped[str | None] = mapped_column(String(30), unique=True)
     descripcion: Mapped[str | None] = mapped_column(String(500))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class InstrumentVersionModel(Base):
+    """Cada edición de un instrumento; el árbol cuelga de una versión.
+
+    Las restricciones (la etiqueta única por instrumento, las foráneas) viven en
+    la migración 0038 y no se repiten aquí.
+    """
+
+    __tablename__ = "instrumento_versiones"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    instrumento_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    etiqueta: Mapped[str] = mapped_column(String(120), nullable=False)
+    vigente_desde: Mapped[date] = mapped_column(Date, nullable=False)
+    #: NULL mientras la versión está en borrador.
+    publicada_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class StrategicNodeModel(Base):
+    """Un nodo del árbol de una versión, con su padre explícito.
+
+    `tipo` guarda el valor de `NodeKind`; el `CHECK`, la `UNIQUE` entre hermanos
+    y la foránea compuesta del padre viven en la migración 0038.
+    """
+
+    __tablename__ = "nodos_estrategicos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    padre_id: Mapped[int | None] = mapped_column(Integer)
+    tipo: Mapped[str] = mapped_column(String(30), nullable=False)
+    clave: Mapped[str] = mapped_column(String(50), nullable=False)
+    denominacion: Mapped[str] = mapped_column(Text, nullable=False)
+    orden: Mapped[int] = mapped_column(Integer, nullable=False)
+    activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
 class CriteriaSeaesModel(Base):
