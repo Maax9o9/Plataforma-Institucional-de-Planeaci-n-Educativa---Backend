@@ -40,6 +40,7 @@ def _to_domain(model: StrategicNodeModel) -> StrategicNode:
         name=model.denominacion,
         order=model.orden,
         is_active=model.activo,
+        indicator_formula=model.formula_indicador,
     )
 
 
@@ -99,6 +100,7 @@ class SqlAlchemyStrategicTreeRepository:
                 denominacion=node.name,
                 orden=node.order,
                 activo=node.is_active,
+                formula_indicador=node.indicator_formula,
             )
             session.add(model)
             try:
@@ -150,6 +152,7 @@ class SqlAlchemyStrategicTreeRepository:
             model.denominacion = node.name
             model.orden = node.order
             model.activo = node.is_active
+            model.formula_indicador = node.indicator_formula
             try:
                 await session.commit()
             except IntegrityError as exc:

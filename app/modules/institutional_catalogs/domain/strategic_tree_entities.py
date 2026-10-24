@@ -63,6 +63,14 @@ class StrategicNode:
 
     `id` es 0 mientras el nodo no se haya guardado; `add` lo asigna. `order` es
     la posición entre hermanos: la clave no ordena.
+
+    `indicator_formula` es la fórmula con que el PIDE mide una acción
+    («Nº de estudiantes… / Nº total… × 100»), tal como la imprime el documento.
+    Va aquí y no en `name` porque pegadas en una cadena el nombre de la acción
+    y su medida no se vuelven a separar, y no en `indicadores` porque esa ficha
+    exige un área y un responsable que la fórmula del PIDE no tiene: es
+    institucional, de nadie en particular. `None` en los niveles que no se
+    miden, que son casi todos.
     """
 
     id: int = 0
@@ -73,6 +81,7 @@ class StrategicNode:
     name: str
     order: int
     is_active: bool = True
+    indicator_formula: str | None = None
 
     def validate(self) -> None:
         """Lo que la base haría cumplir con un `CHECK` o un largo, y la memoria no.

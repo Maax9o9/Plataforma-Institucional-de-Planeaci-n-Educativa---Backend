@@ -49,6 +49,8 @@ class InstrumentVersionModel(Base):
     vigente_desde: Mapped[date] = mapped_column(Date, nullable=False)
     #: NULL mientras la versión está en borrador.
     publicada_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: De dónde salió esta edición. Lo pide el backlog junto con la vigencia.
+    origen: Mapped[str | None] = mapped_column(Text)
 
 
 class StrategicNodeModel(Base):
@@ -68,6 +70,8 @@ class StrategicNodeModel(Base):
     denominacion: Mapped[str] = mapped_column(Text, nullable=False)
     orden: Mapped[int] = mapped_column(Integer, nullable=False)
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    #: La fórmula con que el PIDE mide una acción. NULL en lo que no se mide.
+    formula_indicador: Mapped[str | None] = mapped_column(Text)
 
 
 class CriteriaSeaesModel(Base):

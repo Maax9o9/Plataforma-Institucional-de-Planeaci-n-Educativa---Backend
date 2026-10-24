@@ -1086,6 +1086,40 @@ async def test_actualizar_no_choca_con_uno_mismo_pero_si_con_un_hermano(arbol):
     await arbol.repo.update(replace(del_otro, parent_id=eje.id, key="1.3"))
 
 
+@pytest.mark.asyncio
+async def test_la_formula_del_indicador_viaja_con_la_accion(arbol):
+    """Cada acción del capítulo VII trae su indicador como una fórmula en
+    texto. Los demás niveles no se miden: por eso nace en `None` y no en «», que
+    diría «esta acción se mide con nada» y no «esto no se mide».
+
+    La fórmula y la denominación llevan textos distintos y los dos se leen: si
+    la fórmula acabara pegada a la denominación -que es lo que haría quien
+    cargara el PIDE sin columna donde ponerla- se notaría aquí. Se escribe al
+    dar de alta y al actualizar, que son las dos puertas, y se puede quitar.
+    """
+    version = await arbol.nueva_version()
+    eje = await _nodo(arbol, version, "1", EJE)
+    assert (await arbol.repo.get_by_id(eje.id)).indicator_formula is None
+
+    accion = StrategicNode(
+        version_id=version,
+        parent_id=eje.id,
+        kind=ACCION,
+        key="1.1",
+        name="Fortalecer el Programa Institucional de Tutorías",
+        order=1,
+        indicator_formula="Nº de estudiantes atendidos / Nº total de estudiantes × 100",
+    )
+    await arbol.repo.add(accion)
+    assert await arbol.repo.get_by_id(accion.id) == accion
+
+    await arbol.repo.update(replace(accion, indicator_formula="Nº de egresados ÷ 2"))
+    assert (await arbol.repo.get_by_id(accion.id)).indicator_formula == "Nº de egresados ÷ 2"
+
+    await arbol.repo.update(replace(accion, indicator_formula=None))
+    assert (await arbol.repo.get_by_id(accion.id)).indicator_formula is None
+
+
 # --------------------------------------------------------------------------- #
 # Sólo PostgreSQL
 # --------------------------------------------------------------------------- #
@@ -1096,18 +1130,23 @@ async def test_el_adaptador_sql_escribe_en_las_columnas_de_la_migracion(arbol_po
     """Las demás pruebas comparan lo que el repositorio devuelve con lo que se le
     dio, y un repositorio que escribiera en la columna equivocada y la leyera de
     la misma pasaría. Aquí se mira la fila con SQL crudo, columna por columna, y
-    el nivel tal como lo guarda el `CHECK`."""
+    el nivel tal como lo guarda el `CHECK`.
+
+    La fórmula lleva un texto distinto del de la denominación y se escribe por
+    `update`: es la columna que más fácil acabaría pegada a `denominacion`, que
+    es lo que se haría si no existiera dónde ponerla."""
     arbol = arbol_postgresql
     version = await arbol.nueva_version()
     padre = await _nodo(arbol, version, "P", EJE)
     nodo = await _nodo(arbol, version, "K-7.3", LINEA, padre=padre, orden=42, nombre="Texto único")
+    await arbol.repo.update(replace(nodo, indicator_formula="Otro texto, el de la fórmula"))
 
     async def fila():
         return (
             await arbol.conexion.execute(
                 text(
-                    "SELECT version_id, padre_id, tipo, clave, denominacion, orden, activo "
-                    "FROM nodos_estrategicos WHERE id = :id"
+                    "SELECT version_id, padre_id, tipo, clave, denominacion, orden, activo, "
+                    "formula_indicador FROM nodos_estrategicos WHERE id = :id"
                 ),
                 {"id": nodo.id},
             )
@@ -1121,6 +1160,7 @@ async def test_el_adaptador_sql_escribe_en_las_columnas_de_la_migracion(arbol_po
         "Texto único",
         42,
         True,
+        "Otro texto, el de la fórmula",
     )
 
     await arbol.repo.deactivate(nodo.id)
