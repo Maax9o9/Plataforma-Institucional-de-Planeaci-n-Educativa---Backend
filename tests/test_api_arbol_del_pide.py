@@ -404,6 +404,45 @@ async def test_retirar_un_nodo_cuyos_hijos_ya_estan_retirados_si_se_puede_y_se_r
     ]
 
 
+async def test_el_patch_no_reactiva_lo_que_nadie_le_pidio_reactivar(escenario):
+    eje = await _crear(escenario, "E1")
+    hijo = await _crear(escenario, "E1.O1", "objetivo_general", padre=eje)
+    assert (await _retirar(escenario, hijo)).status_code == 200
+
+    corregido = await _corregir(escenario, hijo, {"denominacion": "Corregida"})
+
+    assert corregido.status_code == 200, corregido.text
+    assert corregido.json() == {**hijo, "denominacion": "Corregida", "activo": False}
+    assert [
+        (n["clave"], n["activo"]) for n in await _listar(escenario, incluir_inactivos=True)
+    ] == [
+        ("E1", True),
+        ("E1.O1", False),
+    ]
+
+
+async def test_el_patch_retira_con_activo_falso_y_se_niega_igual_que_desactivar(escenario):
+    eje = await _crear(escenario, "E1")
+    hijo = await _crear(escenario, "E1.O1", "objetivo_general", padre=eje)
+
+    con_un_activo_colgando = await _corregir(escenario, eje, {"activo": False})
+    la_hoja = await _corregir(escenario, hijo, {"activo": False})
+    el_eje = await _corregir(escenario, eje, {"activo": False})
+
+    estado = con_un_activo_colgando.status_code, con_un_activo_colgando.json()["code"]
+    assert estado == CONFLICTO, con_un_activo_colgando.text
+    assert "1 nodo activo cuelga de él" in con_un_activo_colgando.json()["message"]
+    assert la_hoja.status_code == 200, la_hoja.text
+    assert la_hoja.json()["activo"] is False
+    assert el_eje.status_code == 200, el_eje.text
+    assert [
+        (n["clave"], n["activo"]) for n in await _listar(escenario, incluir_inactivos=True)
+    ] == [
+        ("E1", False),
+        ("E1.O1", False),
+    ]
+
+
 async def test_un_nodo_retirado_vuelve_con_patch_activo_pero_no_bajo_un_padre_retirado(escenario):
     eje = await _crear(escenario, "E1")
     hijo = await _crear(escenario, "E1.O1", "objetivo_general", padre=eje)
