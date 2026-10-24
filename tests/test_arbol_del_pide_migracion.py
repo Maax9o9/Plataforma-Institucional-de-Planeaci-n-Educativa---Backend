@@ -30,7 +30,7 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from alembic.script import ScriptDirectory
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 from app.shared.infrastructure.db.constraints import viola_la_restriccion
@@ -567,6 +567,47 @@ async def test_la_0038_no_se_baja_con_versiones_aunque_no_haya_ningun_nodo(conex
     assert (
         await conexion.execute(text("SELECT count(*) FROM instrumento_versiones"))
     ).scalar_one() == 1
+    assert (
+        await conexion.execute(text("SELECT to_regclass('nodos_estrategicos')"))
+    ).scalar_one() == "nodos_estrategicos"
+
+
+LO_QUE_CUELGA_DE_LAS_TABLAS_DE_LA_0038 = {
+    "una_foranea_a_los_nodos": (
+        "CREATE TABLE sonda_cuelga_del_nodo (id serial PRIMARY KEY, nodo_id integer, "
+        "CONSTRAINT fk_sonda_nodo FOREIGN KEY (nodo_id) REFERENCES nodos_estrategicos(id))",
+        "cannot drop table nodos_estrategicos",
+    ),
+    "una_foranea_a_las_versiones": (
+        "CREATE TABLE sonda_cuelga_de_la_version (id serial PRIMARY KEY, version_id integer, "
+        "CONSTRAINT fk_sonda_version FOREIGN KEY (version_id) "
+        "REFERENCES instrumento_versiones(id))",
+        "cannot drop table instrumento_versiones",
+    ),
+    "una_vista_sobre_la_columna_del_indicador": (
+        "CREATE VIEW sonda_indicadores AS SELECT nodo_id FROM indicadores",
+        "cannot drop column nodo_id of table indicadores",
+    ),
+}
+
+LO_QUE_SIGUE_COLGANDO = (
+    "SELECT (SELECT count(*) FROM pg_constraint WHERE conname LIKE 'fk_sonda%') "
+    "+ (SELECT count(*) FROM pg_views WHERE viewname LIKE 'sonda%')"
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cuelga", list(LO_QUE_CUELGA_DE_LAS_TABLAS_DE_LA_0038))
+async def test_la_0038_no_se_baja_llevandose_lo_que_cuelga_de_sus_tablas(conexion, cuelga):
+    crear, se_queja_de = LO_QUE_CUELGA_DE_LAS_TABLAS_DE_LA_0038[cuelga]
+    await conexion.execute(text(crear))
+    intento = await conexion.begin_nested()
+
+    with pytest.raises(DBAPIError, match=se_queja_de):
+        await _bajar_la_0038(conexion)
+
+    await intento.rollback()
+    assert (await conexion.execute(text(LO_QUE_SIGUE_COLGANDO))).scalar_one() == 1
     assert (
         await conexion.execute(text("SELECT to_regclass('nodos_estrategicos')"))
     ).scalar_one() == "nodos_estrategicos"

@@ -10,6 +10,7 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from alembic.script import ScriptDirectory
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 RAIZ = Path(__file__).resolve().parents[1]
@@ -160,6 +161,38 @@ async def test_la_0039_se_para_en_cuanto_hay_un_valor(conexion, cual):
     with pytest.raises(RuntimeError, match=esperado):
         await _bajar_la_0039(conexion)
 
+    assert await _existe_la_columna(conexion, "nodos_estrategicos", "formula_indicador") == 1
+    assert await _existe_la_columna(conexion, "instrumento_versiones", "origen") == 1
+
+
+LO_QUE_CUELGA_DE_LAS_COLUMNAS_DE_LA_0039 = {
+    "una_vista_sobre_la_formula": (
+        "CREATE VIEW sonda_formulas AS SELECT formula_indicador FROM nodos_estrategicos",
+        "cannot drop column formula_indicador of table nodos_estrategicos",
+    ),
+    "una_vista_sobre_el_origen": (
+        "CREATE VIEW sonda_origenes AS SELECT origen FROM instrumento_versiones",
+        "cannot drop column origen of table instrumento_versiones",
+    ),
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cuelga", list(LO_QUE_CUELGA_DE_LAS_COLUMNAS_DE_LA_0039))
+async def test_la_0039_no_se_baja_llevandose_lo_que_cuelga_de_sus_columnas(conexion, cuelga):
+    crear, se_queja_de = LO_QUE_CUELGA_DE_LAS_COLUMNAS_DE_LA_0039[cuelga]
+    await conexion.execute(text(crear))
+    intento = await conexion.begin_nested()
+
+    with pytest.raises(DBAPIError, match=se_queja_de):
+        await _bajar_la_0039(conexion)
+
+    await intento.rollback()
+    assert (
+        await conexion.execute(
+            text("SELECT count(*) FROM pg_views WHERE viewname LIKE 'sonda%'")
+        )
+    ).scalar_one() == 1
     assert await _existe_la_columna(conexion, "nodos_estrategicos", "formula_indicador") == 1
     assert await _existe_la_columna(conexion, "instrumento_versiones", "origen") == 1
 
