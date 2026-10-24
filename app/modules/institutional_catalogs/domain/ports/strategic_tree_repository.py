@@ -33,10 +33,7 @@ class StrategicTreeRepository(Protocol):
         """Guarda el nodo y le asigna su `id`."""
         ...
 
-    async def update(self, node: StrategicNode) -> None:
-        """Reemplaza lo editable del nodo `node.id`: nivel, clave, denominación,
-        orden, padre y si está activo. La versión no cambia."""
-        ...
+    async def update(self, node: StrategicNode) -> None: ...
 
     async def deactivate(self, node_id: int) -> None:
         """Retira el nodo sin tocar lo que cuelga de él. Retirar uno ya retirado

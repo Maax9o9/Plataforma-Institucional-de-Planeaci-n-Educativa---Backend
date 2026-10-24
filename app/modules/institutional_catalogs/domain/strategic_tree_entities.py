@@ -114,14 +114,6 @@ def in_traversal_order(nodes: Iterable[StrategicNode]) -> list[StrategicNode]:
 
     Los hermanos van por `order` y, si empatan, por `id` -el orden en que se
     cargaron-: ni la clave ni el nombre ordenan.
-
-    Sólo se llega a un nodo bajando desde una raíz, así que el recorrido no
-    puede girar. Lo que no se alcanza no se omite: se levanta
-    `InvalidStateError`. Un nodo existe y no aparece es lo peor que le puede
-    pasar a un sistema que tiene que acreditar cifras ante una revisión
-    externa, y con la foránea del padre puesta la única forma de no alcanzar un
-    nodo es que alguien haya escrito un ciclo por fuera -lo que, además,
-    esconde a todo lo que cuelga de él aunque no sea parte del ciclo-.
     """
     children: defaultdict[int | None, list[StrategicNode]] = defaultdict(list)
     recibidos: list[StrategicNode] = []

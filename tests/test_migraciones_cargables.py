@@ -16,9 +16,7 @@ lo bastante fina como para no fiarse de ella a ojo, y de eso se encarga esto.
 
 No se arregla en el cargador a proposito: pasar a `exec_driver_sql` rompe el
 modo offline, que `alembic/env.py` implementa con `literal_binds=True`. Asi que
-la red se pone aqui, y mira todas las migraciones de una vez. Sin numero: un
-conteo escrito a mano se queda vencido en la migracion siguiente, y esta
-docstring ya se quedo vencida una vez.
+la red se pone aqui, y mira todas las migraciones de una vez.
 
 Esta prueba nace verde -hoy ninguna trae la trampa- y existe para la 0038.
 """
