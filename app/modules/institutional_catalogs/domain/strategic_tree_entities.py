@@ -13,12 +13,12 @@ también. Lo que sí necesita el almacén -¿ya existe esa clave entre los
 hermanos?- lo resuelve cada adaptador a su manera, y la prueba exige que
 respondan lo mismo.
 
-Hay dos reglas que la base no impone por ninguno de los dos adaptadores y que
-sólo viven aquí: que el nivel del hijo vaya más abajo que el del padre y que
-un nodo no se mude bajo uno de sus descendientes. El esquema las aceptaría
-las dos; que los adaptadores las pregunten con el mismo texto y en el mismo
-momento es lo que impide que la memoria pase lo que PostgreSQL rechaza, o al
-revés.
+Hay tres reglas que la base no impone por ninguno de los dos adaptadores y que
+sólo viven aquí: que el nivel del hijo vaya más abajo que el del padre, que
+nada se cuelgue de un nodo retirado y que un nodo no se mude bajo uno de sus
+descendientes. El esquema las aceptaría todas; que las dos tengan el mismo
+texto y el mismo momento es lo que impide que la memoria pase lo que
+PostgreSQL rechaza, o al revés.
 """
 
 from __future__ import annotations
@@ -109,7 +109,7 @@ def in_traversal_order(nodes: Iterable[StrategicNode]) -> list[StrategicNode]:
 
     Sólo se llega a un nodo bajando desde una raíz, así que el recorrido no
     puede girar. Lo que no se alcanza no se omite: se levanta
-    `InvalidStateError`. Un nodo que existe y no aparece es lo peor que le puede
+    `InvalidStateError`. Un nodo existe y no aparece es lo peor que le puede
     pasar a un sistema que tiene que acreditar cifras ante una revisión
     externa, y con la foránea del padre puesta la única forma de no alcanzar un
     nodo es que alguien haya escrito un ciclo por fuera -lo que, además,
@@ -226,6 +226,43 @@ def ensure_children_stay_deeper(node: StrategicNode, children: Iterable[Strategi
         f"«{node.key}» no puede pasar al nivel «{node.kind.value}»: "
         f"{len(por_encima)} de los nodos que cuelgan de él dejarían de ir más abajo "
         f"que su padre. Cambie primero el nivel de esos nodos."
+    )
+
+
+def ensure_parent_is_active(node: StrategicNode, parent: StrategicNode | None) -> None:
+    """Nada se cuelga de un nodo retirado, ni activo ni retirado.
+
+    Lo retirado no se puede elegir al formular; colgarle algo nuevo no
+    significa nada, y lo que se colgara quedaría ofreciéndose bajo algo que ya
+    no se ofrece. Vale al dar de alta, al mudar y al reactivar: son las tres
+    formas de llegar a ese estado por la puerta de al lado.
+
+    No vale al editar lo que ya cuelga de un retirado: `deactivate` no arrastra
+    a lo que cuelga -eso es decisión de la 0038-, así que un activo bajo un
+    retirado es un estado que existe y se tiene que poder corregir.
+    """
+    if parent is None or parent.is_active:
+        return
+    raise ValidationError(
+        f"«{node.key}» quedaría colgando de «{parent.key}», que está retirado: "
+        "lo retirado no se puede elegir al formular. Reactive primero el padre."
+    )
+
+
+def ensure_nothing_active_hangs(node: StrategicNode, children: Iterable[StrategicNode]) -> None:
+    """Retirar por `update` es retirar, y no retira a lo que cuelga.
+
+    `deactivate` es la puerta que la 0038 describe y la que la tarea 3 vigila;
+    `update(is_active=False)` es la misma operación por otra puerta, y sin esto
+    deja activos colgando de un retirado sin que nadie lo diga. Se niega
+    nombrando cuántos lo impiden, que es lo que deja actuar a quien lo pidió.
+    """
+    activos = [child for child in children if child.is_active]
+    if not activos:
+        return
+    raise ValidationError(
+        f"«{node.key}» no se puede retirar: {len(activos)} nodos activos cuelgan de él "
+        "y quedarían ofreciéndose bajo algo retirado. Retire primero lo que cuelga."
     )
 
 

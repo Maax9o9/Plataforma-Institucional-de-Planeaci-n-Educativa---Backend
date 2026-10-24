@@ -22,13 +22,15 @@ class StrategicTreeRepository(Protocol):
     de un nodo que ya tiene hijos.
 
     Errores: `ValidationError` si el nivel, la clave o la denominación no valen,
-    si el padre no existe, es de otra versión o no va más arriba en la cadena de
-    niveles, si el nodo se mudaría bajo uno de sus descendientes, si cambiaría de
-    versión o si al cambiar de nivel dejaría a sus hijos por encima de él;
-    `ConflictError` si un hermano ya
-    tiene esa clave; `ResourceNotFoundError` si el nodo que se actualiza, se
-    desactiva o se consulta por sus ancestros no existe; `InvalidStateError` si
-    el árbol guardado tiene un ciclo -`list_tree` y `ancestors`-.
+    si el padre no existe, es de otra versión, está retirado o no va más arriba
+    en la cadena de niveles, si el nodo se mudaría bajo uno de sus
+    descendientes, si cambiaría de versión, si al cambiar de nivel dejaría a sus
+    hijos por encima de él o si al retirarse dejaría activos colgando;
+    `ConflictError` si un hermano ya tiene esa clave; `ResourceNotFoundError` si
+    el nodo que se actualiza, se desactiva o se consulta por sus ancestros no
+    existe; `InvalidStateError` si el árbol guardado tiene un ciclo -`list_tree`
+    y `ancestors`-. En PostgreSQL, además, `ValidationError` si la versión no
+    existe: la memoria no tiene tabla de versiones y no puede saberlo.
     """
 
     async def list_tree(
@@ -62,7 +64,11 @@ class StrategicTreeRepository(Protocol):
 
     async def deactivate(self, node_id: int) -> None:
         """Retira el nodo sin tocar lo que cuelga de él. Retirar uno ya retirado
-        no es un error."""
+        no es un error.
+
+        Es la única puerta por la que un activo puede quedar colgando de un
+        retirado: `update(is_active=False)` se niega y dice cuántos lo impiden.
+        """
         ...
 
     async def ancestors(self, node_id: int) -> list[StrategicNode]:

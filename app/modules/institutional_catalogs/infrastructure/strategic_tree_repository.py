@@ -12,7 +12,9 @@ from ..domain.strategic_tree_entities import (
     ensure_children_stay_deeper,
     ensure_kind_fits_under,
     ensure_no_cycle,
+    ensure_nothing_active_hangs,
     ensure_parent_fits,
+    ensure_parent_is_active,
     in_traversal_order,
     repeated_key_error,
 )
@@ -50,16 +52,19 @@ class InMemoryStrategicTreeRepository:
         node.validate()
         upward = self._upward(node.parent_id)
         ensure_parent_fits(node, upward)
-        ensure_kind_fits_under(node, upward[0] if upward else None)
+        padre = upward[0] if upward else None
+        ensure_kind_fits_under(node, padre)
+        ensure_parent_is_active(node, padre)
         self._ensure_key_is_free(node, ignoring=None)
         node.id = next(self._next_id)
         self._nodes[node.id] = replace(node)
 
     async def update(self, node: StrategicNode) -> None:
         """Las reglas, en el mismo orden que en el adaptador SQL: el padre, el
-        ciclo, el nivel hacia arriba, el nivel hacia abajo y la clave. El orden
-        decide qué mensaje sale cuando una operación rompe más de una regla, y
-        los dos adaptadores tienen que dar el mismo."""
+        ciclo, el nivel hacia arriba, el padre retirado, el nivel hacia abajo,
+        lo que cuelga y la clave. El orden decide qué mensaje sale cuando una
+        operación rompe más de una regla, y los dos adaptadores tienen que dar
+        el mismo."""
         node.validate()
         current = self._nodes.get(node.id)
         if current is None:
@@ -69,9 +74,14 @@ class InMemoryStrategicTreeRepository:
         upward = self._upward(node.parent_id)
         ensure_parent_fits(node, upward)
         ensure_no_cycle(node, upward)
-        ensure_kind_fits_under(node, upward[0] if upward else None)
+        padre = upward[0] if upward else None
+        ensure_kind_fits_under(node, padre)
+        if node.parent_id != current.parent_id or (node.is_active and not current.is_active):
+            ensure_parent_is_active(node, padre)
         if node.kind is not current.kind:
             ensure_children_stay_deeper(node, self._children_of(node.id))
+        if current.is_active and not node.is_active:
+            ensure_nothing_active_hangs(node, self._children_of(node.id))
         self._ensure_key_is_free(node, ignoring=node.id)
         self._nodes[node.id] = replace(node)
 

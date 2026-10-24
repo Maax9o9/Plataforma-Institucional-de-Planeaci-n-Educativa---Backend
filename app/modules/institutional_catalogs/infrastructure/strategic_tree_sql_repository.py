@@ -18,7 +18,9 @@ from ..domain.strategic_tree_entities import (
     ensure_children_stay_deeper,
     ensure_kind_fits_under,
     ensure_no_cycle,
+    ensure_nothing_active_hangs,
     ensure_parent_fits,
+    ensure_parent_is_active,
     in_traversal_order,
     repeated_key_error,
 )
@@ -86,7 +88,9 @@ class SqlAlchemyStrategicTreeRepository:
         async with self.session_factory() as session:
             upward = await self._upward(session, node.parent_id)
             ensure_parent_fits(node, upward)
-            ensure_kind_fits_under(node, upward[0] if upward else None)
+            padre = upward[0] if upward else None
+            ensure_kind_fits_under(node, padre)
+            ensure_parent_is_active(node, padre)
             model = StrategicNodeModel(
                 version_id=node.version_id,
                 padre_id=node.parent_id,
@@ -108,14 +112,14 @@ class SqlAlchemyStrategicTreeRepository:
 
     async def update(self, node: StrategicNode) -> None:
         """Las reglas, en el mismo orden que en el adaptador en memoria: el
-        padre, el ciclo, el nivel hacia arriba, el nivel hacia abajo y la clave
-        -esta última la impone la base-. El orden decide qué mensaje sale
-        cuando una operación rompe más de una regla, y los dos adaptadores
-        tienen que dar el mismo.
+        padre, el ciclo, el nivel hacia arriba, el padre retirado, el nivel
+        hacia abajo, lo que cuelga y la clave -esta última la impone la base-.
+        El orden decide qué mensaje sale cuando una operación rompe más de una
+        regla, y los dos adaptadores tienen que dar el mismo.
 
-        La regla que mira hacia abajo cuesta una consulta por `padre_id` y sólo
-        se paga cuando el nivel cambia, que es cuando lo que cuelga del nodo
-        puede quedar por encima de él.
+        Las dos reglas que miran hacia abajo cuestan una consulta por `padre_id`
+        y sólo se pagan cuando el nivel cambia o el nodo se retira, que es
+        cuando lo que cuelga de él puede quedar mal.
         """
         node.validate()
         async with self.session_factory() as session:
@@ -124,13 +128,22 @@ class SqlAlchemyStrategicTreeRepository:
                 raise ResourceNotFoundError("El nodo no existe.")
             if node.version_id != model.version_id:
                 raise ValidationError("Un nodo no cambia de versión.")
-            nivel_de_antes = NodeKind(model.tipo)
+            estaba_activo, nivel_de_antes, padre_de_antes = (
+                model.activo,
+                NodeKind(model.tipo),
+                model.padre_id,
+            )
             upward = await self._upward(session, node.parent_id)
             ensure_parent_fits(node, upward)
             ensure_no_cycle(node, upward)
-            ensure_kind_fits_under(node, upward[0] if upward else None)
+            padre = upward[0] if upward else None
+            ensure_kind_fits_under(node, padre)
+            if node.parent_id != padre_de_antes or (node.is_active and not estaba_activo):
+                ensure_parent_is_active(node, padre)
             if node.kind is not nivel_de_antes:
                 ensure_children_stay_deeper(node, await self._children_of(session, node.id))
+            if estaba_activo and not node.is_active:
+                ensure_nothing_active_hangs(node, await self._children_of(session, node.id))
             model.padre_id = node.parent_id
             model.tipo = node.kind.value
             model.clave = node.key

@@ -571,6 +571,96 @@ async def test_desactivar_un_nodo_que_no_existe_es_un_error(arbol):
         await arbol.repo.deactivate(INEXISTENTE)
 
 
+@pytest.mark.asyncio
+async def test_retirar_con_update_no_deja_activos_colgando(arbol):
+    """`deactivate` es la puerta que la 0038 describe y la que la tarea 3
+    vigila; `update(is_active=False)` es la misma operación por otra puerta, y
+    sin vigilarla también deja activos colgando de un retirado.
+
+    Los hijos son tres y uno está retirado: el mensaje dice «2», así que una
+    regla que contara a todos se delata en el número. Y el eje cuyo único hijo
+    ya está retirado **sí** se puede retirar: una regla de «ningún hijo»
+    pasaría el rechazo de arriba y se cae aquí.
+    """
+    version = await arbol.nueva_version()
+    eje = await _nodo(arbol, version, "1", EJE)
+    await _nodo(arbol, version, "1.1", OBJETIVO_GENERAL, padre=eje)
+    await _nodo(arbol, version, "1.2", OBJETIVO_GENERAL, padre=eje, orden=2)
+    ya_retirado = await _nodo(arbol, version, "1.3", OBJETIVO_GENERAL, padre=eje, orden=3)
+    await arbol.repo.deactivate(ya_retirado.id)
+
+    with pytest.raises(ValidationError, match="2 nodos activos cuelgan"):
+        await arbol.repo.update(replace(eje, is_active=False))
+    assert (await arbol.repo.get_by_id(eje.id)).is_active is True
+
+    otro = await _nodo(arbol, version, "2", EJE, orden=2)
+    solo_hijo = await _nodo(arbol, version, "2.1", OBJETIVO_GENERAL, padre=otro)
+    await arbol.repo.deactivate(solo_hijo.id)
+
+    await arbol.repo.update(replace(otro, is_active=False))
+    assert (await arbol.repo.get_by_id(otro.id)).is_active is False
+
+
+@pytest.mark.asyncio
+async def test_nada_se_cuelga_de_un_nodo_retirado(arbol):
+    """Colgar algo nuevo de lo retirado no significa nada: lo retirado no se
+    puede elegir al formular, así que lo que colgara de él se ofrecería bajo
+    algo que ya no se ofrece. Dos puertas: dar de alta y mudar.
+
+    Lo que **no** se cierra -y es lo que separa esta regla de una que mirara
+    todo `update`- es editar lo que ya cuelga de un retirado: `deactivate` no
+    arrastra a lo que cuelga, así que ese estado existe de verdad y tiene que
+    poder corregirse. Con la regla puesta en todo `update`, la acción de una
+    línea retirada se quedaría sin poder cambiar ni la denominación.
+    """
+    version = await arbol.nueva_version()
+    eje = await _nodo(arbol, version, "1", EJE)
+    linea = await _nodo(arbol, version, "1.1", LINEA, padre=eje)
+    accion = await _nodo(arbol, version, "1.1.1", ACCION, padre=linea)
+    otra_linea = await _nodo(arbol, version, "1.2", LINEA, padre=eje, orden=2)
+    suelta = await _nodo(arbol, version, "1.2.1", ACCION, padre=otra_linea)
+    await arbol.repo.deactivate(linea.id)
+
+    with pytest.raises(ValidationError, match="está retirado"):
+        await _nodo(arbol, version, "1.1.9", ACCION, padre=linea)
+    with pytest.raises(ValidationError, match="está retirado"):
+        await arbol.repo.update(replace(suelta, parent_id=linea.id))
+
+    await arbol.repo.update(replace(accion, name="Texto corregido"))
+    assert (await arbol.repo.get_by_id(accion.id)).name == "Texto corregido"
+
+
+@pytest.mark.asyncio
+async def test_un_nodo_no_se_reactiva_bajo_un_padre_retirado(arbol):
+    """La tercera puerta: ni alta ni mudanza, sólo la bandera. Primero se
+    reactiva el padre.
+
+    Después se reactiva -una regla que rechazara toda reactivación no dejaría
+    volver nunca, y «no se borra, se desactiva» sólo tiene sentido si se puede
+    deshacer-. Y la regla mira al **padre**, no a toda la cadena: con el eje
+    retirado y la línea activa, la acción se reactiva igual. Mirar a todos los
+    ancestros dejaría sin reparar justo el estado que `deactivate` crea.
+    """
+    version = await arbol.nueva_version()
+    eje = await _nodo(arbol, version, "1", EJE)
+    linea = await _nodo(arbol, version, "1.1", LINEA, padre=eje)
+    accion = await _nodo(arbol, version, "1.1.1", ACCION, padre=linea)
+    await arbol.repo.deactivate(accion.id)
+    await arbol.repo.deactivate(linea.id)
+
+    with pytest.raises(ValidationError, match="está retirado"):
+        await arbol.repo.update(replace(accion, is_active=True))
+
+    await arbol.repo.update(replace(linea, is_active=True))
+    await arbol.repo.update(replace(accion, is_active=True))
+    assert await _ids(arbol, version) == [eje.id, linea.id, accion.id]
+
+    await arbol.repo.deactivate(accion.id)
+    await arbol.repo.deactivate(eje.id)
+    await arbol.repo.update(replace(accion, is_active=True))
+    assert (await arbol.repo.get_by_id(accion.id)).is_active is True
+
+
 # --------------------------------------------------------------------------- #
 # El padre: que exista, que sea de la misma versión, que vaya más arriba en la
 # cadena de niveles y que no forme un ciclo
