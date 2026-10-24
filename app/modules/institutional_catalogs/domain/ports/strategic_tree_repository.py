@@ -18,14 +18,7 @@ class StrategicTreeRepository(Protocol):
 
     async def list_tree(
         self, version_id: int, *, include_inactive: bool = False
-    ) -> list[StrategicNode]:
-        """Los nodos de la versión en orden de recorrido.
-
-        Por omisión sin los desactivados: quien formula no debe ver nodos
-        retirados. Un nodo activo cuyo padre está desactivado sí aparece, en el
-        lugar que le toca: retirar un nodo no afecta a lo que cuelga de él.
-        """
-        ...
+    ) -> list[StrategicNode]: ...
 
     async def get_by_id(self, node_id: int) -> StrategicNode | None: ...
 
@@ -35,10 +28,7 @@ class StrategicTreeRepository(Protocol):
 
     async def update(self, node: StrategicNode) -> None: ...
 
-    async def deactivate(self, node_id: int) -> None:
-        """Retira el nodo sin tocar lo que cuelga de él. Retirar uno ya retirado
-        no es un error."""
-        ...
+    async def deactivate(self, node_id: int) -> None: ...
 
     async def ancestors(self, node_id: int) -> list[StrategicNode]:
         """Los ancestros del nodo, del eje hacia abajo y sin incluir al nodo.

@@ -88,6 +88,8 @@ class InMemoryStrategicTreeRepository:
         node = self._nodes.get(node_id)
         if node is None:
             raise ResourceNotFoundError("El nodo no existe.")
+        if node.is_active:
+            ensure_nothing_active_hangs(node, self._children_of(node_id))
         node.is_active = False
 
     async def ancestors(self, node_id: int) -> list[StrategicNode]:

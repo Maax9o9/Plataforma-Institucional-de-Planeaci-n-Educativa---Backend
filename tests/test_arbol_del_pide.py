@@ -596,7 +596,6 @@ async def test_lo_retirado_sale_del_listado_normal_pero_no_arrastra_lo_que_cuelg
     retirada sigue activa, así que sigue en el listado, en el lugar que le
     toca. Tres reglas equivocadas lo delatan:
 
-    - desactivar en cascada: la acción desaparecería;
     - filtrar **antes** de recorrer: la acción quedaría sin padre y, según el
       recorrido, desaparece o sube a la raíz y sale al final;
     - no filtrar: la línea retirada seguiría saliendo.
@@ -609,7 +608,7 @@ async def test_lo_retirado_sale_del_listado_normal_pero_no_arrastra_lo_que_cuelg
     accion = await _nodo(arbol, version, "A", ACCION, padre=linea)
     hermana = await _nodo(arbol, version, "L2", LINEA, padre=especifico, orden=2)
 
-    await arbol.repo.deactivate(linea.id)
+    await _escrito_por_fuera(arbol, linea, is_active=False)
 
     assert await _ids(arbol, version) == [eje.id, general.id, especifico.id, accion.id, hermana.id]
     assert await _ids(arbol, version, include_inactive=True) == [
@@ -645,17 +644,18 @@ async def test_desactivar_no_borra_y_el_nodo_sigue_legible(arbol):
     hermana = await _nodo(arbol, version, "L2", LINEA, padre=especifico, orden=2)
     homonima = await _nodo(arbol, otra, "L", LINEA)
 
+    await arbol.repo.deactivate(accion.id)
     await arbol.repo.deactivate(linea.id)
 
-    retirada = await arbol.repo.get_by_id(linea.id)
-    assert retirada == replace(linea, is_active=False)
+    assert await arbol.repo.get_by_id(linea.id) == replace(linea, is_active=False)
+    assert await arbol.repo.get_by_id(accion.id) == replace(accion, is_active=False)
     assert [n.id for n in await arbol.repo.ancestors(accion.id)] == [
         eje.id,
         general.id,
         especifico.id,
         linea.id,
     ]
-    for intacto in (eje, general, especifico, accion, hermana, homonima):
+    for intacto in (eje, general, especifico, hermana, homonima):
         assert await arbol.repo.get_by_id(intacto.id) == intacto
 
 
@@ -723,6 +723,28 @@ async def test_un_nodo_ya_retirado_con_activos_colgando_se_corrige_y_se_vuelve_a
 
 
 @pytest.mark.asyncio
+async def test_retirar_por_el_puerto_tampoco_deja_activos_colgando(arbol):
+    version = await arbol.nueva_version()
+    eje = await _nodo(arbol, version, "1", EJE)
+    unico_activo = await _nodo(arbol, version, "1.1", OBJETIVO_GENERAL, padre=eje)
+    ya_retirado = await _nodo(arbol, version, "1.2", OBJETIVO_GENERAL, padre=eje, orden=2)
+    nieto = await _nodo(arbol, version, "1.1.1", OBJETIVO_ESPECIFICO, padre=unico_activo)
+    await arbol.repo.deactivate(ya_retirado.id)
+
+    with pytest.raises(ConflictError, match="1 nodo activo cuelga de él"):
+        await arbol.repo.deactivate(eje.id)
+    with pytest.raises(ConflictError, match="1 nodo activo cuelga de él"):
+        await arbol.repo.update(replace(eje, is_active=False))
+
+    assert await _ids(arbol, version) == [eje.id, unico_activo.id, nieto.id]
+
+    await arbol.repo.deactivate(nieto.id)
+    await arbol.repo.deactivate(unico_activo.id)
+    await arbol.repo.deactivate(eje.id)
+    assert await _ids(arbol, version) == []
+
+
+@pytest.mark.asyncio
 async def test_nada_se_cuelga_de_un_nodo_retirado(arbol):
     version = await arbol.nueva_version()
     eje = await _nodo(arbol, version, "1", EJE)
@@ -730,7 +752,7 @@ async def test_nada_se_cuelga_de_un_nodo_retirado(arbol):
     accion = await _nodo(arbol, version, "1.1.1", ACCION, padre=linea)
     otra_linea = await _nodo(arbol, version, "1.2", LINEA, padre=eje, orden=2)
     suelta = await _nodo(arbol, version, "1.2.1", ACCION, padre=otra_linea)
-    await arbol.repo.deactivate(linea.id)
+    await _escrito_por_fuera(arbol, linea, is_active=False)
 
     with pytest.raises(ValidationError, match="está retirado"):
         await _nodo(arbol, version, "1.1.9", ACCION, padre=linea)
@@ -758,7 +780,7 @@ async def test_un_nodo_no_se_reactiva_bajo_un_padre_retirado(arbol):
     assert await _ids(arbol, version) == [eje.id, linea.id, accion.id]
 
     await arbol.repo.deactivate(accion.id)
-    await arbol.repo.deactivate(eje.id)
+    await _escrito_por_fuera(arbol, eje, is_active=False)
     await arbol.repo.update(replace(accion, is_active=True))
     assert (await arbol.repo.get_by_id(accion.id)).is_active is True
 

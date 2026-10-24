@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import NoReturn
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
@@ -159,13 +159,14 @@ class SqlAlchemyStrategicTreeRepository:
         if not cabe_en_el_entero_de_la_base(node_id):
             raise ResourceNotFoundError("El nodo no existe.")
         async with self.session_factory() as session:
-            result = await session.execute(
-                update(StrategicNodeModel)
-                .where(StrategicNodeModel.id == node_id)
-                .values(activo=False)
-            )
-            if result.rowcount != 1:
+            model = await session.get(StrategicNodeModel, node_id)
+            if model is None:
                 raise ResourceNotFoundError("El nodo no existe.")
+            if model.activo:
+                ensure_nothing_active_hangs(
+                    _to_domain(model), await self._children_of(session, node_id)
+                )
+            model.activo = False
             await session.commit()
 
     async def ancestors(self, node_id: int) -> list[StrategicNode]:
