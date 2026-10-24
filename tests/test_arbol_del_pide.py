@@ -11,10 +11,6 @@ La memoria no tiene esquema, y lo que en PostgreSQL imponen el `CHECK` del nivel
 o la `UNIQUE` entre hermanos tiene que cumplirse igual en ella. Por eso casi
 todo se prueba por las dos: una regla que sólo la base hace cumplir pasaría en
 una variante y no en la otra.
-
-Cada prueba dice, en su docstring, **qué regla equivocada acertaría con datos
-descuidados** y qué datos la delatan. Un dato que no distingue la regla correcta
-de la equivocada no mide nada.
 """
 
 from __future__ import annotations
@@ -269,14 +265,6 @@ async def test_el_nivel_llega_como_texto_y_se_guarda_como_nivel(arbol):
     "clave", ["E1.L2.A3", "1.1.1.1.1", "12.10.11.13.14", "1.a", "A", "1.ñ", "Á2.3"]
 )
 async def test_la_clave_no_exige_formato_y_se_guarda_tal_cual(arbol, clave):
-    """La fija el documento fuente y no tiene formato. Los valores son los que
-    una regla de formato típica dejaría fuera: letras mezcladas con dígitos
-    («E1.L2.A3»), los cinco segmentos del capítulo VII con segmentos de dos
-    dígitos, una letra minúscula tras el punto («1.a»), una clave de un solo
-    carácter sin puntos («A») y dos con acento («1.ñ», «Á2.3»), que es lo que
-    una regla «sólo ASCII» dejaría fuera sin que nada lo viera: ningún otro
-    valor de prueba lleva acento. La clave del nodo no contiene la de su padre
-    («9»)."""
     version = await arbol.nueva_version()
     eje = await _nodo(arbol, version, "9", EJE)
     nodo = await _nodo(arbol, version, clave, OBJETIVO_GENERAL, padre=eje)
@@ -286,15 +274,6 @@ async def test_la_clave_no_exige_formato_y_se_guarda_tal_cual(arbol, clave):
 
 @pytest.mark.asyncio
 async def test_la_clave_cabe_en_cincuenta_caracteres_y_no_en_cincuenta_y_uno(arbol):
-    """`clave` es `VARCHAR(50)`: en PostgreSQL una de 51 revienta con un error de
-    la base, y en memoria entraría sin protesta. El 50 exacto entra en las dos
-    -una regla «menos de 50» lo rechazaría-.
-
-    Y el tope es de **caracteres**, no de bytes: cincuenta eñes pesan cien
-    bytes en UTF-8, así que una regla que midiera `len(key.encode())` las
-    rechazaría donde `VARCHAR(50)` las acepta, y los dos adaptadores dejarían
-    de responder lo mismo ante la misma clave.
-    """
     version = await arbol.nueva_version()
     await _nodo(arbol, version, "x" * 50, EJE)
     cincuenta_enes = await _nodo(arbol, version, "ñ" * 50, EJE, orden=2)
@@ -588,15 +567,6 @@ async def test_desactivar_un_nodo_que_no_existe_es_un_error(arbol):
 
 @pytest.mark.asyncio
 async def test_retirar_con_update_no_deja_activos_colgando(arbol):
-    """`deactivate` es la puerta que la 0038 describe y la que la tarea 3
-    vigila; `update(is_active=False)` es la misma operación por otra puerta, y
-    sin vigilarla también deja activos colgando de un retirado.
-
-    Los hijos son tres y uno está retirado: el mensaje dice «2», así que una
-    regla que contara a todos se delata en el número. Y el eje cuyo único hijo
-    ya está retirado **sí** se puede retirar: una regla de «ningún hijo»
-    pasaría el rechazo de arriba y se cae aquí.
-    """
     version = await arbol.nueva_version()
     eje = await _nodo(arbol, version, "1", EJE)
     await _nodo(arbol, version, "1.1", OBJETIVO_GENERAL, padre=eje)
@@ -618,16 +588,6 @@ async def test_retirar_con_update_no_deja_activos_colgando(arbol):
 
 @pytest.mark.asyncio
 async def test_nada_se_cuelga_de_un_nodo_retirado(arbol):
-    """Colgar algo nuevo de lo retirado no significa nada: lo retirado no se
-    puede elegir al formular, así que lo que colgara de él se ofrecería bajo
-    algo que ya no se ofrece. Dos puertas: dar de alta y mudar.
-
-    Lo que **no** se cierra -y es lo que separa esta regla de una que mirara
-    todo `update`- es editar lo que ya cuelga de un retirado: `deactivate` no
-    arrastra a lo que cuelga, así que ese estado existe de verdad y tiene que
-    poder corregirse. Con la regla puesta en todo `update`, la acción de una
-    línea retirada se quedaría sin poder cambiar ni la denominación.
-    """
     version = await arbol.nueva_version()
     eje = await _nodo(arbol, version, "1", EJE)
     linea = await _nodo(arbol, version, "1.1", LINEA, padre=eje)
@@ -647,15 +607,6 @@ async def test_nada_se_cuelga_de_un_nodo_retirado(arbol):
 
 @pytest.mark.asyncio
 async def test_un_nodo_no_se_reactiva_bajo_un_padre_retirado(arbol):
-    """La tercera puerta: ni alta ni mudanza, sólo la bandera. Primero se
-    reactiva el padre.
-
-    Después se reactiva -una regla que rechazara toda reactivación no dejaría
-    volver nunca, y «no se borra, se desactiva» sólo tiene sentido si se puede
-    deshacer-. Y la regla mira al **padre**, no a toda la cadena: con el eje
-    retirado y la línea activa, la acción se reactiva igual. Mirar a todos los
-    ancestros dejaría sin reparar justo el estado que `deactivate` crea.
-    """
     version = await arbol.nueva_version()
     eje = await _nodo(arbol, version, "1", EJE)
     linea = await _nodo(arbol, version, "1.1", LINEA, padre=eje)
@@ -677,8 +628,7 @@ async def test_un_nodo_no_se_reactiva_bajo_un_padre_retirado(arbol):
 
 
 # --------------------------------------------------------------------------- #
-# El padre: que exista, que sea de la misma versión, que vaya más arriba en la
-# cadena de niveles y que no forme un ciclo
+# El padre: que exista, que sea de la misma versión y que no forme un ciclo
 # --------------------------------------------------------------------------- #
 
 
@@ -696,20 +646,6 @@ async def test_un_nodo_no_se_reactiva_bajo_un_padre_retirado(arbol):
     ids=["repite", "sube_uno", "sube_uno_mas", "sube_otro", "sube_el_ultimo", "sube_cuatro"],
 )
 async def test_el_nivel_del_hijo_va_mas_abajo_que_el_de_su_padre(arbol, hijo, padre):
-    """Un eje colgando de una acción no es un árbol estratégico. Los seis casos
-    son los que una regla floja dejaría pasar:
-
-    - repetir el nivel (acción bajo acción), que una regla de «distinto del
-      padre» caza pero una de «no más arriba» no;
-    - cada par **adyacente al revés** -eje bajo objetivo general, objetivo
-      general bajo específico, específico bajo línea, línea bajo acción-: una
-      tabla de profundidades con dos niveles intercambiados pasa todos menos el
-      par que intercambió, así que hacen falta los cuatro;
-    - subir cuatro de golpe, que caza hasta la regla más floja.
-
-    Se prueba al agregar y al mudar, que son las dos formas de colgar un nodo,
-    y al final no queda nada escrito ni movido.
-    """
     version = await arbol.nueva_version()
     raiz = await _nodo(arbol, version, "P", padre)
     suelto = await _nodo(arbol, version, "H", hijo, orden=2)
@@ -724,14 +660,6 @@ async def test_el_nivel_del_hijo_va_mas_abajo_que_el_de_su_padre(arbol, hijo, pa
 
 @pytest.mark.asyncio
 async def test_el_nivel_del_hijo_puede_saltarse_los_de_en_medio(arbol):
-    """La contraparte, y lo que separa «más abajo» de «justo el siguiente»: el
-    capítulo VII cuelga acciones de una línea sin objetivo específico de por
-    medio, y una regla de «exactamente un nivel» perdería esas filas al cargar.
-
-    Se salta al agregar -una acción directo del eje, tres niveles- y al mudar
-    -esa acción a una línea, saltando uno-. La raíz entra con el nivel que
-    traiga: es la única que no tiene padre con quien compararse.
-    """
     version = await arbol.nueva_version()
     eje = await _nodo(arbol, version, "1", EJE)
     accion = await _nodo(arbol, version, "1.1", ACCION, padre=eje)
@@ -745,15 +673,6 @@ async def test_el_nivel_del_hijo_puede_saltarse_los_de_en_medio(arbol):
 
 @pytest.mark.asyncio
 async def test_cambiar_el_nivel_de_un_nodo_mira_tambien_a_los_que_cuelgan_de_el(arbol):
-    """La regla se olvida por abajo: al agregar y al mudar se mira al padre,
-    pero un nodo que ya tiene hijos rompe la cadena cambiando de nivel él.
-
-    Los dos hijos son líneas y uno está **retirado**: el mensaje dice «2», así
-    que una regla que sólo mirara a los hijos activos se delata en el número.
-    Que el eje pueda pasar a objetivo específico -más abajo, pero todavía por
-    encima de sus líneas- descarta la regla de «un nodo con hijos no cambia de
-    nivel», que pasaría los dos rechazos de arriba.
-    """
     version = await arbol.nueva_version()
     eje = await _nodo(arbol, version, "1", EJE)
     await _nodo(arbol, version, "1.1", LINEA, padre=eje)
@@ -776,28 +695,6 @@ async def test_cambiar_el_nivel_de_un_nodo_mira_tambien_a_los_que_cuelgan_de_el(
     ids=["de_si_mismo", "de_su_hijo", "de_su_nieto", "la_raiz_de_su_tataranieto"],
 )
 async def test_un_nodo_no_puede_ser_su_propio_ancestro(arbol, quien, bajo):
-    """Cadena eje(0) > general(1) > especifico(2) > linea(3) > accion(4). Cada
-    caso cuelga a `quien` de un descendiente suyo, a una distancia distinta:
-
-    - de sí mismo (0) -una regla «padre distinto del propio nodo» lo caza, y
-      sólo eso-;
-    - de su hijo (1) -una regla «el abuelo del nuevo padre no es el nodo» lo
-      caza, y sólo eso-;
-    - de su nieto (2) y de su tataranieto (4), que sólo caza quien sube hasta la
-      raíz.
-
-    Las claves de la cadena no se parecen entre sí. Y después del rechazo no
-    queda nada cambiado: ni el nodo ni sus ancestros, porque una implementación
-    que guarda y luego revisa deja el ciclo escrito.
-
-    El mensaje es el de la revisión del ciclo y no el de la regla de nivel: en
-    un árbol sano un descendiente va siempre más abajo que su ancestro, así que
-    los cuatro casos rompen también esa regla y el orden en que el repositorio
-    las pregunta decide cuál habla. Habla la del ciclo porque nombra el
-    problema de verdad. Que la revisión del ciclo no sobra lo mide
-    `test_el_ciclo_se_rechaza_aunque_el_nivel_ya_no_lo_impida`, donde la regla
-    de nivel no alcanza.
-    """
     version = await arbol.nueva_version()
     cadena = await _cadena(arbol, version, ("7", "Q", "R.9", "M", "x"))
     nodo, descendiente = cadena[quien], cadena[bajo]
@@ -983,14 +880,6 @@ async def test_actualizar_con_datos_ajenos_no_deja_nada_escrito(arbol):
 
 @pytest.mark.asyncio
 async def test_dos_hermanos_no_repiten_clave(arbol):
-    """Hermanos son los que comparten padre. El duplicado difiere en todo lo
-    demás -nivel, denominación y orden-, para que la única razón por la que
-    choque sea la clave: una regla que comparara más columnas lo dejaría pasar.
-
-    Y después del choque el árbol es el que era: un `add` que guarda primero y
-    revisa después deja el duplicado escrito y levanta el conflicto igual, así
-    que mirar sólo la excepción no distingue las dos implementaciones.
-    """
     version = await arbol.nueva_version()
     eje = await _nodo(arbol, version, "1", EJE)
     await _nodo(arbol, version, "1.1", OBJETIVO_GENERAL, padre=eje, orden=1, nombre="Uno")
@@ -1019,13 +908,6 @@ async def test_dos_ejes_de_la_misma_version_no_repiten_clave(arbol):
 
 @pytest.mark.asyncio
 async def test_la_misma_clave_cabe_bajo_otro_padre_y_en_otra_version(arbol):
-    """La contraparte: la unicidad es entre hermanos de una versión, no más
-    ancha. Las dos que se podrían poner en su lugar se caen por razones
-    distintas: `UNIQUE (version_id, clave)` deja cargar la versión siguiente
-    -cada versión tiene su id- pero prohíbe la misma clave bajo dos padres de
-    una misma versión, que es lo que el documento trae; una que no lleve la
-    versión impide además cargar la siguiente, que repite casi todas las
-    claves."""
     primera = await arbol.nueva_version()
     segunda = await arbol.nueva_version()
     eje_uno = await _nodo(arbol, primera, "1", EJE)
@@ -1045,16 +927,6 @@ async def test_la_misma_clave_cabe_bajo_otro_padre_y_en_otra_version(arbol):
     ids=["espacio_al_final", "espacio_al_principio", "mayusculas"],
 )
 async def test_la_unicidad_de_la_clave_compara_la_clave_tal_cual(arbol, una, otra):
-    """PostgreSQL compara `VARCHAR` carácter por carácter: «1.1» y «1.1 » son
-    dos claves distintas, y «a.b» y «A.B» también. La memoria tiene que hacer
-    lo mismo, o la unicidad de un adaptador deja de ser la del otro y lo que
-    uno acepta el otro lo rechaza sin que ninguna prueba lo vea.
-
-    Normalizar lo que el documento fuente imprime -el PDF trae unas claves con
-    punto final y otras sin él- es asunto de quien carga el PIDE. Lo que aquí
-    se fija es que el repositorio no normalice por su cuenta: si lo hiciera,
-    nadie podría cargar las dos claves que el documento distingue.
-    """
     version = await arbol.nueva_version()
     eje = await _nodo(arbol, version, "1", EJE)
     await _nodo(arbol, version, una, OBJETIVO_GENERAL, padre=eje)
@@ -1092,15 +964,6 @@ async def test_actualizar_no_choca_con_uno_mismo_pero_si_con_un_hermano(arbol):
 
 @pytest.mark.asyncio
 async def test_la_formula_del_indicador_viaja_con_la_accion(arbol):
-    """Cada acción del capítulo VII trae su indicador como una fórmula en
-    texto. Los demás niveles no se miden: por eso nace en `None` y no en «», que
-    diría «esta acción se mide con nada» y no «esto no se mide».
-
-    La fórmula y la denominación llevan textos distintos y los dos se leen: si
-    la fórmula acabara pegada a la denominación -que es lo que haría quien
-    cargara el PIDE sin columna donde ponerla- se notaría aquí. Se escribe al
-    dar de alta y al actualizar, que son las dos puertas, y se puede quitar.
-    """
     version = await arbol.nueva_version()
     eje = await _nodo(arbol, version, "1", EJE)
     assert (await arbol.repo.get_by_id(eje.id)).indicator_formula is None
@@ -1131,14 +994,6 @@ async def test_la_formula_del_indicador_viaja_con_la_accion(arbol):
 
 @pytest.mark.asyncio
 async def test_el_adaptador_sql_escribe_en_las_columnas_de_la_migracion(arbol_postgresql):
-    """Las demás pruebas comparan lo que el repositorio devuelve con lo que se le
-    dio, y un repositorio que escribiera en la columna equivocada y la leyera de
-    la misma pasaría. Aquí se mira la fila con SQL crudo, columna por columna, y
-    el nivel tal como lo guarda el `CHECK`.
-
-    La fórmula lleva un texto distinto del de la denominación y se escribe por
-    `update`: es la columna que más fácil acabaría pegada a `denominacion`, que
-    es lo que se haría si no existiera dónde ponerla."""
     arbol = arbol_postgresql
     version = await arbol.nueva_version()
     padre = await _nodo(arbol, version, "P", EJE)
@@ -1173,25 +1028,6 @@ async def test_el_adaptador_sql_escribe_en_las_columnas_de_la_migracion(arbol_po
 
 @pytest.mark.asyncio
 async def test_los_ancestros_terminan_aunque_la_base_tenga_un_ciclo(arbol_postgresql):
-    """La base acepta un ciclo: la foránea compuesta sólo exige que el padre
-    exista en la misma versión. El repositorio no deja crearlo, pero un UPDATE
-    a mano sí, y un recursivo con `UNION ALL` sobre uno no termina nunca. Aquí
-    se fabrica uno a mano y se exige que la consulta **termine** y diga que el
-    árbol está mal, en vez de colgar la petición.
-
-    Y que el listado **grite**, que es lo que esta prueba fijaba al revés. El
-    ciclo es A↔B, pero de B cuelgan D y E, que no son parte de él: un listado
-    que se limite a no girar devuelve sólo a C y pierde **cuatro** nodos que
-    existen en la base. En un sistema que tiene que acreditar cifras ante una
-    revisión externa, un nodo que existe y no aparece es lo peor que puede
-    pasar; por eso el mensaje dice cuántos son y cuáles, y por eso la cuenta
-    está en la aserción: un grito que sólo nombrara a los dos del ciclo
-    escondería a D y a E igual que el silencio.
-
-    `statement_timeout` es la red de la propia prueba: si la consulta no
-    termina, que muera a los dos segundos con un error en vez de girar hasta
-    llenar el disco de la base de pruebas con filas de un recursivo infinito.
-    """
     arbol = arbol_postgresql
     version = await arbol.nueva_version()
     de_arriba = await _nodo(arbol, version, "A", EJE)
@@ -1217,30 +1053,11 @@ async def test_los_ancestros_terminan_aunque_la_base_tenga_un_ciclo(arbol_postgr
     with pytest.raises(InvalidStateError, match="4 nodos no se alcanzan"):
         await arbol.repo.list_tree(version, include_inactive=True)
 
-    # C existe y se lee por su id: lo que está mal es el listado del árbol, no
-    # la versión entera.
     assert await arbol.repo.get_by_id(ajeno.id) == ajeno
 
 
 @pytest.mark.asyncio
 async def test_el_ciclo_se_rechaza_aunque_el_nivel_ya_no_lo_impida(arbol_postgresql):
-    """La regla de nivel hace imposible el ciclo **mientras la cadena esté
-    sana**: en un árbol donde cada hijo va más abajo que su padre, mudar un
-    nodo bajo un descendiente suyo es siempre subir, y la regla lo rechaza. La
-    revisión del ciclo parecería entonces inalcanzable; no lo es.
-
-    Dos `update` simultáneos la rompen sin que ninguno de los dos sea inválido:
-    uno muda B bajo A y el otro baja el nivel de A, cada uno mirando un estado
-    donde el otro todavía no escribió -medido con una base desechable y las dos
-    transacciones leyendo antes de que ninguna escribiera-. El resultado es un
-    padre más abajo que su hijo, y desde ahí mudar A bajo B **cumple** la regla
-    de nivel. Lo único que lo impide es esta revisión.
-
-    Aquí ese estado se escribe con un `UPDATE` a mano, que es lo mismo que la
-    carrera deja y no depende del reloj. Sólo PostgreSQL: en memoria no hay
-    puerta para dejar la cadena rota, y una prueba que no puede llegar al
-    estado no mide nada.
-    """
     arbol = arbol_postgresql
     version = await arbol.nueva_version()
     de_arriba = await _nodo(arbol, version, "A", EJE)
@@ -1271,26 +1088,7 @@ async def test_una_version_que_no_existe_no_recibe_nodos(arbol_postgresql):
         await _nodo(arbol, INEXISTENTE, "1", EJE)
 
 
-# --------------------------------------------------------------------------- #
-# La traducción de los errores de la base
-# --------------------------------------------------------------------------- #
-
-
 def test_una_restriccion_que_el_repositorio_no_sabe_explicar_se_levanta_tal_cual():
-    """`_raise_domain_error` traduce dos restricciones por su nombre -la clave
-    repetida entre hermanos y la foránea de la versión- y vuelve a levantar lo
-    demás sin tocarlo. Las dos primeras ramas las ejercen otras pruebas por el
-    error de dominio que sale; la tercera no la ejercía nadie: traducir
-    **cualquier** `IntegrityError` como «clave repetida», o como un
-    `ValidationError` genérico, pasaba la suite entera.
-
-    Es la regresión exacta que el docstring de `viola_la_restriccion` describe:
-    decir «ya existe» cuando lo que falló fue un NOT NULL o una foránea de al
-    lado manda a buscar un duplicado que no está. Se exige que salga **la
-    misma** excepción y no una equivalente: una rama que levantara un
-    `IntegrityError` nuevo perdería el nombre de la restricción y el `DETAIL`
-    del servidor, que es con lo que se diagnostica.
-    """
     ajeno = _error(causa=_causa("una_restriccion_de_al_lado"))
     nodo = StrategicNode(version_id=1, parent_id=None, kind=EJE, key="1", name="Da igual", order=1)
 

@@ -135,13 +135,6 @@ async def _cadena(conexion: AsyncConnection, version: int, claves: tuple[str, ..
 
 
 def _columna_sin_valor(error: IntegrityError) -> str | None:
-    """La columna NOT NULL que la sentencia dejo sin valor.
-
-    Una NOT NULL no tiene nombre de restriccion, asi que `viola_la_restriccion`
-    no sirve: lo que trae el error es el nombre de la columna, y viaja en la
-    excepcion del driver igual que el de una restriccion. Preguntarlo ahi evita
-    adivinar por el texto, que cambia con el idioma del servidor.
-    """
     causa = getattr(error.orig, "__cause__", None)
     return getattr(causa, "column_name", None)
 
@@ -217,11 +210,6 @@ async def test_el_esquema_del_arbol_existe_con_padre_y_nivel_como_datos(conexion
     "clave", ["E1.L2.A3", "1.1.1.1.1", "12.10.11.13.14", "1.a", "A", "1.ñ", "Á2.3"]
 )
 async def test_la_clave_no_exige_formato_numerico(conexion, clave):
-    """«E1.L2.A3» es una clave valida: la fija el documento fuente, y el orden
-    sale del arbol, no de ella. Cada valor mata una regla distinta que alguien
-    podria querer poner: solo digitos, digitos con puntos, mayusculas, una
-    longitud corta, y un CHECK que exigiera ASCII -que los dos valores con
-    acento delatan, y que ningun otro valor de prueba veria-."""
     version = await _version(conexion, await _instrumento(conexion))
     # El padre no contiene la clave del hijo: quien derive la jerarquia de la
     # clave se equivocaria aqui.
@@ -302,19 +290,6 @@ async def test_dos_ejes_de_la_misma_version_no_repiten_clave(conexion):
 
 @pytest.mark.asyncio
 async def test_la_misma_clave_cabe_bajo_otro_padre_y_en_otra_version(conexion):
-    """La contraparte: la unicidad es entre hermanos de una version, no mas
-    ancha. Las dos que se podrian poner en su lugar se caen por razones
-    distintas, y conviene no confundirlas:
-
-    - `UNIQUE (version_id, clave)` si deja cargar la version siguiente -cada
-      version tiene su id-, pero prohibe la misma clave bajo dos padres de una
-      misma version, que es lo que el documento trae;
-    - `UNIQUE (clave)` a secas, o cualquiera que no lleve la version, ademas
-      impide cargar la version siguiente del PIDE, que repite casi todas las
-      claves.
-
-    Las dos obligarian a que la clave dijera donde cuelga, que es justo lo que
-    esta migracion evita."""
     instrumento = await _instrumento(conexion)
     primera = await _version(conexion, instrumento, "V1")
     segunda = await _version(conexion, instrumento, "V2")
@@ -438,16 +413,6 @@ async def test_una_version_no_repite_etiqueta_dentro_de_su_instrumento(conexion)
 
 @pytest.mark.asyncio
 async def test_una_version_nace_en_borrador_y_su_vigencia_la_decide_quien_carga(conexion):
-    """«NULL mientras la version esta en borrador» lo dice el comentario de la
-    columna y no lo fijaba ninguna prueba: con `publicada_en DEFAULT now()`
-    toda version cargada nace publicada y nadie se entera. Es el analogo de
-    `activo`, que si tiene su prueba.
-
-    Y `vigente_desde` no tiene valor por omision. Desde cuando rige una version
-    lo dice el documento, no el dia en que alguien la cargo: con un
-    `DEFAULT CURRENT_DATE` la fila sin vigencia entra y se queda con una fecha
-    inventada. Por eso se inserta sin ella y se exige que la base la reclame.
-    """
     instrumento = await _instrumento(conexion)
 
     fila = (
@@ -474,21 +439,6 @@ async def test_una_version_nace_en_borrador_y_su_vigencia_la_decide_quien_carga(
 
 @pytest.mark.asyncio
 async def test_el_orden_se_exige_y_no_es_unico_entre_hermanos(conexion):
-    """`orden` es la invariante central de esta migracion -la clave no ordena- y
-    sus dos mitades se sostenian de rebote.
-
-    Con `orden NOT NULL DEFAULT 0`, quien carga sin decir el orden deja a todos
-    los hermanos empatados en cero y el listado los desempata por id sin que
-    nadie lo haya decidido: la columna lo exige para que el orden sea un dato
-    del documento y no un accidente de la carga.
-
-    Y `orden` no es unico entre hermanos: dos nodos con el mismo orden entran, y
-    el desempate por id es parte del contrato del listado. Una
-    `UNIQUE (version_id, padre_id, orden)` lo impediria, y hoy solo muere porque
-    el ayudante de este archivo usa `orden=1` por omision: cambiar ese valor por
-    omision la deja viva. Los dos hermanos empatados difieren en nivel, clave y
-    texto, asi que lo unico que comparten es el orden.
-    """
     version = await _version(conexion, await _instrumento(conexion))
     eje = await _nodo(conexion, version, "1")
 
@@ -514,14 +464,6 @@ async def test_el_orden_se_exige_y_no_es_unico_entre_hermanos(conexion):
 
 @pytest.mark.asyncio
 async def test_un_nodo_retirado_sigue_ocupando_su_clave(conexion):
-    """«No se borra, se desactiva» implica que el «1.1» retirado sigue
-    reservando «1.1» entre sus hermanos. La unicidad escrita como indice
-    parcial `WHERE activo` -con el mismo nombre, asi que nada se nota- pasaba
-    todas las pruebas, y con ella cargar otra vez el PIDE crearia un segundo
-    «1.1» al lado del retirado: la carga dejaria de ser idempotente y reactivar
-    el retirado chocaria con el nuevo. De esto dependen la carga y el 409 al
-    crear.
-    """
     version = await _version(conexion, await _instrumento(conexion))
     eje = await _nodo(conexion, version, "1")
     retirado = await _nodo(conexion, version, "1.1", "objetivo_general", padre=eje)
@@ -542,22 +484,6 @@ async def test_un_nodo_retirado_sigue_ocupando_su_clave(conexion):
 
 @pytest.mark.asyncio
 async def test_el_nivel_es_un_dato_y_el_esquema_no_lo_ata_a_la_posicion(conexion):
-    """Lo que el esquema promete del nivel es el CHECK de los cinco valores. Lo
-    que **no** promete es donde puede colgar cada uno: no hay
-    `CHECK ((tipo = 'eje') = (padre_id IS NULL))` ni nada que haga del eje la
-    unica raiz, y las dos cosas se fijaban por accidente -porque otra prueba
-    inserta los cinco niveles con `padre_id` nulo-. Colgarlos de un eje, que es
-    la refactorizacion natural de esa prueba, dejaba vivas a las dos reglas.
-
-    Tres filas lo dicen a proposito: dos ejes raiz de la misma version -el
-    capitulo VII tiene varios-, una raiz que no es un eje, y una accion
-    colgando directo de un eje, que es el salto de niveles que el documento
-    trae.
-
-    La cadena «el hijo va mas abajo que el padre» no vive aqui sino en el
-    dominio (`strategic_tree_entities`), y por eso esta prueba no la contradice:
-    la base guarda el nivel, no lo ordena.
-    """
     version = await _version(conexion, await _instrumento(conexion))
     primer_eje = await _nodo(conexion, version, "1")
     await _nodo(conexion, version, "2", orden=2)
@@ -582,16 +508,6 @@ async def test_el_nivel_es_un_dato_y_el_esquema_no_lo_ata_a_la_posicion(conexion
 
 
 async def _bajar_la_0038(conexion: AsyncConnection) -> None:
-    """Corre el `downgrade` de verdad de la 0038 sobre esta conexion.
-
-    No es `alembic downgrade` en un proceso aparte -eso pide una base propia y
-    un minuto de migrar desde cero- sino la misma funcion que Alembic llamaria,
-    con el `op` que ella usa apuntando a la conexion de la prueba. Lo que se
-    mide es lo mismo: cambiar el cuerpo del `downgrade` por `pass` tiene que
-    hacer fallar esto. La transaccion de la fixture revierte el DDL al salir,
-    asi que la base queda como estaba incluso cuando el downgrade llega a
-    ejecutarse.
-    """
     modulo = (
         ScriptDirectory.from_config(Config(str(RAIZ / "alembic.ini")))
         .get_revision("0038_arbol_del_pide")
@@ -607,26 +523,12 @@ async def _bajar_la_0038(conexion: AsyncConnection) -> None:
 
 @pytest.mark.asyncio
 async def test_la_0038_no_se_baja_con_el_arbol_cargado(conexion):
-    """El `downgrade` borraba las dos tablas y la columna sin mirar si habia
-    algo dentro, y ninguna prueba lo tocaba: cambiarlo por `pass` no rompia
-    nada. Con el arbol cargado se lleva lo que Planeacion haya editado o
-    retirado a mano, y a que nodo respondia cada indicador, sin dejar donde
-    volver a ponerlo.
-
-    El precedente es la 0037, que se niega a revertirse en vez de elegir que
-    perder. Aqui la negativa es condicional porque la perdida lo es: dice que
-    tabla y cuantas filas -quien baja una migracion a mano necesita saber que
-    iba a perder- y deja bajar cuando no hay nada que perder, que es lo que
-    necesita una instalacion recien migrada. Las dos mitades estan medidas: una
-    guarda incondicional pasaria la primera y se caeria en la segunda.
-    """
     version = await _version(conexion, await _instrumento(conexion))
     await _nodo(conexion, version, "1")
 
     with pytest.raises(RuntimeError, match=r"nodos_estrategicos \(1\)"):
         await _bajar_la_0038(conexion)
 
-    # Ni las tablas ni la columna se tocaron.
     assert (
         await conexion.execute(text("SELECT count(*) FROM nodos_estrategicos"))
     ).scalar_one() == 1
@@ -634,7 +536,6 @@ async def test_la_0038_no_se_baja_con_el_arbol_cargado(conexion):
         await conexion.execute(text("SELECT to_regclass('instrumento_versiones')"))
     ).scalar_one() == "instrumento_versiones"
 
-    # Y vacio si baja: el DDL vive en la transaccion de la fixture y se revierte.
     await conexion.execute(text("DELETE FROM nodos_estrategicos"))
     await conexion.execute(text("DELETE FROM instrumento_versiones"))
     await _bajar_la_0038(conexion)
@@ -657,11 +558,6 @@ async def test_la_0038_no_se_baja_con_el_arbol_cargado(conexion):
 
 
 async def _indicador(conexion: AsyncConnection, nodo: int | None) -> int:
-    """Un indicador del catalogo por area, con su area y su responsable.
-
-    `indicadores` es el catalogo de cada area y por eso exige `area_id` y
-    `responsable_id`. En este proyecto «nacional» es el POA y el PSE, que son
-    otras tablas."""
     sufijo = uuid4().hex[:8]
     area = (
         await conexion.execute(
@@ -693,16 +589,6 @@ async def _indicador(conexion: AsyncConnection, nodo: int | None) -> int:
 
 @pytest.mark.asyncio
 async def test_un_indicador_puede_o_no_apuntar_a_un_nodo(conexion):
-    """`nodo_id` es opcional: los indicadores que ya existen no cuelgan de
-    ningun nodo y siguen siendo validos, y los que si cuelgan guardan a cual.
-
-    El nodo que se usa se elige a proposito entre varios y se comprueba que su
-    id **no** existe en `instrumento_versiones`. Corrida sola tras el
-    `RESTART IDENTITY` de la sesion, la version y el primer nodo valen los dos
-    1, asi que una foranea apuntando a la tabla equivocada entra igual y la
-    prueba pasa por coincidencia: en la corrida completa muere por deriva de
-    las secuencias, que es un dato que nadie decidio.
-    """
     version = await _version(conexion, await _instrumento(conexion))
     nodos = [await _nodo(conexion, version, str(numero), orden=numero) for numero in (1, 2, 3)]
     nodo = next(identificador for identificador in nodos if identificador != version)

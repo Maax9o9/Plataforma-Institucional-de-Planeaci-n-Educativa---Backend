@@ -20,15 +20,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Misma guarda que la 0038, en su version de columnas: esto no se lleva la
-    # tabla sino dos columnas, asi que lo que hay que contar son los valores.
-    # Una tabla llena de filas con la columna en NULL no pierde nada al bajar,
-    # y negarse ahi seria negarse por costumbre. Con un solo origen o una sola
-    # formula escritos, bajar los borra y no hay donde volver a ponerlos: la
-    # formula vive en el PDF y el origen en la cabeza de quien cargo.
     conexion = op.get_bind()
     rechazar_si_hay_valores(conexion, "instrumento_versiones", "origen")
     rechazar_si_hay_valores(conexion, "nodos_estrategicos", "formula_indicador")
-
     op.execute("ALTER TABLE nodos_estrategicos DROP COLUMN IF EXISTS formula_indicador")
     op.execute("ALTER TABLE instrumento_versiones DROP COLUMN IF EXISTS origen")

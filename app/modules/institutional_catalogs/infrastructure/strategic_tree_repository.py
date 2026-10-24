@@ -60,11 +60,6 @@ class InMemoryStrategicTreeRepository:
         self._nodes[node.id] = replace(node)
 
     async def update(self, node: StrategicNode) -> None:
-        """Las reglas, en el mismo orden que en el adaptador SQL: el padre, el
-        ciclo, el nivel hacia arriba, el padre retirado, el nivel hacia abajo,
-        lo que cuelga y la clave. El orden decide qué mensaje sale cuando una
-        operación rompe más de una regla, y los dos adaptadores tienen que dar
-        el mismo."""
         node.validate()
         current = self._nodes.get(node.id)
         if current is None:
@@ -76,11 +71,15 @@ class InMemoryStrategicTreeRepository:
         ensure_no_cycle(node, upward)
         padre = upward[0] if upward else None
         ensure_kind_fits_under(node, padre)
-        if node.parent_id != current.parent_id or (node.is_active and not current.is_active):
+        se_cuelga_de_otro_padre = node.parent_id != current.parent_id
+        vuelve_a_estar_activo = node.is_active and not current.is_active
+        cambia_de_nivel = node.kind is not current.kind
+        se_retira = current.is_active and not node.is_active
+        if se_cuelga_de_otro_padre or vuelve_a_estar_activo:
             ensure_parent_is_active(node, padre)
-        if node.kind is not current.kind:
+        if cambia_de_nivel:
             ensure_children_stay_deeper(node, self._children_of(node.id))
-        if current.is_active and not node.is_active:
+        if se_retira:
             ensure_nothing_active_hangs(node, self._children_of(node.id))
         self._ensure_key_is_free(node, ignoring=node.id)
         self._nodes[node.id] = replace(node)
@@ -108,8 +107,6 @@ class InMemoryStrategicTreeRepository:
         return chain
 
     def _children_of(self, node_id: int) -> list[StrategicNode]:
-        """Los que cuelgan del nodo, retirados incluidos. En PostgreSQL es una
-        consulta por `padre_id`; aquí, un recorrido."""
         return [node for node in self._nodes.values() if node.parent_id == node_id]
 
     def _ensure_key_is_free(self, node: StrategicNode, *, ignoring: int | None) -> None:
