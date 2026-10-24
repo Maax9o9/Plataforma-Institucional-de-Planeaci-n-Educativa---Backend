@@ -15,6 +15,8 @@ from app.shared.infrastructure.db.constraints import viola_la_restriccion
 from ..domain.strategic_tree_entities import (
     NodeKind,
     StrategicNode,
+    ensure_children_stay_deeper,
+    ensure_kind_fits_under,
     ensure_no_cycle,
     ensure_parent_fits,
     in_traversal_order,
@@ -82,7 +84,9 @@ class SqlAlchemyStrategicTreeRepository:
     async def add(self, node: StrategicNode) -> None:
         node.validate()
         async with self.session_factory() as session:
-            ensure_parent_fits(node, await self._upward(session, node.parent_id))
+            upward = await self._upward(session, node.parent_id)
+            ensure_parent_fits(node, upward)
+            ensure_kind_fits_under(node, upward[0] if upward else None)
             model = StrategicNodeModel(
                 version_id=node.version_id,
                 padre_id=node.parent_id,
@@ -103,6 +107,16 @@ class SqlAlchemyStrategicTreeRepository:
         node.id = new_id
 
     async def update(self, node: StrategicNode) -> None:
+        """Las reglas, en el mismo orden que en el adaptador en memoria: el
+        padre, el ciclo, el nivel hacia arriba, el nivel hacia abajo y la clave
+        -esta última la impone la base-. El orden decide qué mensaje sale
+        cuando una operación rompe más de una regla, y los dos adaptadores
+        tienen que dar el mismo.
+
+        La regla que mira hacia abajo cuesta una consulta por `padre_id` y sólo
+        se paga cuando el nivel cambia, que es cuando lo que cuelga del nodo
+        puede quedar por encima de él.
+        """
         node.validate()
         async with self.session_factory() as session:
             model = await session.get(StrategicNodeModel, node.id)
@@ -110,9 +124,13 @@ class SqlAlchemyStrategicTreeRepository:
                 raise ResourceNotFoundError("El nodo no existe.")
             if node.version_id != model.version_id:
                 raise ValidationError("Un nodo no cambia de versión.")
+            nivel_de_antes = NodeKind(model.tipo)
             upward = await self._upward(session, node.parent_id)
             ensure_parent_fits(node, upward)
             ensure_no_cycle(node, upward)
+            ensure_kind_fits_under(node, upward[0] if upward else None)
+            if node.kind is not nivel_de_antes:
+                ensure_children_stay_deeper(node, await self._children_of(session, node.id))
             model.padre_id = node.parent_id
             model.tipo = node.kind.value
             model.clave = node.key
@@ -143,6 +161,19 @@ class SqlAlchemyStrategicTreeRepository:
             raise ResourceNotFoundError("El nodo no existe.")
         # `upward` empieza en el propio nodo y sube hasta el eje.
         return list(reversed(upward[1:]))
+
+    async def _children_of(self, session: AsyncSession, node_id: int) -> list[StrategicNode]:
+        """Los que cuelgan del nodo, retirados incluidos.
+
+        Es la consulta que la regla de nivel obliga a hacer: mirar sólo al padre
+        deja que un nodo con hijos cambie de nivel y los deje por encima de él.
+        """
+        models = (
+            await session.scalars(
+                select(StrategicNodeModel).where(StrategicNodeModel.padre_id == node_id)
+            )
+        ).all()
+        return [_to_domain(model) for model in models]
 
     async def _upward(self, session: AsyncSession, start_id: int | None) -> list[StrategicNode]:
         """`start_id` y sus ancestros, del más cercano al más lejano; vacía si

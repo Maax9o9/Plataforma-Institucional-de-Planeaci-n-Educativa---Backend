@@ -12,6 +12,13 @@ vive aquí, y los dos adaptadores lo llaman: así la regla es una y los mensajes
 también. Lo que sí necesita el almacén -¿ya existe esa clave entre los
 hermanos?- lo resuelve cada adaptador a su manera, y la prueba exige que
 respondan lo mismo.
+
+Hay dos reglas que la base no impone por ninguno de los dos adaptadores y que
+sólo viven aquí: que el nivel del hijo vaya más abajo que el del padre y que
+un nodo no se mude bajo uno de sus descendientes. El esquema las aceptaría
+las dos; que los adaptadores las pregunten con el mismo texto y en el mismo
+momento es lo que impide que la memoria pase lo que PostgreSQL rechaza, o al
+revés.
 """
 
 from __future__ import annotations
@@ -40,6 +47,14 @@ class NodeKind(StrEnum):
     OBJETIVO_ESPECIFICO = "objetivo_especifico"
     LINEA_ESTRATEGICA = "linea_estrategica"
     ACCION = "accion"
+
+
+#: Qué tan abajo va cada nivel. El orden de definición del enum es el
+#: jerárquico, así que la posición sirve de profundidad.
+_DEPTH = {kind: posicion for posicion, kind in enumerate(NodeKind)}
+
+#: Los cinco niveles encadenados, para decirlos en un mensaje de error.
+_LA_CADENA = " → ".join(kind.value for kind in NodeKind)
 
 
 @dataclass(kw_only=True)
@@ -149,9 +164,69 @@ def ensure_no_cycle(node: StrategicNode, upward: list[StrategicNode]) -> None:
     aparece el propio nodo, el nuevo padre es él mismo o un descendiente suyo.
     La base no lo impide -una foránea compuesta acepta un ciclo-, así que se
     detecta antes de escribir.
+
+    Con la cadena de niveles sana esto parece de sobra: un descendiente va
+    siempre más abajo que su ancestro, así que mudarse bajo él es subir y
+    `ensure_kind_fits_under` lo rechaza antes. Pero la cadena se puede romper
+    sin que ninguna operación sea inválida: dos `update` simultáneos -uno muda
+    B bajo A, el otro baja el nivel de A, cada uno mirando un estado donde el
+    otro todavía no escribió- dejan un padre más abajo que su hijo, y desde ahí
+    la regla de nivel deja pasar el ciclo. Medido en una base desechable con
+    las dos transacciones leyendo antes de que ninguna escribiera; sin esta
+    revisión el ciclo se escribe y sólo lo descubre la lectura. Va **antes** que
+    la regla de nivel porque nombra el problema de verdad.
     """
     if any(ancestor.id == node.id for ancestor in upward):
         raise ValidationError("Un nodo no puede colgar de sí mismo ni de uno de sus descendientes.")
+
+
+def ensure_kind_fits_under(node: StrategicNode, parent: StrategicNode | None) -> None:
+    """El nivel del hijo va estrictamente más abajo que el del padre.
+
+    El orden es el del capítulo VII, el mismo en que `NodeKind` los define.
+    Saltarse niveles se permite -el documento fuente trae acciones colgadas
+    directo de una línea sin objetivo específico de por medio-; repetir o subir,
+    no: un eje colgando de una acción no es un árbol estratégico, es un dato
+    equivocado que después nadie puede leer.
+
+    Esto no contradice el «es un dato y no una posición» de la 0038: el nivel
+    sigue sin *derivarse* de la profundidad -no se cuenta cuántos padres tiene
+    un nodo para decidir qué es-, pero no cualquier anidamiento vale.
+
+    Una raíz no tiene padre y entra con el nivel que traiga: el eje es el
+    primero de la cadena, pero una versión que empiece más abajo es asunto del
+    documento, no de esta regla.
+    """
+    if parent is None:
+        return
+    if _DEPTH[node.kind] > _DEPTH[parent.kind]:
+        return
+    raise ValidationError(
+        f"Un nodo de nivel «{node.kind.value}» no puede colgar de uno de nivel "
+        f"«{parent.kind.value}»: el hijo va más abajo que su padre en {_LA_CADENA}."
+    )
+
+
+def ensure_children_stay_deeper(node: StrategicNode, children: Iterable[StrategicNode]) -> None:
+    """Cambiarle el nivel a un nodo no puede dejar a sus hijos por encima de él.
+
+    Es la misma regla de `ensure_kind_fits_under` mirando hacia abajo, y es la
+    que se olvida: al alta y al mudar se mira al padre, pero un nodo que ya
+    tiene hijos también rompe la cadena cambiando de nivel él. Y rompiéndola se
+    reconstruye un ciclo: baja el nivel de un ancestro por debajo del de su
+    descendiente y mudarlo bajo él deja de ser «hacia arriba».
+
+    Cuentan los hijos retirados: lo retirado se puede reactivar, y la cadena
+    tiene que seguir siendo cierta cuando eso pase.
+    """
+    por_encima = [child for child in children if _DEPTH[child.kind] <= _DEPTH[node.kind]]
+    if not por_encima:
+        return
+    raise ValidationError(
+        f"«{node.key}» no puede pasar al nivel «{node.kind.value}»: "
+        f"{len(por_encima)} de los nodos que cuelgan de él dejarían de ir más abajo "
+        f"que su padre. Cambie primero el nivel de esos nodos."
+    )
 
 
 def repeated_key_error(node: StrategicNode) -> ConflictError:

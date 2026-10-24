@@ -572,8 +572,96 @@ async def test_desactivar_un_nodo_que_no_existe_es_un_error(arbol):
 
 
 # --------------------------------------------------------------------------- #
-# El padre: que exista, que sea de la misma versión y que no forme un ciclo
+# El padre: que exista, que sea de la misma versión, que vaya más arriba en la
+# cadena de niveles y que no forme un ciclo
 # --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("hijo", "padre"),
+    [
+        (ACCION, ACCION),
+        (EJE, OBJETIVO_GENERAL),
+        (OBJETIVO_GENERAL, OBJETIVO_ESPECIFICO),
+        (OBJETIVO_ESPECIFICO, LINEA),
+        (LINEA, ACCION),
+        (EJE, ACCION),
+    ],
+    ids=["repite", "sube_uno", "sube_uno_mas", "sube_otro", "sube_el_ultimo", "sube_cuatro"],
+)
+async def test_el_nivel_del_hijo_va_mas_abajo_que_el_de_su_padre(arbol, hijo, padre):
+    """Un eje colgando de una acción no es un árbol estratégico. Los seis casos
+    son los que una regla floja dejaría pasar:
+
+    - repetir el nivel (acción bajo acción), que una regla de «distinto del
+      padre» caza pero una de «no más arriba» no;
+    - cada par **adyacente al revés** -eje bajo objetivo general, objetivo
+      general bajo específico, específico bajo línea, línea bajo acción-: una
+      tabla de profundidades con dos niveles intercambiados pasa todos menos el
+      par que intercambió, así que hacen falta los cuatro;
+    - subir cuatro de golpe, que caza hasta la regla más floja.
+
+    Se prueba al agregar y al mudar, que son las dos formas de colgar un nodo,
+    y al final no queda nada escrito ni movido.
+    """
+    version = await arbol.nueva_version()
+    raiz = await _nodo(arbol, version, "P", padre)
+    suelto = await _nodo(arbol, version, "H", hijo, orden=2)
+
+    with pytest.raises(ValidationError, match="no puede colgar de uno de nivel"):
+        await _nodo(arbol, version, "N", hijo, padre=raiz)
+    with pytest.raises(ValidationError, match="no puede colgar de uno de nivel"):
+        await arbol.repo.update(replace(suelto, parent_id=raiz.id))
+
+    assert await arbol.repo.list_tree(version, include_inactive=True) == [raiz, suelto]
+
+
+@pytest.mark.asyncio
+async def test_el_nivel_del_hijo_puede_saltarse_los_de_en_medio(arbol):
+    """La contraparte, y lo que separa «más abajo» de «justo el siguiente»: el
+    capítulo VII cuelga acciones de una línea sin objetivo específico de por
+    medio, y una regla de «exactamente un nivel» perdería esas filas al cargar.
+
+    Se salta al agregar -una acción directo del eje, tres niveles- y al mudar
+    -esa acción a una línea, saltando uno-. La raíz entra con el nivel que
+    traiga: es la única que no tiene padre con quien compararse.
+    """
+    version = await arbol.nueva_version()
+    eje = await _nodo(arbol, version, "1", EJE)
+    accion = await _nodo(arbol, version, "1.1", ACCION, padre=eje)
+    linea = await _nodo(arbol, version, "1.2", LINEA, padre=eje, orden=2)
+    raiz_que_no_es_eje = await _nodo(arbol, version, "2", OBJETIVO_ESPECIFICO, orden=2)
+
+    await arbol.repo.update(replace(accion, parent_id=linea.id))
+
+    assert await _ids(arbol, version) == [eje.id, linea.id, accion.id, raiz_que_no_es_eje.id]
+
+
+@pytest.mark.asyncio
+async def test_cambiar_el_nivel_de_un_nodo_mira_tambien_a_los_que_cuelgan_de_el(arbol):
+    """La regla se olvida por abajo: al agregar y al mudar se mira al padre,
+    pero un nodo que ya tiene hijos rompe la cadena cambiando de nivel él.
+
+    Los dos hijos son líneas y uno está **retirado**: el mensaje dice «2», así
+    que una regla que sólo mirara a los hijos activos se delata en el número.
+    Que el eje pueda pasar a objetivo específico -más abajo, pero todavía por
+    encima de sus líneas- descarta la regla de «un nodo con hijos no cambia de
+    nivel», que pasaría los dos rechazos de arriba.
+    """
+    version = await arbol.nueva_version()
+    eje = await _nodo(arbol, version, "1", EJE)
+    await _nodo(arbol, version, "1.1", LINEA, padre=eje)
+    retirada = await _nodo(arbol, version, "1.2", LINEA, padre=eje, orden=2)
+    await arbol.repo.deactivate(retirada.id)
+
+    with pytest.raises(ValidationError, match="2 de los nodos que cuelgan"):
+        await arbol.repo.update(replace(eje, kind=LINEA))
+    with pytest.raises(ValidationError, match="2 de los nodos que cuelgan"):
+        await arbol.repo.update(replace(eje, kind=ACCION))
+
+    await arbol.repo.update(replace(eje, kind=OBJETIVO_ESPECIFICO))
+    assert (await arbol.repo.get_by_id(eje.id)).kind is OBJETIVO_ESPECIFICO
 
 
 @pytest.mark.asyncio
@@ -596,6 +684,14 @@ async def test_un_nodo_no_puede_ser_su_propio_ancestro(arbol, quien, bajo):
     Las claves de la cadena no se parecen entre sí. Y después del rechazo no
     queda nada cambiado: ni el nodo ni sus ancestros, porque una implementación
     que guarda y luego revisa deja el ciclo escrito.
+
+    El mensaje es el de la revisión del ciclo y no el de la regla de nivel: en
+    un árbol sano un descendiente va siempre más abajo que su ancestro, así que
+    los cuatro casos rompen también esa regla y el orden en que el repositorio
+    las pregunta decide cuál habla. Habla la del ciclo porque nombra el
+    problema de verdad. Que la revisión del ciclo no sobra lo mide
+    `test_el_ciclo_se_rechaza_aunque_el_nivel_ya_no_lo_impida`, donde la regla
+    de nivel no alcanza.
     """
     version = await arbol.nueva_version()
     cadena = await _cadena(arbol, version, ("7", "Q", "R.9", "M", "x"))
@@ -940,6 +1036,43 @@ async def test_los_ancestros_terminan_aunque_la_base_tenga_un_ciclo(arbol_postgr
     # C existe y se lee por su id: lo que está mal es el listado del árbol, no
     # la versión entera.
     assert await arbol.repo.get_by_id(ajeno.id) == ajeno
+
+
+@pytest.mark.asyncio
+async def test_el_ciclo_se_rechaza_aunque_el_nivel_ya_no_lo_impida(arbol_postgresql):
+    """La regla de nivel hace imposible el ciclo **mientras la cadena esté
+    sana**: en un árbol donde cada hijo va más abajo que su padre, mudar un
+    nodo bajo un descendiente suyo es siempre subir, y la regla lo rechaza. La
+    revisión del ciclo parecería entonces inalcanzable; no lo es.
+
+    Dos `update` simultáneos la rompen sin que ninguno de los dos sea inválido:
+    uno muda B bajo A y el otro baja el nivel de A, cada uno mirando un estado
+    donde el otro todavía no escribió -medido con una base desechable y las dos
+    transacciones leyendo antes de que ninguna escribiera-. El resultado es un
+    padre más abajo que su hijo, y desde ahí mudar A bajo B **cumple** la regla
+    de nivel. Lo único que lo impide es esta revisión.
+
+    Aquí ese estado se escribe con un `UPDATE` a mano, que es lo mismo que la
+    carrera deja y no depende del reloj. Sólo PostgreSQL: en memoria no hay
+    puerta para dejar la cadena rota, y una prueba que no puede llegar al
+    estado no mide nada.
+    """
+    arbol = arbol_postgresql
+    version = await arbol.nueva_version()
+    de_arriba = await _nodo(arbol, version, "A", EJE)
+    de_abajo = await _nodo(arbol, version, "B", OBJETIVO_GENERAL, padre=de_arriba)
+    await arbol.conexion.execute(
+        text("UPDATE nodos_estrategicos SET tipo = 'accion' WHERE id = :id"),
+        {"id": de_arriba.id},
+    )
+    roto = await arbol.repo.get_by_id(de_arriba.id)
+    assert roto.kind is ACCION
+
+    with pytest.raises(ValidationError, match="descendientes"):
+        await arbol.repo.update(replace(roto, parent_id=de_abajo.id))
+
+    assert [n.id for n in await arbol.repo.ancestors(de_abajo.id)] == [de_arriba.id]
+    assert await _ids(arbol, version, include_inactive=True) == [de_arriba.id, de_abajo.id]
 
 
 @pytest.mark.asyncio

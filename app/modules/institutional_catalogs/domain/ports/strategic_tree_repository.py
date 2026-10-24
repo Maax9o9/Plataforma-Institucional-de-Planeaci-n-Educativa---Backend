@@ -15,9 +15,17 @@ class StrategicTreeRepository(Protocol):
     dejaría de saber a qué respondía. Se desactiva, y el desactivado sigue
     siendo legible.
 
+    El nivel del hijo va estrictamente más abajo que el del padre, en el orden
+    `eje → objetivo_general → objetivo_especifico → linea_estrategica →
+    accion`. Saltarse niveles vale -el documento fuente los salta-; repetir o
+    subir, no. La regla se mira al dar de alta, al mudar y al cambiar el nivel
+    de un nodo que ya tiene hijos.
+
     Errores: `ValidationError` si el nivel, la clave o la denominación no valen,
-    si el padre no existe o es de otra versión, si el nodo se mudaría bajo uno de
-    sus descendientes o si cambiaría de versión; `ConflictError` si un hermano ya
+    si el padre no existe, es de otra versión o no va más arriba en la cadena de
+    niveles, si el nodo se mudaría bajo uno de sus descendientes, si cambiaría de
+    versión o si al cambiar de nivel dejaría a sus hijos por encima de él;
+    `ConflictError` si un hermano ya
     tiene esa clave; `ResourceNotFoundError` si el nodo que se actualiza, se
     desactiva o se consulta por sus ancestros no existe; `InvalidStateError` si
     el árbol guardado tiene un ciclo -`list_tree` y `ancestors`-.

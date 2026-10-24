@@ -9,6 +9,8 @@ from app.shared.domain.exceptions import ResourceNotFoundError, ValidationError
 
 from ..domain.strategic_tree_entities import (
     StrategicNode,
+    ensure_children_stay_deeper,
+    ensure_kind_fits_under,
     ensure_no_cycle,
     ensure_parent_fits,
     in_traversal_order,
@@ -46,12 +48,18 @@ class InMemoryStrategicTreeRepository:
 
     async def add(self, node: StrategicNode) -> None:
         node.validate()
-        ensure_parent_fits(node, self._upward(node.parent_id))
+        upward = self._upward(node.parent_id)
+        ensure_parent_fits(node, upward)
+        ensure_kind_fits_under(node, upward[0] if upward else None)
         self._ensure_key_is_free(node, ignoring=None)
         node.id = next(self._next_id)
         self._nodes[node.id] = replace(node)
 
     async def update(self, node: StrategicNode) -> None:
+        """Las reglas, en el mismo orden que en el adaptador SQL: el padre, el
+        ciclo, el nivel hacia arriba, el nivel hacia abajo y la clave. El orden
+        decide qué mensaje sale cuando una operación rompe más de una regla, y
+        los dos adaptadores tienen que dar el mismo."""
         node.validate()
         current = self._nodes.get(node.id)
         if current is None:
@@ -61,6 +69,9 @@ class InMemoryStrategicTreeRepository:
         upward = self._upward(node.parent_id)
         ensure_parent_fits(node, upward)
         ensure_no_cycle(node, upward)
+        ensure_kind_fits_under(node, upward[0] if upward else None)
+        if node.kind is not current.kind:
+            ensure_children_stay_deeper(node, self._children_of(node.id))
         self._ensure_key_is_free(node, ignoring=node.id)
         self._nodes[node.id] = replace(node)
 
@@ -85,6 +96,11 @@ class InMemoryStrategicTreeRepository:
             chain.append(current)
             current = self._nodes.get(current.parent_id) if current.parent_id is not None else None
         return chain
+
+    def _children_of(self, node_id: int) -> list[StrategicNode]:
+        """Los que cuelgan del nodo, retirados incluidos. En PostgreSQL es una
+        consulta por `padre_id`; aquí, un recorrido."""
+        return [node for node in self._nodes.values() if node.parent_id == node_id]
 
     def _ensure_key_is_free(self, node: StrategicNode, *, ignoring: int | None) -> None:
         """La `UNIQUE (version_id, padre_id, clave)` de la base. `None == None`
