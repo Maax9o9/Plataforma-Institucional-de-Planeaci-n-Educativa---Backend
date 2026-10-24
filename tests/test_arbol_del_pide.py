@@ -897,8 +897,16 @@ async def test_los_ancestros_terminan_aunque_la_base_tenga_un_ciclo(arbol_postgr
     exista en la misma versión. El repositorio no deja crearlo, pero un UPDATE
     a mano sí, y un recursivo con `UNION ALL` sobre uno no termina nunca. Aquí
     se fabrica uno a mano y se exige que la consulta **termine** y diga que el
-    árbol está mal, en vez de colgar la petición. El listado de la versión
-    tampoco gira.
+    árbol está mal, en vez de colgar la petición.
+
+    Y que el listado **grite**, que es lo que esta prueba fijaba al revés. El
+    ciclo es A↔B, pero de B cuelgan D y E, que no son parte de él: un listado
+    que se limite a no girar devuelve sólo a C y pierde **cuatro** nodos que
+    existen en la base. En un sistema que tiene que acreditar cifras ante una
+    revisión externa, un nodo que existe y no aparece es lo peor que puede
+    pasar; por eso el mensaje dice cuántos son y cuáles, y por eso la cuenta
+    está en la aserción: un grito que sólo nombrara a los dos del ciclo
+    escondería a D y a E igual que el silencio.
 
     `statement_timeout` es la red de la propia prueba: si la consulta no
     termina, que muera a los dos segundos con un error en vez de girar hasta
@@ -908,6 +916,8 @@ async def test_los_ancestros_terminan_aunque_la_base_tenga_un_ciclo(arbol_postgr
     version = await arbol.nueva_version()
     de_arriba = await _nodo(arbol, version, "A", EJE)
     de_abajo = await _nodo(arbol, version, "B", OBJETIVO_GENERAL, padre=de_arriba)
+    colgado = await _nodo(arbol, version, "D", OBJETIVO_ESPECIFICO, padre=de_abajo)
+    nieto = await _nodo(arbol, version, "E", LINEA, padre=colgado)
     ajeno = await _nodo(arbol, version, "C", EJE, orden=2)
     await arbol.conexion.execute(
         text("UPDATE nodos_estrategicos SET padre_id = :abajo WHERE id = :arriba"),
@@ -918,10 +928,18 @@ async def test_los_ancestros_terminan_aunque_la_base_tenga_un_ciclo(arbol_postgr
     with pytest.raises(InvalidStateError, match="ciclo"):
         await arbol.repo.ancestors(de_abajo.id)
 
-    # El listado tampoco gira: sólo se llega a un nodo bajando desde una raíz, y
-    # los dos del ciclo ya no cuelgan de ninguna. El que no está en el ciclo
-    # sigue saliendo.
-    assert await _ids(arbol, version) == [ajeno.id]
+    perdidos = ", ".join(
+        str(identificador)
+        for identificador in sorted((de_arriba.id, de_abajo.id, colgado.id, nieto.id))
+    )
+    with pytest.raises(InvalidStateError, match=f"4 nodos no se alcanzan.*{perdidos}"):
+        await arbol.repo.list_tree(version)
+    with pytest.raises(InvalidStateError, match="4 nodos no se alcanzan"):
+        await arbol.repo.list_tree(version, include_inactive=True)
+
+    # C existe y se lee por su id: lo que está mal es el listado del árbol, no
+    # la versión entera.
+    assert await arbol.repo.get_by_id(ajeno.id) == ajeno
 
 
 @pytest.mark.asyncio

@@ -21,7 +21,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
-from app.shared.domain.exceptions import ConflictError, ValidationError
+from app.shared.domain.exceptions import ConflictError, InvalidStateError, ValidationError
 
 #: `clave` es `VARCHAR(50)` en la base.
 KEY_MAX_LENGTH = 50
@@ -90,12 +90,20 @@ def in_traversal_order(nodes: Iterable[StrategicNode]) -> list[StrategicNode]:
     cada hijo con toda su descendencia antes del siguiente hermano.
 
     Los hermanos van por `order` y, si empatan, por `id` -el orden en que se
-    cargaron-: ni la clave ni el nombre ordenan. Sólo se llega a un nodo
-    bajando desde una raíz, así que uno cuya cadena de padres no lleva a ninguna
-    queda fuera en vez de hacer girar el recorrido.
+    cargaron-: ni la clave ni el nombre ordenan.
+
+    Sólo se llega a un nodo bajando desde una raíz, así que el recorrido no
+    puede girar. Lo que no se alcanza no se omite: se levanta
+    `InvalidStateError`. Un nodo que existe y no aparece es lo peor que le puede
+    pasar a un sistema que tiene que acreditar cifras ante una revisión
+    externa, y con la foránea del padre puesta la única forma de no alcanzar un
+    nodo es que alguien haya escrito un ciclo por fuera -lo que, además,
+    esconde a todo lo que cuelga de él aunque no sea parte del ciclo-.
     """
     children: defaultdict[int | None, list[StrategicNode]] = defaultdict(list)
+    recibidos: list[StrategicNode] = []
     for node in nodes:
+        recibidos.append(node)
         children[node.parent_id].append(node)
     for siblings in children.values():
         siblings.sort(key=lambda node: (node.order, node.id))
@@ -106,6 +114,15 @@ def in_traversal_order(nodes: Iterable[StrategicNode]) -> list[StrategicNode]:
         node = pending.pop()
         ordered.append(node)
         pending.extend(reversed(children[node.id]))
+
+    if len(ordered) != len(recibidos):
+        alcanzados = {node.id for node in ordered}
+        perdidos = sorted(node.id for node in recibidos if node.id not in alcanzados)
+        raise InvalidStateError(
+            f"El árbol tiene un ciclo: {len(perdidos)} nodos no se alcanzan bajando "
+            f"desde ninguna raíz y quedarían fuera del listado sin decirlo "
+            f"(ids {', '.join(str(perdido) for perdido in perdidos)})."
+        )
     return ordered
 
 

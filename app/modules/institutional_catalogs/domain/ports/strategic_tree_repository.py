@@ -19,7 +19,8 @@ class StrategicTreeRepository(Protocol):
     si el padre no existe o es de otra versión, si el nodo se mudaría bajo uno de
     sus descendientes o si cambiaría de versión; `ConflictError` si un hermano ya
     tiene esa clave; `ResourceNotFoundError` si el nodo que se actualiza, se
-    desactiva o se consulta por sus ancestros no existe.
+    desactiva o se consulta por sus ancestros no existe; `InvalidStateError` si
+    el árbol guardado tiene un ciclo -`list_tree` y `ancestors`-.
     """
 
     async def list_tree(
@@ -29,7 +30,14 @@ class StrategicTreeRepository(Protocol):
 
         Por omisión sin los desactivados: quien formula no debe ver nodos
         retirados. Un nodo activo cuyo padre está desactivado sí aparece, en el
-        lugar que le toca: retirar un nodo no afecta a lo que cuelga de él.
+        lugar que le toca -y su `parent_id` apunta entonces a un nodo que no
+        está en la lista-: retirar un nodo no afecta a lo que cuelga de él.
+
+        Lo que no se alcanza no se omite: si algún nodo de la versión no cuelga
+        de ninguna raíz -un ciclo escrito por fuera- levanta `InvalidStateError`
+        diciendo cuántos y cuáles. Un nodo que existe y no aparece es lo peor
+        que le puede pasar a un sistema que acredita cifras ante una revisión
+        externa.
         """
         ...
 
