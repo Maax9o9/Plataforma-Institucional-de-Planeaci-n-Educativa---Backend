@@ -26,8 +26,6 @@ from app.modules.poa_planning.api.cedula_router import router as poa_cedula_rout
 from app.modules.poa_planning.api.router import router as poa_planning_router
 from app.modules.poa_reports.api.router import router as poa_reports_router
 
-#: Routers que siempre se registran: identidad, catalogos institucionales,
-#: periodos, evidencias, POA, notificaciones, plantillas de correo y bitacora.
 CORE_ROUTERS = (
     identity_router,
     uploads_router,
@@ -42,14 +40,10 @@ CORE_ROUTERS = (
     notifications_router,
     email_templates_router,
     audit_router,
+    indicators_catalog_router,
 )
 
-#: Routers del modulo de indicadores del PIDE. Duermen mientras el trabajo se
-#: concentra en el POA. Los modulos NO se borran: el POA importa de ellos
-#: (CaptureStatus, StateChange y los exportadores de reportes), asi que lo unico
-#: que se apaga es su superficie HTTP.
 INDICATORS_ROUTERS = (
-    indicators_catalog_router,
     captures_router,
     validation_router,
     scoring_router,

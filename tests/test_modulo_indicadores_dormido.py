@@ -1,26 +1,20 @@
-"""El modulo de indicadores del PIDE queda dormido mientras el trabajo se
-concentra en el POA.
-
-Lo que se apaga es la superficie HTTP, no el modulo: el POA importa de el
-`CaptureStatus`, `StateChange` y los exportadores de reportes, asi que borrarlo
-romperia el ciclo de revision cuatrimestral. Estas pruebas fijan esa frontera
-para que encender o apagar el modulo sea una decision explicita y no el efecto
-lateral de un `include_router` suelto.
-"""
-
 from __future__ import annotations
+
+import re
+import warnings
+from uuid import uuid4
+
+import pytest
+from httpx import ASGITransport, AsyncClient
 
 from app.core.app_factory import create_app
 from app.core.config import Settings
-
-#: Endpoints que sostiene el modulo dormido.
-RUTAS_PIDE = (
-    "/api/v1/indicadores",
-    "/api/v1/capturas",
-    "/api/v1/config/semaforos",
-    "/api/v1/reportes/pide",
-    "/api/v1/dashboards/planeacion",
-)
+from app.modules.dashboards.api.router import router as tableros_router
+from app.modules.indicators_capture.api.router import router as captura_router
+from app.modules.indicators_catalog.api.router import router as catalogo_router
+from app.modules.indicators_reports.api.router import router as reportes_router
+from app.modules.indicators_scoring.api.router import router as puntajes_router
+from app.modules.indicators_validation.api.router import router as validacion_router
 
 #: Endpoints que el POA necesita y que no pueden caerse con el apagado.
 RUTAS_POA = (
@@ -36,6 +30,18 @@ RUTAS_POA = (
 #: auditoria, que se queda: es parte de la bitacora, no del modulo del PIDE.
 EXCEPCION_AUDITORIA = "/api/v1/indicadores/{indicator_id}/historial"
 
+ROUTERS_DEL_CICLO_MENSUAL = {
+    "captura": captura_router,
+    "validacion": validacion_router,
+    "puntajes": puntajes_router,
+    "reportes": reportes_router,
+    "tableros": tableros_router,
+}
+
+POR_ROUTER = pytest.mark.parametrize(
+    "router", ROUTERS_DEL_CICLO_MENSUAL.values(), ids=ROUTERS_DEL_CICLO_MENSUAL.keys()
+)
+
 
 def _settings(**extra) -> Settings:
     return Settings(
@@ -47,15 +53,78 @@ def _settings(**extra) -> Settings:
     )
 
 
+def _publicadas(**extra) -> set[tuple[str, str]]:
+    rutas = create_app(_settings(**extra)).openapi()["paths"]
+    return {(metodo, ruta) for ruta, metodos in rutas.items() for metodo in metodos}
+
+
 def _rutas(**extra) -> set[str]:
-    return set(create_app(_settings(**extra)).openapi()["paths"])
+    return {ruta for _, ruta in _publicadas(**extra)}
 
 
-def test_por_omision_el_pide_no_se_publica():
-    rutas = _rutas()
+def _operaciones(router) -> set[tuple[str, str]]:
+    prefijo = _settings().api_v1_prefix
+    operaciones = {
+        (metodo.lower(), f"{prefijo}{ruta.path}")
+        for ruta in router.routes
+        for metodo in ruta.methods
+    }
+    assert operaciones
+    return operaciones
 
-    vivas = [r for r in rutas if r.startswith(RUTAS_PIDE) and r != EXCEPCION_AUDITORIA]
-    assert vivas == [], vivas
+
+def _consulta(router) -> str:
+    ruta = next(ruta.path for ruta in router.routes if "GET" in ruta.methods)
+    return _settings().api_v1_prefix + re.sub(r"\{[^}]+\}", str(uuid4()), ruta)
+
+
+@pytest.fixture
+async def cliente_por_omision():
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(_settings())), base_url="http://testserver"
+    ) as cliente:
+        yield cliente
+
+
+def test_el_catalogo_de_indicadores_se_publica_por_omision():
+    assert _operaciones(catalogo_router) <= _publicadas()
+
+
+@POR_ROUTER
+def test_por_omision_los_routers_del_ciclo_mensual_no_se_publican(router):
+    assert _operaciones(router) & _publicadas() == set()
+
+
+def test_la_bandera_enciende_exactamente_el_ciclo_mensual():
+    dormido = _publicadas()
+    despierto = _publicadas(indicators_module_enabled=True)
+
+    assert dormido <= despierto
+    assert despierto - dormido == set().union(
+        *(_operaciones(router) for router in ROUTERS_DEL_CICLO_MENSUAL.values())
+    )
+
+
+@pytest.mark.parametrize("encendido", [False, True], ids=["dormido", "despierto"])
+def test_ninguna_operacion_se_declara_dos_veces(encendido):
+    aplicacion = create_app(_settings(indicators_module_enabled=encendido))
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message="Duplicate Operation ID")
+        aplicacion.openapi()
+
+
+async def test_el_catalogo_responde_sin_la_bandera_y_pide_sesion(cliente_por_omision):
+    respuesta = await cliente_por_omision.get(_consulta(catalogo_router))
+
+    assert respuesta.status_code == 401
+
+
+@POR_ROUTER
+async def test_el_ciclo_mensual_sigue_devolviendo_404(cliente_por_omision, router):
+    respuesta = await cliente_por_omision.get(_consulta(router))
+
+    assert respuesta.status_code == 404
 
 
 def test_el_historial_del_indicador_sobrevive_porque_es_bitacora():
@@ -66,22 +135,6 @@ def test_el_poa_y_su_andamio_siguen_publicados():
     rutas = _rutas()
 
     for esperada in RUTAS_POA:
-        assert any(r.startswith(esperada) for r in rutas), esperada
-
-
-def test_apagar_el_pide_encoge_la_api_a_la_mitad():
-    """Si el numero no baja, el apagado no esta haciendo nada."""
-    dormido = _rutas()
-    despierto = _rutas(indicators_module_enabled=True)
-
-    assert len(dormido) < len(despierto)
-    assert dormido < despierto
-
-
-def test_la_bandera_vuelve_a_encender_el_pide():
-    rutas = _rutas(indicators_module_enabled=True)
-
-    for esperada in RUTAS_PIDE:
         assert any(r.startswith(esperada) for r in rutas), esperada
 
 
