@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date, datetime
 
 from app.shared.domain.base_entity import BaseEntity
 from app.shared.domain.exceptions import ValidationError
@@ -86,6 +87,32 @@ class Area(BaseEntity):
     def activate(self) -> None:
         self.is_active = True
         self.touch()
+
+
+@dataclass(kw_only=True)
+class InstrumentVersion(BaseEntity):
+    instrument_id: int
+    label: str
+    effective_from: date
+    published_at: datetime | None = None
+    origin: str | None = None
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        instrument_id: int,
+        label: str,
+        effective_from: date,
+        origin: str | None = None,
+    ) -> InstrumentVersion:
+        normalized_origin = origin.strip() if origin else ""
+        return cls(
+            instrument_id=instrument_id,
+            label=_required(label, "La etiqueta de la version del instrumento", 120),
+            effective_from=effective_from,
+            origin=normalized_origin or None,
+        )
 
 
 @dataclass(kw_only=True)

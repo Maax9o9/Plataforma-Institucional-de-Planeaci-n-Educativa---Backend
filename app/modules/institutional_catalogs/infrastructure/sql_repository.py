@@ -6,10 +6,14 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.shared.domain.exceptions import ConflictError
+from app.shared.domain.exceptions import ConflictError, ValidationError
+from app.shared.infrastructure.db.constraints import viola_la_restriccion
 
-from ..domain.entities import Area, Instrument
-from .models import AreaModel, InstrumentModel
+from ..domain.entities import Area, Instrument, InstrumentVersion
+from .models import AreaModel, InstrumentModel, InstrumentVersionModel
+
+_UNICA_ETIQUETA_DE_LA_VERSION = "uq_instrumento_version_etiqueta"
+_FORANEA_DEL_INSTRUMENTO = "fk_instrumento_version_instrumento"
 
 
 class SqlAlchemyAreaRepository:
@@ -187,3 +191,54 @@ class SqlAlchemyInstrumentRepository:
             except IntegrityError as exc:
                 await session.rollback()
                 raise ConflictError("Ya existe un instrumento con ese codigo o nombre.") from exc
+
+
+def _version_a_dominio(model: InstrumentVersionModel) -> InstrumentVersion:
+    return InstrumentVersion(
+        id=model.id,
+        instrument_id=model.instrumento_id,
+        label=model.etiqueta,
+        effective_from=model.vigente_desde,
+        published_at=model.publicada_en,
+        origin=model.origen,
+    )
+
+
+class SqlAlchemyInstrumentVersionRepository:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self.session_factory = session_factory
+
+    async def add(self, version: InstrumentVersion) -> None:
+        async with self.session_factory() as session:
+            model = InstrumentVersionModel(
+                instrumento_id=version.instrument_id,
+                etiqueta=version.label,
+                vigente_desde=version.effective_from,
+                publicada_en=version.published_at,
+                origen=version.origin,
+            )
+            session.add(model)
+            try:
+                await session.flush()
+            except IntegrityError as exc:
+                await session.rollback()
+                if viola_la_restriccion(exc, _UNICA_ETIQUETA_DE_LA_VERSION):
+                    raise ConflictError(
+                        f"El instrumento ya tiene una version con la etiqueta «{version.label}»."
+                    ) from exc
+                if viola_la_restriccion(exc, _FORANEA_DEL_INSTRUMENTO):
+                    raise ValidationError("El instrumento de la version no existe.") from exc
+                raise
+            nuevo_id = model.id
+            await session.commit()
+        version.id = nuevo_id
+
+    async def get_by_label(self, instrument_id: int, label: str) -> InstrumentVersion | None:
+        async with self.session_factory() as session:
+            model = await session.scalar(
+                select(InstrumentVersionModel).where(
+                    InstrumentVersionModel.instrumento_id == instrument_id,
+                    InstrumentVersionModel.etiqueta == label,
+                )
+            )
+            return _version_a_dominio(model) if model is not None else None

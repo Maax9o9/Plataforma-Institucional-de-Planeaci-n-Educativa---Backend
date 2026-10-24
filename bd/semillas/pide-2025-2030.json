@@ -1,0 +1,1117 @@
+{
+  "instrumento": {
+    "codigo": "PIDE",
+    "nombre": "Programa Institucional de Desarrollo",
+    "descripcion": "Programa Institucional de Desarrollo 2025-2030 de la Universidad Politécnica de Chiapas."
+  },
+  "version": {
+    "etiqueta": "2025-2030",
+    "vigente_desde": "2025-01-01",
+    "origen": "Capítulo VII «Ejes estratégicos» del PIDE 2025-2030 de la UPChiapas (PIDE-2025-2030-UPChiapas.pdf, páginas 59 a 71), transcrito literalmente."
+  },
+  "nodos": [
+    {
+      "clave": "1.",
+      "nivel": "eje",
+      "padre": null,
+      "denominacion": "Garantizar la Formación Integral que Desarrolle las Capacidades del Estudiante."
+    },
+    {
+      "clave": "1.1",
+      "nivel": "objetivo_general",
+      "padre": "1",
+      "denominacion": "Consolidar un proceso formativo innovador y de excelencia, que garantice el desarrollo de competencias profesionales y ciudadanas de alto nivel en los estudiantes, asegurando su egreso como profesionales competitivos, éticos y con capacidad de aprendizaje a lo largo de la vida, listos para contribuir al desarrollo sostenible de la sociedad."
+    },
+    {
+      "clave": "1.1.1.",
+      "nivel": "objetivo_especifico",
+      "padre": "1.1",
+      "denominacion": "Fortalecer el Programa Institucional de Tutorías y el Seguimiento de Egresados."
+    },
+    {
+      "clave": "1.1.2.",
+      "nivel": "objetivo_especifico",
+      "padre": "1.1",
+      "denominacion": "Formar a los estudiantes en dimensiones cognitiva, procedimental, actitudinal y socioemocional."
+    },
+    {
+      "clave": "1.1.3.",
+      "nivel": "objetivo_especifico",
+      "padre": "1.1",
+      "denominacion": "Vincular permanentemente los planes de estudio con las necesidades del sector productivo, los desafíos sociales y los objetivos de desarrollo sostenible (ODS)."
+    },
+    {
+      "clave": "1.1.4.",
+      "nivel": "objetivo_especifico",
+      "padre": "1.1",
+      "denominacion": "Ofrecer microcredenciales y espacios de formación inter y transdisciplinar."
+    },
+    {
+      "clave": "1.1.5.",
+      "nivel": "objetivo_especifico",
+      "padre": "1.1",
+      "denominacion": "Garantizar la aplicación de metodologías de aprendizaje y práctica."
+    },
+    {
+      "clave": "1.1.1.1.",
+      "nivel": "linea_estrategica",
+      "padre": "1.1.1",
+      "denominacion": "Acompañamiento académico y vinculación para el fortalecimiento de trayectorias formativas."
+    },
+    {
+      "clave": "1.1.1.2.",
+      "nivel": "linea_estrategica",
+      "padre": "1.1.1",
+      "denominacion": "Bienestar integral y acompañamiento estudiantil para garantizar el perfil de egreso."
+    },
+    {
+      "clave": "1.1.1.3",
+      "nivel": "linea_estrategica",
+      "padre": "1.1.1",
+      "denominacion": "Apoyo para la Innovación extracurricular."
+    },
+    {
+      "clave": "1.1.1.4",
+      "nivel": "linea_estrategica",
+      "padre": "1.1.1",
+      "denominacion": "Servicios tecnológicos."
+    },
+    {
+      "clave": "1.1.1.1.1.",
+      "nivel": "accion",
+      "padre": "1.1.1.1",
+      "denominacion": "Actualizar el Programa Institucional de Tutorías.",
+      "formula_indicador": "Programa de Tutoría Actualizado / Programa de Tutoría x 100"
+    },
+    {
+      "clave": "1.1.1.1.2.",
+      "nivel": "accion",
+      "padre": "1.1.1.1",
+      "denominacion": "Garantizar el acompañamiento académico de las tutorías con la certificación de los tutores académicos en el estándar de competencia.",
+      "formula_indicador": "Número de tutores certificados / Número total de tutores"
+    },
+    {
+      "clave": "1.1.1.1.3.",
+      "nivel": "accion",
+      "padre": "1.1.1.1",
+      "denominacion": "Actualizar y capacitar a los estudiantes en tutorías entre pares.",
+      "formula_indicador": "Número de estudiantes capacitados / Número total de estudiantes participando en la estrategia."
+    },
+    {
+      "clave": "1.1.1.1.4.",
+      "nivel": "accion",
+      "padre": "1.1.1.1",
+      "denominacion": "Implementar el seguimiento de tutorías grupal por direcciones de división y PE.",
+      "formula_indicador": "Nº de grupos con seguimiento de tutoría grupal registrado / Nº total de grupos programados para tutoría grupal ×100"
+    },
+    {
+      "clave": "1.1.1.1.5.",
+      "nivel": "accion",
+      "padre": "1.1.1.1",
+      "denominacion": "Realizar el seguimiento a trayectorias escolares asociadas al programa de tutorías.",
+      "formula_indicador": "Informes de impacto de tutorías / Programas educativos existentes"
+    },
+    {
+      "clave": "1.1.1.2.1.",
+      "nivel": "accion",
+      "padre": "1.1.1.2",
+      "denominacion": "Promover los apoyos económicos externos e internos.",
+      "formula_indicador": "Alumnos beneficiados con beca / Total de alumnos matriculados x 100"
+    },
+    {
+      "clave": "1.1.1.2.2",
+      "nivel": "accion",
+      "padre": "1.1.1.2",
+      "denominacion": "Proporcionar servicios médicos y socioemocional.",
+      "formula_indicador": "Nº de estudiantes atendidos en servicios médicos y/o socioemocionales / Nº total de estudiantes inscritos en el periodo ×100"
+    },
+    {
+      "clave": "1.1.1.2.3",
+      "nivel": "accion",
+      "padre": "1.1.1.2",
+      "denominacion": "Proporcionar servicios complementarios (Cafetería, papelería).",
+      "formula_indicador": "índice de satisfacción (%) = ∑puntaje obtenido / N° puntaje máximo ×100"
+    },
+    {
+      "clave": "1.1.1.2.4",
+      "nivel": "accion",
+      "padre": "1.1.1.2",
+      "denominacion": "Promover la construcción de un espacio seguro.",
+      "formula_indicador": "Nº de personas que reportan sentirse seguras y conocer los mecanismos de atención / Nº total de personas encuestadas ×100"
+    },
+    {
+      "clave": "1.1.1.2.5",
+      "nivel": "accion",
+      "padre": "1.1.1.2",
+      "denominacion": "Sensibilizar y capacitar a la comunidad universitaria en materia de género.",
+      "formula_indicador": "Nº de personas capacitadas en género / Nº total de integrantes de la comunidad universitaria×100"
+    },
+    {
+      "clave": "1.1.1.2.6",
+      "nivel": "accion",
+      "padre": "1.1.1.2",
+      "denominacion": "Fomentar la participación estudiantil en actividades culturales y deportivas.",
+      "formula_indicador": "Nº de estudiantes que participan en actividades culturales y/o deportivas / Nº total de estudiantes inscritos en el periodo ×100"
+    },
+    {
+      "clave": "1.1.1.3.1",
+      "nivel": "accion",
+      "padre": "1.1.1.3",
+      "denominacion": "Fortalecer los procesos extracurriculares de capacitación y certificación.",
+      "formula_indicador": "Nº de estudiantes que participan en procesos extracurriculares de capacitación y/o certificación / Nº total de estudiantes inscritos en el periodo x100"
+    },
+    {
+      "clave": "1.1.1.3.2",
+      "nivel": "accion",
+      "padre": "1.1.1.3",
+      "denominacion": "Promover la movilidad presencial y virtual del estudiante",
+      "formula_indicador": "Nº de estudiantes que participan en movilidad presencial y/o virtual / Nº total de estudiantes inscritos en el periodo ×100"
+    },
+    {
+      "clave": "1.1.1.3.3",
+      "nivel": "accion",
+      "padre": "1.1.1.3",
+      "denominacion": "Realizar eventos académicos para reforzar las capacidades de desarrollo del estudiante.",
+      "formula_indicador": "Nº de estudiantes que participan en al menos un evento académico / Nº total de estudiantes inscritos en el periodo ×100"
+    },
+    {
+      "clave": "1.1.1.3.4",
+      "nivel": "accion",
+      "padre": "1.1.1.3",
+      "denominacion": "Promover visitas guiadas a empresas de sector productivo y social.",
+      "formula_indicador": "Nº de estudiantes que participan en al menos una visita guiada / Nº total de estudiantes inscritos en el periodo ×100"
+    },
+    {
+      "clave": "1.1.1.4.1",
+      "nivel": "accion",
+      "padre": "1.1.1.4",
+      "denominacion": "Proporcionar cobertura de conectividad a los estudiantes.",
+      "formula_indicador": "Nº de estudiantes con al menos una conexión registrada a la red/servicios de conectividad / Nº total de estudiantes inscritos en el periodo ×100"
+    },
+    {
+      "clave": "1.1.1.4.2",
+      "nivel": "accion",
+      "padre": "1.1.1.4",
+      "denominacion": "Ofrecer los servicios de tecnologías de información.",
+      "formula_indicador": "Nº de solicitudes de TI atendidas dentro del tiempo establecido / Nº total de solicitudes de TI recibidas en el periodo ×100"
+    },
+    {
+      "clave": "1.1.1.4.3",
+      "nivel": "accion",
+      "padre": "1.1.1.4",
+      "denominacion": "Ofrecer espacios de servicios de cómputo.",
+      "formula_indicador": "Nº de estaciones de cómputo operativas para estudiantes / Nº total de estudiantes inscritos ×100"
+    },
+    {
+      "clave": "1.1.1.4.4",
+      "nivel": "accion",
+      "padre": "1.1.1.4",
+      "denominacion": "Proporcionar servicios de biblioteca virtual.",
+      "formula_indicador": "Nº de estudiantes con al menos un acceso a la biblioteca virtual / Nº total de estudiantes inscritos en el periodo ×100"
+    },
+    {
+      "clave": "2.",
+      "nivel": "eje",
+      "padre": null,
+      "denominacion": "Desarrollo y Profesionalización Docente."
+    },
+    {
+      "clave": "2.1",
+      "nivel": "objetivo_general",
+      "padre": "2",
+      "denominacion": "Fortalecer de manera sistemática y continua, el desarrollo, las competencias profesionales, pedagógicas, investigativas y digitales del personal docente, para garantizar una práctica educativa de excelencia, innovadora y alineada con el modelo educativo institucional y las demandas del siglo XXI."
+    },
+    {
+      "clave": "2.1.1.",
+      "nivel": "objetivo_especifico",
+      "padre": "2.1",
+      "denominacion": "Reconocer el desarrollo docente como un proceso continuo."
+    },
+    {
+      "clave": "2.1.2.",
+      "nivel": "objetivo_especifico",
+      "padre": "2.1",
+      "denominacion": "Establecer mecanismos institucionales claros para reconocer y valorar la capacitación, la innovación y la excelencia académica."
+    },
+    {
+      "clave": "2.1.3.",
+      "nivel": "objetivo_especifico",
+      "padre": "2.1",
+      "denominacion": "Vincular la formación docente a la práctica en el aula y laboratorios, con base a las necesidades profesionales reales."
+    },
+    {
+      "clave": "2.1.4.",
+      "nivel": "objetivo_especifico",
+      "padre": "2.1",
+      "denominacion": "Abordar las dimensiones pedagógica, disciplinaria, digital, humana y ética."
+    },
+    {
+      "clave": "2.1.1.1",
+      "nivel": "linea_estrategica",
+      "padre": "2.1.1",
+      "denominacion": "Reconocer el desarrollo docente."
+    },
+    {
+      "clave": "2.1.1.2",
+      "nivel": "linea_estrategica",
+      "padre": "2.1.1",
+      "denominacion": "Formación Continua."
+    },
+    {
+      "clave": "2.1.1.3",
+      "nivel": "linea_estrategica",
+      "padre": "2.1.1",
+      "denominacion": "Actualización Disciplinar y Profesional."
+    },
+    {
+      "clave": "2.1.1.4",
+      "nivel": "linea_estrategica",
+      "padre": "2.1.1",
+      "denominacion": "Desarrollo de Competencias Digitales Docentes."
+    },
+    {
+      "clave": "2.1.1.1.1.",
+      "nivel": "accion",
+      "padre": "2.1.1.1",
+      "denominacion": "Generar un sistema de desarrollo que vincule la formación, la evaluación del desempeño (promoción y distinción).",
+      "formula_indicador": "Número de docentes registrados en el sistema de desarrollo docente / Total de docentes de la institución × 100"
+    },
+    {
+      "clave": "2.1.1.1.2.",
+      "nivel": "accion",
+      "padre": "2.1.1.1",
+      "denominacion": "Establecer un proceso de evaluación integral que incluya autoevaluación, evaluación de pares, evaluación de estudiantes y directores.",
+      "formula_indicador": "Número de docentes con evaluación aplicada en las cuatro dimensiones / Total de docentes × 100"
+    },
+    {
+      "clave": "2.1.1.1.3.",
+      "nivel": "accion",
+      "padre": "2.1.1.1",
+      "denominacion": "Promover reconocimientos a la Excelencia Docente en categorías como Innovación, Impacto en los Estudiantes o Trayectoria.",
+      "formula_indicador": "Número de docentes que reciben al menos un reconocimiento de Excelencia Docente en el año / Total de docentes × 100"
+    },
+    {
+      "clave": "2.1.1.2.1.",
+      "nivel": "accion",
+      "padre": "2.1.1.2",
+      "denominacion": "Fortalecer el Programa de Inducción para docentes de nuevo ingreso en el Modelo Educativo Institucional, normativa y didácticas activas.",
+      "formula_indicador": "Número de docentes de nuevo ingreso que concluyen el Programa de Inducción / Total de docentes de nuevo ingreso × 100"
+    },
+    {
+      "clave": "2.1.1.2.2.",
+      "nivel": "accion",
+      "padre": "2.1.1.2",
+      "denominacion": "Diseñar mecanismos de actualización docente en el diseño de experiencias de aprendizaje y evaluación por competencias.",
+      "formula_indicador": "Número de docentes que cursan al menos una actividad de actualización en diseño de experiencias de aprendizaje y evaluación por competencias / Total de docentes × 100"
+    },
+    {
+      "clave": "2.1.1.2.3.",
+      "nivel": "accion",
+      "padre": "2.1.1.2",
+      "denominacion": "Impulsar comunidades de aprendizaje como espacios colaborativos donde los docentes analizan casos, comparten buenas prácticas y resuelven problemas reales.",
+      "formula_indicador": "Número de docentes que participan de manera regular (al menos en el 50 % de las sesiones) en alguna comunidad de aprendizaje / Total de docentes × 100"
+    },
+    {
+      "clave": "2.1.1.3.1.",
+      "nivel": "accion",
+      "padre": "2.1.1.3",
+      "denominacion": "Impulsar la profesionalización y actualización disciplinar.",
+      "formula_indicador": "Número de docentes con posgrado o certificación profesional vigente en su disciplina / Total de docentes × 100"
+    },
+    {
+      "clave": "2.1.1.3.2.",
+      "nivel": "accion",
+      "padre": "2.1.1.3",
+      "denominacion": "Establecer seminarios con expertos externos para actualizar conocimientos en cada disciplina.",
+      "formula_indicador": "Número de seminarios disciplinarios con expertos externos realizados en el año"
+    },
+    {
+      "clave": "2.1.1.3.3.",
+      "nivel": "accion",
+      "padre": "2.1.1.3",
+      "denominacion": "Promover la asistencia a congresos nacionales e internacionales.",
+      "formula_indicador": "Número de docentes que asisten al menos a un congreso nacional o internacional en el año / Total de docentes × 100"
+    },
+    {
+      "clave": "2.1.1.4.1.",
+      "nivel": "accion",
+      "padre": "2.1.1.4",
+      "denominacion": "Establecer una ruta de formación digital, desde nivel básico (Aula virtual, diseño instruccional) hasta avanzado (gamificación, IA educativa, análisis de datos de aprendizaje).",
+      "formula_indicador": "Número de docentes con al menos el nivel básico de competencia digital acreditado según la ruta institucional / Total de docentes × 100"
+    },
+    {
+      "clave": "2.1.1.4.2.",
+      "nivel": "accion",
+      "padre": "2.1.1.4",
+      "denominacion": "Impulsar la certificación en competencias profesionales avanzadas (nivel 5).",
+      "formula_indicador": "Número de docentes con certificación vigente en competencias profesionales avanzadas (nivel 5) / Total de docentes × 100"
+    },
+    {
+      "clave": "2.1.1.4.3.",
+      "nivel": "accion",
+      "padre": "2.1.1.4",
+      "denominacion": "Promover la capacitación para el uso de simuladores de ciencia para prácticas de laboratorio.",
+      "formula_indicador": "Número de asignaturas de laboratorio que integran el uso de simuladores de ciencia en su planeación didáctica / Total de asignaturas de laboratorio × 100"
+    },
+    {
+      "clave": "3.",
+      "nivel": "eje",
+      "padre": null,
+      "denominacion": "Pertinencia y Excelencia de la Oferta Educativa de TSU y Licenciatura."
+    },
+    {
+      "clave": "3.1",
+      "nivel": "objetivo_general",
+      "padre": "3",
+      "denominacion": "Implementar y evaluar de manera continua los planes y programas de estudio pertinentes, flexibles y basados en competencias profesionales, que respondan a las demandas estratégicas de los sectores productivos y sociales de Chiapas, formando profesionales técnicamente sólidos, innovadores y con capacidad de aplicar el conocimiento para transformar su entorno."
+    },
+    {
+      "clave": "3.1.1",
+      "nivel": "objetivo_especifico",
+      "padre": "3.1",
+      "denominacion": "Asegurar la implementación del modelo educativo de las universidades politécnicas"
+    },
+    {
+      "clave": "3.1.2",
+      "nivel": "objetivo_especifico",
+      "padre": "3.1",
+      "denominacion": "Garantizar que la oferta educativa sea pertinente a las necesidades y potencialidades de los sectores estratégicos de la región y el estado."
+    },
+    {
+      "clave": "3.1.3",
+      "nivel": "objetivo_especifico",
+      "padre": "3.1",
+      "denominacion": "Ampliar y diversificar la oferta educativa en las modalidades escolarizada y mixta."
+    },
+    {
+      "clave": "3.1.4",
+      "nivel": "objetivo_especifico",
+      "padre": "3.1",
+      "denominacion": "Consolidar la vinculación con el sector productivo y empresarial para asegurar las estancias, estadías e innovación social."
+    },
+    {
+      "clave": "3.1.5",
+      "nivel": "objetivo_especifico",
+      "padre": "3.1",
+      "denominacion": "Promover la internacionalización del currículum a través de alianzas estratégicas."
+    },
+    {
+      "clave": "3.1.1.1.",
+      "nivel": "linea_estrategica",
+      "padre": "3.1.1",
+      "denominacion": "Implementación y consolidación del modelo educativo."
+    },
+    {
+      "clave": "3.1.1.2.",
+      "nivel": "linea_estrategica",
+      "padre": "3.1.1",
+      "denominacion": "Pertinencia y alineación de la oferta educativa con los sectores estratégicos."
+    },
+    {
+      "clave": "3.1.1.1.1.",
+      "nivel": "accion",
+      "padre": "3.1.1.1",
+      "denominacion": "Actualizar la normatividad académica para la operación de los programas educativos.",
+      "formula_indicador": "Número de instrumentos normativos académicos actualizados / Total de instrumentos normativos académicos identificados × 100"
+    },
+    {
+      "clave": "3.1.1.1.2.",
+      "nivel": "accion",
+      "padre": "3.1.1.1",
+      "denominacion": "Garantizar los tres ciclos de formación del modelo educativo.",
+      "formula_indicador": "Número de programas educativos que incorporan los tres ciclos de formación del modelo educativo / Total de programas educativos × 100"
+    },
+    {
+      "clave": "3.1.1.1.3.",
+      "nivel": "accion",
+      "padre": "3.1.1.1",
+      "denominacion": "Desarrollar proyectos integradores orientados a la innovación social y productiva",
+      "formula_indicador": "Número de proyectos integradores con evidencia de innovación social o productiva desarrollados en el año"
+    },
+    {
+      "clave": "3.1.1.1.4.",
+      "nivel": "accion",
+      "padre": "3.1.1.1",
+      "denominacion": "Establecer alianzas estratégicas con el sector productivo para garantizar estancias y estadías.",
+      "formula_indicador": "Número de programas educativos con al menos un convenio vigente que garantice espacios de estancias y estadías / Total de programas educativos × 100"
+    },
+    {
+      "clave": "3.1.1.1.5.",
+      "nivel": "accion",
+      "padre": "3.1.1.1",
+      "denominacion": "Actualizar y diversificar los instrumentos de evaluación.",
+      "formula_indicador": "Número de programas educativos que han actualizado y diversificado sus instrumentos de evaluación conforme a los lineamientos institucionales / Total de programas educativos × 100"
+    },
+    {
+      "clave": "3.1.1.1.6.",
+      "nivel": "accion",
+      "padre": "3.1.1.1",
+      "denominacion": "Fortalecer la enseñanza de la segunda lengua y habilidades blandas.",
+      "formula_indicador": "Número de programas educativos que incorporan unidades de aprendizaje de segunda lengua y habilidades blandas en su mapa curricular / Total de programas educativos × 100"
+    },
+    {
+      "clave": "3.1.1.1.7.",
+      "nivel": "accion",
+      "padre": "3.1.1.1",
+      "denominacion": "Impulsar la certificación y obtención de microcredenciales por competencias especializadas.",
+      "formula_indicador": "Número de estudiantes que obtienen al menos una certificación o microcredencial de competencias especializadas en el año / Matrícula total de TSU y Licenciatura × 100"
+    },
+    {
+      "clave": "3.1.1.2.1.",
+      "nivel": "accion",
+      "padre": "3.1.1.2",
+      "denominacion": "Fortalecer la autoevaluación de los PE en el marco del SEAES.",
+      "formula_indicador": "Número de programas educativos que realizan proceso de autoevaluación en el marco del SEAES en el periodo / Total de programas educativos × 100"
+    },
+    {
+      "clave": "3.1.1.2.2.",
+      "nivel": "accion",
+      "padre": "3.1.1.2",
+      "denominacion": "Impulsar la acreditación de los PE a través de las Instancias para la Evaluación Externa y Acreditación (IEVA).",
+      "formula_indicador": "Número de programas educativos con acreditación vigente otorgada por alguna IEVA / Total de programas educativos × 100"
+    },
+    {
+      "clave": "3.1.1.2.3.",
+      "nivel": "accion",
+      "padre": "3.1.1.2",
+      "denominacion": "Actualizar los mecanismos de ingreso.",
+      "formula_indicador": "Número de programas educativos que utilizan los mecanismos de ingreso actualizados en su proceso de selección / Total de programas educativos × 100"
+    },
+    {
+      "clave": "3.1.1.2.4.",
+      "nivel": "accion",
+      "padre": "3.1.1.2",
+      "denominacion": "Realizar estudios de análisis situacional de trabajo (AST) con el sector productivo y social para garantizar la pertinencia de los PE.",
+      "formula_indicador": "Número de programas educativos que cuentan con un estudio de análisis situacional de trabajo vigente / Total de programas educativos × 100"
+    },
+    {
+      "clave": "3.1.1.2.5.",
+      "nivel": "accion",
+      "padre": "3.1.1.2",
+      "denominacion": "Realizar estudios de pertinencia para nueva oferta educativa.",
+      "formula_indicador": "Número de estudios de pertinencia concluidos para nuevas propuestas de programas educativos en el año"
+    },
+    {
+      "clave": "3.1.1.2.6.",
+      "nivel": "accion",
+      "padre": "3.1.1.2",
+      "denominacion": "Participar en grupos colegiados para la elaboración de diagnósticos estatales.",
+      "formula_indicador": "Número de grupos colegiados de diagnóstico estatal en los que la universidad participa formalmente en el año"
+    },
+    {
+      "clave": "3.1.1.2.7.",
+      "nivel": "accion",
+      "padre": "3.1.1.2",
+      "denominacion": "Realizar estudio de egresados y empleadores para actualización del currículo de los PE.",
+      "formula_indicador": "Número de programas educativos que cuentan con resultados de estudio de egresados y empleadores utilizados para actualización curricular en los últimos X años / Total de programas educativos × 100"
+    },
+    {
+      "clave": "3.1.1.2.8.",
+      "nivel": "accion",
+      "padre": "3.1.1.2",
+      "denominacion": "Fortalecer el aprendizaje de la segunda lengua.",
+      "formula_indicador": "Número de estudiantes que acreditan el nivel de segunda lengua establecido institucionalmente / Total de estudiantes de último ciclo de TSU y Licenciatura × 100"
+    },
+    {
+      "clave": "3.1.1.3.",
+      "nivel": "linea_estrategica",
+      "padre": "3.1.1",
+      "denominacion": "Diversificación de la oferta educativa."
+    },
+    {
+      "clave": "3.1.1.4.",
+      "nivel": "linea_estrategica",
+      "padre": "3.1.1",
+      "denominacion": "Vinculación estratégica con el sector productivo para la formación práctica e innovación con impacto social."
+    },
+    {
+      "clave": "3.1.1.5.",
+      "nivel": "linea_estrategica",
+      "padre": "3.1.1",
+      "denominacion": "Internacionalización del curriculum mediante alianzas estratégicas y cooperación académica."
+    },
+    {
+      "clave": "3.1.1.3.1",
+      "nivel": "accion",
+      "padre": "3.1.1.3",
+      "denominacion": "Ampliar la matrícula en programas educativos en modalidad escolarizada y mixta.",
+      "formula_indicador": "Matrícula en programas educativos en modalidad mixta / Matrícula total de TSU y Licenciatura × 100"
+    },
+    {
+      "clave": "3.1.1.3.2",
+      "nivel": "accion",
+      "padre": "3.1.1.3",
+      "denominacion": "Realizar el estudio para la selección de los programas educativos pertinentes.",
+      "formula_indicador": "Número de estudios concluidos para seleccionar programas educativos pertinentes a ofertarse en modalidad mixta en el año"
+    },
+    {
+      "clave": "3.1.1.3.3",
+      "nivel": "accion",
+      "padre": "3.1.1.3",
+      "denominacion": "Incorporar en los contenidos de los planes y programas educativos innovaciones tecnológicas y pedagógicas, en particular el uso de la Inteligencia Artificial.",
+      "formula_indicador": "Número de programas educativos que han actualizado sus planes y programas para incluir innovaciones tecnológicas y pedagógicas, especialmente IA, / Total de programas educativos × 100"
+    },
+    {
+      "clave": "3.1.1.4.1.",
+      "nivel": "accion",
+      "padre": "3.1.1.4",
+      "denominacion": "Establecer convenios específicos para la operación de los PE.",
+      "formula_indicador": "Número de programas educativos que cuentan con al menos un convenio específico vigente con organizaciones del sector productivo / Total de programas educativos × 100"
+    },
+    {
+      "clave": "3.1.1.4.2.",
+      "nivel": "accion",
+      "padre": "3.1.1.4",
+      "denominacion": "Implementar un sistema de seguimiento y evaluación de las estancias con indicadores de competencias desarrolladas y aporte al sector productivo.",
+      "formula_indicador": "Número de estudiantes en estancia/estadía evaluados con los instrumentos del sistema de seguimiento institucional / Total de estudiantes que realizaron estancia/estadía × 100"
+    },
+    {
+      "clave": "3.1.1.4.3.",
+      "nivel": "accion",
+      "padre": "3.1.1.4",
+      "denominacion": "Establecer un programa de reconocimiento a las empresas comprometidas con la formación práctica de los estudiantes.",
+      "formula_indicador": "Número de empresas que reciben reconocimiento institucional por su participación en la formación práctica de estudiantes en el año"
+    },
+    {
+      "clave": "3.1.1.4.4.",
+      "nivel": "accion",
+      "padre": "3.1.1.4",
+      "denominacion": "Crear una red de exalumnos destacados en el ámbito profesional para ampliar la vinculación actual.",
+      "formula_indicador": "Número de exalumnos registrados y activos en la red de egresados destacados de la universidad"
+    },
+    {
+      "clave": "3.1.1.4.5.",
+      "nivel": "accion",
+      "padre": "3.1.1.4",
+      "denominacion": "Evaluar la pertinencia de las alianzas estratégicas en los convenios marco y específicos nuevos y existentes.",
+      "formula_indicador": "Número de convenios marco y específicos vigentes evaluados en su pertinencia durante el periodo / Total de convenios marco y específicos vigentes × 100"
+    },
+    {
+      "clave": "3.1.1.5.1.",
+      "nivel": "accion",
+      "padre": "3.1.1.5",
+      "denominacion": "Integrar contenidos globales basados en casos de estudios internacionales, normativas técnicas globales y estándares tecnológicos internacionales.",
+      "formula_indicador": "Número de programas educativos que incorporan contenidos globales (casos, normativas y estándares internacionales) en al menos una unidad de aprendizaje / Total de programas educativos × 100"
+    },
+    {
+      "clave": "3.1.1.5.2.",
+      "nivel": "accion",
+      "padre": "3.1.1.5",
+      "denominacion": "Diseñar e implementar proyectos colaborativos internacionales en línea.",
+      "formula_indicador": "Número de proyectos colaborativos internacionales en línea implementados en el año"
+    },
+    {
+      "clave": "3.1.1.5.3.",
+      "nivel": "accion",
+      "padre": "3.1.1.5",
+      "denominacion": "Establecer convenios de doble titulación con universidades extranjeras.",
+      "formula_indicador": "Número de convenios de doble titulación vigentes con universidades extranjeras"
+    },
+    {
+      "clave": "3.1.1.5.4.",
+      "nivel": "accion",
+      "padre": "3.1.1.5",
+      "denominacion": "Desarrollar un programa de movilidad virtual y presencial internacional.",
+      "formula_indicador": "Número de estudiantes que participan en movilidad internacional (virtual o presencial) en el año / Matrícula total de TSU y Licenciatura × 100"
+    },
+    {
+      "clave": "3.1.1.5.5.",
+      "nivel": "accion",
+      "padre": "3.1.1.5",
+      "denominacion": "Diseñar un procedimiento de reconocimiento de créditos que faciliten la movilidad internacional.",
+      "formula_indicador": "Número de solicitudes de reconocimiento de créditos internacionales resueltas conforme al procedimiento institucional / Número total de solicitudes de reconocimiento de créditos internacionales × 100"
+    },
+    {
+      "clave": "4.",
+      "nivel": "eje",
+      "padre": null,
+      "denominacion": "Fortalecimiento de la Investigación y Posgrado."
+    },
+    {
+      "clave": "4.1",
+      "nivel": "objetivo_general",
+      "padre": "4",
+      "denominacion": "Consolidar un ecosistema de investigación aplicada y posgrados de excelencia que genere soluciones tecnológicas innovadoras para los sectores estratégicos, forme capital altamente especializado y contribuya a la productividad y competitividad regional, con énfasis en innovación social."
+    },
+    {
+      "clave": "4.1.1",
+      "nivel": "objetivo_especifico",
+      "padre": "4.1",
+      "denominacion": "Fortalecer la investigación enfocada en resolver problemas concretos de los sectores agroindustrial, energético, electromovilidad, tecnológico y social."
+    },
+    {
+      "clave": "4.1.2",
+      "nivel": "objetivo_especifico",
+      "padre": "4.1",
+      "denominacion": "Ampliar y actualizar la oferta educativa de posgrados."
+    },
+    {
+      "clave": "4.1.3",
+      "nivel": "objetivo_especifico",
+      "padre": "4.1",
+      "denominacion": "Promover el desarrollo de habilidades para la investigación aplicada, el desarrollo tecnológico y la innovación en estudiantes de posgrado."
+    },
+    {
+      "clave": "4.1.4",
+      "nivel": "objetivo_especifico",
+      "padre": "4.1",
+      "denominacion": "Generar innovación aplicada en prototipos, patentes, modelos y procesos transferibles al sector productivo y social."
+    },
+    {
+      "clave": "4.1.5",
+      "nivel": "objetivo_especifico",
+      "padre": "4.1",
+      "denominacion": "Desarrollar una colaboración estratégica con empresas, gobierno y comunidades para el desarrollo sostenible (Quíntuple hélice)."
+    },
+    {
+      "clave": "4.1.1.1.",
+      "nivel": "linea_estrategica",
+      "padre": "4.1.1",
+      "denominacion": "Investigación aplicada e innovación para la transformación productiva y social."
+    },
+    {
+      "clave": "4.1.1.2.",
+      "nivel": "linea_estrategica",
+      "padre": "4.1.1",
+      "denominacion": "Desarrollo de la Oferta Educativa de posgrados."
+    },
+    {
+      "clave": "4.1.1.3.",
+      "nivel": "linea_estrategica",
+      "padre": "4.1.1",
+      "denominacion": "Fortalecimiento de capacidades para la investigación aplicada, el desarrollo tecnológico y la innovación."
+    },
+    {
+      "clave": "4.1.1.1.1.",
+      "nivel": "accion",
+      "padre": "4.1.1.1",
+      "denominacion": "Participar en alianzas estratégicas para el desarrollo de investigación aplicada.",
+      "formula_indicador": "Número de alianzas estratégicas de investigación aplicada vigentes / Número total de alianzas institucionales vigentes"
+    },
+    {
+      "clave": "4.1.1.1.2.",
+      "nivel": "accion",
+      "padre": "4.1.1.1",
+      "denominacion": "Implementar laboratorios de prototipado para el desarrollo de soluciones tecnológicas.",
+      "formula_indicador": "Número de laboratorios de prototipado implementados y en operación / Número total de laboratorios de prototipado programados en la planeación institucional"
+    },
+    {
+      "clave": "4.1.1.1.3.",
+      "nivel": "accion",
+      "padre": "4.1.1.1",
+      "denominacion": "Promover la participación en clúster de investigación para el desarrollo de la innovación tecnológica.",
+      "formula_indicador": "Número de clúster de investigación con participación activa de la UPChiapas / Número total de clúster de investigación identificados en los sectores estratégicos"
+    },
+    {
+      "clave": "4.1.1.2.1.",
+      "nivel": "accion",
+      "padre": "4.1.1.2",
+      "denominacion": "Realizar los estudios de factibilidad para la ampliación y diversificación de la oferta educativa.",
+      "formula_indicador": "Número de estudios de factibilidad de posgrado concluidos / Número total de estudios de factibilidad de posgrado programados"
+    },
+    {
+      "clave": "4.1.1.2.2.",
+      "nivel": "accion",
+      "padre": "4.1.1.2",
+      "denominacion": "Impulsar la incorporación de los programas educativos al Sistema Nacional de Posgrados (SNP)",
+      "formula_indicador": "Número de programas educativos de posgrado inscritos en el Sistema Nacional de Posgrados / Número total de programas educativos de posgrado de la UPChiapas"
+    },
+    {
+      "clave": "4.1.1.2.3.",
+      "nivel": "accion",
+      "padre": "4.1.1.2",
+      "denominacion": "Desarrollar propuestas de ciclo de formación continuos (Especialidad-maestría-doctorado).",
+      "formula_indicador": "Número de ciclos de formación continua (Especialidad–Maestría–Doctorado) diseñados y autorizados / Número total de ciclos de formación continua previstos en la planeación institucional"
+    },
+    {
+      "clave": "4.1.1.2.4.",
+      "nivel": "accion",
+      "padre": "4.1.1.2",
+      "denominacion": "Desarrollar propuestas de formación en la modalidad mixta.",
+      "formula_indicador": "Número de programas de posgrado con modalidad mixta implementada / Número total de programas educativos de posgrado"
+    },
+    {
+      "clave": "4.1.1.2.5.",
+      "nivel": "accion",
+      "padre": "4.1.1.2",
+      "denominacion": "Consolidar una plantilla docente especializada para los programas educativos de posgrado.",
+      "formula_indicador": "Número de docentes de posgrado con perfil especializado (doctorado, SNI o perfil deseable) / Número total de docentes que imparten en programas de posgrado"
+    },
+    {
+      "clave": "4.1.1.2.6.",
+      "nivel": "accion",
+      "padre": "4.1.1.2",
+      "denominacion": "Actualizar los programas educativos de posgrados alineándolos a la oferta educativa nacional.",
+      "formula_indicador": "Número de programas educativos de posgrado actualizados y alineados a la oferta educativa nacional / Número total de programas educativos de posgrado"
+    },
+    {
+      "clave": "4.1.1.3.1.",
+      "nivel": "accion",
+      "padre": "4.1.1.3",
+      "denominacion": "Fortalecer los cuerpos académicos para la investigación, innovación, desarrollo y transferencia de tecnología.",
+      "formula_indicador": "Número de cuerpos académicos en consolidación o consolidados / Número total de cuerpos académicos de la UPChiapa"
+    },
+    {
+      "clave": "4.1.1.3.2.",
+      "nivel": "accion",
+      "padre": "4.1.1.3",
+      "denominacion": "Fortalecimiento de las líneas de generación y/o aplicación innovadoras del conocimiento. (LAGC).",
+      "formula_indicador": "Número de LGAC activas vinculadas a investigación aplicada e innovación / Número total de LGAC registradas en la institución"
+    },
+    {
+      "clave": "4.1.1.3.3.",
+      "nivel": "accion",
+      "padre": "4.1.1.3",
+      "denominacion": "Promover la incorporación al Sistema Nacional de Investigadores (SNI).",
+      "formula_indicador": "Número de profesores de tiempo completo de posgrado incorporados al SNI / Número total de profesores de tiempo completo que participan en programas de posgrado"
+    },
+    {
+      "clave": "4.1.1.4.",
+      "nivel": "linea_estrategica",
+      "padre": "4.1.1",
+      "denominacion": "Innovación aplicada y transferencia tecnológica con impacto productivo y social."
+    },
+    {
+      "clave": "4.1.1.5.",
+      "nivel": "linea_estrategica",
+      "padre": "4.1.1",
+      "denominacion": "Articulación estratégica para el desarrollo sostenible mediante la Quíntuple Hélice."
+    },
+    {
+      "clave": "4.1.1.4.1.",
+      "nivel": "accion",
+      "padre": "4.1.1.4",
+      "denominacion": "Desarrollar investigación aplicada para la solución de problemas reales.",
+      "formula_indicador": "Número de proyectos de investigación aplicada orientados a problemas reales de los sectores estratégicos / Número total de proyectos de investigación registrados en la institución"
+    },
+    {
+      "clave": "4.1.1.4.2.",
+      "nivel": "accion",
+      "padre": "4.1.1.4",
+      "denominacion": "Impulsar la innovación social.",
+      "formula_indicador": "Número de proyectos de innovación social en ejecución / Número total de proyectos de investigación aplicada y vinculación"
+    },
+    {
+      "clave": "4.1.1.4.3.",
+      "nivel": "accion",
+      "padre": "4.1.1.4",
+      "denominacion": "Realizar investigación para fortalecer los Nodos de Impulso a la Economía Social y Solidaria (NODESS).",
+      "formula_indicador": "Número de proyectos de investigación desarrollados en colaboración con NODESS / Número total de proyectos de investigación en economía social y solidaria"
+    },
+    {
+      "clave": "4.1.1.4.4.",
+      "nivel": "accion",
+      "padre": "4.1.1.4",
+      "denominacion": "Impulsar proyectos en sectores estratégicos para la transformación nacional en el marco del Plan México (Electromovilidad, energías, agroindustrias).",
+      "formula_indicador": "Número de proyectos de I+D+i en sectores estratégicos del Plan México / Número total de proyectos de investigación y desarrollo tecnológico de la institución"
+    },
+    {
+      "clave": "4.1.1.4.5.",
+      "nivel": "accion",
+      "padre": "4.1.1.4",
+      "denominacion": "Desarrollar proyectos de aplicación de inteligencia artificial orientados a la solución de problemáticas específicas del entorno productivo y social.",
+      "formula_indicador": "Número de proyectos de aplicación de inteligencia artificial orientados al entorno productivo y social / Número total de proyectos de investigación y desarrollo tecnológico registrados"
+    },
+    {
+      "clave": "4.1.1.4.6.",
+      "nivel": "accion",
+      "padre": "4.1.1.4",
+      "denominacion": "Promover el desarrollo de patentes y la propiedad intelectual.",
+      "formula_indicador": "Número de solicitudes de registro de propiedad intelectual presentadas (patentes, modelos de utilidad, etc.) / Número total de desarrollos tecnológicos susceptibles de protección generados por la institución"
+    },
+    {
+      "clave": "4.1.1.5.1.",
+      "nivel": "accion",
+      "padre": "4.1.1.5",
+      "denominacion": "Promover una investigación alineada con los objetivos de desarrollo sostenible (ODS) y con impacto medible en el desarrollo de la región.",
+      "formula_indicador": "Número de proyectos de investigación alineados a uno o más ODS con indicadores de impacto regional / Número total de proyectos de investigación institucionales"
+    },
+    {
+      "clave": "4.1.1.5.2.",
+      "nivel": "accion",
+      "padre": "4.1.1.5",
+      "denominacion": "Participar en redes internacionales de investigación.",
+      "formula_indicador": "Número de redes internacionales de investigación con participación activa de la UPChiapas / Número total de redes internacionales de investigación identificadas como estratégicas para la institución"
+    },
+    {
+      "clave": "4.1.1.5.3.",
+      "nivel": "accion",
+      "padre": "4.1.1.5",
+      "denominacion": "Promover la diversificación de las fuentes de financiamiento para el desarrollo de investigación sostenible.",
+      "formula_indicador": "Número de fuentes de financiamiento externas activas para investigación sostenible / Número total de fuentes de financiamiento identificadas para investigación sostenible"
+    },
+    {
+      "clave": "4.1.1.5.4.",
+      "nivel": "accion",
+      "padre": "4.1.1.5",
+      "denominacion": "Realizar investigación aplicada en el marco de los polos de desarrollo y de bienestar a partir de las vocaciones regionales.",
+      "formula_indicador": "Número de proyectos de investigación aplicada desarrollados en polos de desarrollo y bienestar / Número total de proyectos de investigación aplicada institucionales"
+    },
+    {
+      "clave": "5.",
+      "nivel": "eje",
+      "padre": null,
+      "denominacion": "Gestión Institucional Orientada al Bien Público."
+    },
+    {
+      "clave": "5.1",
+      "nivel": "objetivo_general",
+      "padre": "5",
+      "denominacion": "Impulsar un modelo de gobernanza y gestión universitaria que, fundamentado en los principios de ética pública, transparencia, rendición de cuentas, participación y sostenibilidad, garantice el desarrollo integral del estudiante, la operación de los programas educativos y el impacto social de la institución."
+    },
+    {
+      "clave": "5.1.1",
+      "nivel": "objetivo_especifico",
+      "padre": "5.1",
+      "denominacion": "Garantizar la gobernanza institucional."
+    },
+    {
+      "clave": "5.1.2",
+      "nivel": "objetivo_especifico",
+      "padre": "5.1",
+      "denominacion": "Garantizar la excelencia de los procesos y servicios."
+    },
+    {
+      "clave": "5.1.3",
+      "nivel": "objetivo_especifico",
+      "padre": "5.1",
+      "denominacion": "Administrar la aplicación eficiente de los recursos."
+    },
+    {
+      "clave": "5.1.4",
+      "nivel": "objetivo_especifico",
+      "padre": "5.1",
+      "denominacion": "Mejorar y mantener la infraestructura necesaria e instalada."
+    },
+    {
+      "clave": "5.1.5",
+      "nivel": "objetivo_especifico",
+      "padre": "5.1",
+      "denominacion": "Fortalecer la infraestructura digital."
+    },
+    {
+      "clave": "5.1.6",
+      "nivel": "objetivo_especifico",
+      "padre": "5.1",
+      "denominacion": "Cumplir con la transparencia y rendición de cuentas."
+    },
+    {
+      "clave": "5.1.1.1.",
+      "nivel": "linea_estrategica",
+      "padre": "5.1.1",
+      "denominacion": "Fortalecimiento de la gobernanza institucional y la gestión estratégica."
+    },
+    {
+      "clave": "5.1.1.2.",
+      "nivel": "linea_estrategica",
+      "padre": "5.1.1",
+      "denominacion": "Gestión institucional orientada a la excelencia en procesos y servicios"
+    },
+    {
+      "clave": "5.1.1.3.",
+      "nivel": "linea_estrategica",
+      "padre": "5.1.1",
+      "denominacion": "Gestión eficiente y transparente de los recursos institucionales"
+    },
+    {
+      "clave": "5.1.1.1.1.",
+      "nivel": "accion",
+      "padre": "5.1.1.1",
+      "denominacion": "Actualizar y alinear la normatividad institucional.",
+      "formula_indicador": "Número de instrumentos normativos actualizados y alineados dividido entre el número total de instrumentos normativos programados, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.1.2.",
+      "nivel": "accion",
+      "padre": "5.1.1.1",
+      "denominacion": "Garantizar la operación de los órganos de gobierno y colegiados.",
+      "formula_indicador": "Número de sesiones realizadas dividido entre el número de sesiones programadas, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.2.1.",
+      "nivel": "accion",
+      "padre": "5.1.1.2",
+      "denominacion": "Fortalecer los procesos administrativos orientados al servicio del usuario.",
+      "formula_indicador": "Puntuación promedio obtenida en encuestas de satisfacción dividida entre la puntuación máxima posible, multiplicada por 100"
+    },
+    {
+      "clave": "5.1.1.2.2.",
+      "nivel": "accion",
+      "padre": "5.1.1.2",
+      "denominacion": "Actualizar y desarrollar el sistema de información institucional (Platinum).",
+      "formula_indicador": "Número de módulos actualizados o nuevos en operación dividido entre el número total de módulos previstos en el plan, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.2.3.",
+      "nivel": "accion",
+      "padre": "5.1.1.2",
+      "denominacion": "Mantener las certificaciones de Sistemas de Gestión Integral.",
+      "formula_indicador": "Número de normas del SGI con certificación vigente dividido entre el número total de normas del SGI, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.2.4.",
+      "nivel": "accion",
+      "padre": "5.1.1.2",
+      "denominacion": "Impulsar la simplificación administrativa de los procesos y procedimientos institucionales.",
+      "formula_indicador": "Número de procesos o trámites simplificados dividido entre el número total de procesos o trámites incluidos en el plan de simplificación, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.2.5.",
+      "nivel": "accion",
+      "padre": "5.1.1.2",
+      "denominacion": "Actualizar el proceso de planeación institucional.",
+      "formula_indicador": "Número de áreas que aplican el proceso actualizado dividido entre el número total de áreas académicas y administrativas, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.2.6.",
+      "nivel": "accion",
+      "padre": "5.1.1.2",
+      "denominacion": "Desarrollar el sistema de indicadores institucionales.",
+      "formula_indicador": "Número de indicadores institucionales validados y documentados dividido entre el número total de indicadores previstos en el sistema, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.2.7.",
+      "nivel": "accion",
+      "padre": "5.1.1.2",
+      "denominacion": "Actualizar el proceso para la formulación, seguimiento y evaluación del Programa Operativo Anual.",
+      "formula_indicador": "Número de programas o proyectos formulados y evaluados con el proceso actualizado dividido entre el número total de programas o proyectos del POA, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.3.1.",
+      "nivel": "accion",
+      "padre": "5.1.1.3",
+      "denominacion": "Eficientar el uso y aplicación del subsidio ordinario.",
+      "formula_indicador": "Monto devengado del subsidio ordinario dividido entre el monto modificado autorizado del subsidio ordinario, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.3.2.",
+      "nivel": "accion",
+      "padre": "5.1.1.3",
+      "denominacion": "Gestionar recursos adicionales para la operación institucional.",
+      "formula_indicador": "Suma de los recursos adicionales ejercidos en el periodo"
+    },
+    {
+      "clave": "5.1.1.3.3.",
+      "nivel": "accion",
+      "padre": "5.1.1.3",
+      "denominacion": "Diversificar y ampliar los ingresos propios a través de la venta de servicios tecnológicos y educación continua.",
+      "formula_indicador": "Ingresos propios del año actual menos ingresos propios del año base, dividido entre ingresos propios del año base, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.3.4.",
+      "nivel": "accion",
+      "padre": "5.1.1.3",
+      "denominacion": "Gestionar recursos de fondos extraordinarios (FAM, U079, U080 y otros).",
+      "formula_indicador": "Monto ejercido de fondos extraordinarios dividido entre el monto total autorizado de fondos extraordinarios, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.4.",
+      "nivel": "linea_estrategica",
+      "padre": "5.1.1",
+      "denominacion": "Modernización y conservación de la infraestructura institucional para el desarrollo académico y operativo."
+    },
+    {
+      "clave": "5.1.1.5.",
+      "nivel": "linea_estrategica",
+      "padre": "5.1.1",
+      "denominacion": "Modernización de la infraestructura digital institucional."
+    },
+    {
+      "clave": "5.1.1.6.",
+      "nivel": "linea_estrategica",
+      "padre": "5.1.1",
+      "denominacion": "Transparencia institucional y rendición de cuentas para la confianza pública"
+    },
+    {
+      "clave": "5.1.1.4.1.",
+      "nivel": "accion",
+      "padre": "5.1.1.4",
+      "denominacion": "Implementar un plan maestro de actualización y mantenimiento a la infraestructura institucional.",
+      "formula_indicador": "Número de acciones o proyectos de mantenimiento ejecutados dividido entre el número de acciones o proyectos programados, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.4.2.",
+      "nivel": "accion",
+      "padre": "5.1.1.4",
+      "denominacion": "Proporcionar mantenimiento, preventivo, correctivo y de calibración a los equipos de laboratorio.",
+      "formula_indicador": "Número de equipos con mantenimiento y/o calibración vigente dividido entre el número total de equipos de laboratorio críticos, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.4.3.",
+      "nivel": "accion",
+      "padre": "5.1.1.4",
+      "denominacion": "Optimizar el uso de los espacios institucionales.",
+      "formula_indicador": "Horas de uso efectivo de espacios divididas entre las horas totales disponibles de esos espacios, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.4.4.",
+      "nivel": "accion",
+      "padre": "5.1.1.4",
+      "denominacion": "Actualizar el plan maestro de construcción.",
+      "formula_indicador": "Número de componentes o secciones del plan maestro actualizados dividido entre el número total de componentes o secciones definidos, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.5.1.",
+      "nivel": "accion",
+      "padre": "5.1.1.5",
+      "denominacion": "Mejorar el sistema de conectividad.",
+      "formula_indicador": "Número de espacios académicos y administrativos con conectividad conforme al estándar dividido entre el número total de espacios priorizados, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.5.2.",
+      "nivel": "accion",
+      "padre": "5.1.1.5",
+      "denominacion": "Mejorar servicios digitales para docencia, estudiantes y gestión.",
+      "formula_indicador": "Número de usuarios satisfechos o muy satisfechos dividido entre el número total de usuarios encuestados, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.5.3.",
+      "nivel": "accion",
+      "padre": "5.1.1.5",
+      "denominacion": "Desarrollar módulos para fortalecer los sistemas integrales de información.",
+      "formula_indicador": "Número de módulos desarrollados e implantados dividido entre el número total de módulos previstos, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.5.4.",
+      "nivel": "accion",
+      "padre": "5.1.1.5",
+      "denominacion": "Adquirir las herramientas digitales para el desarrollo de la gestión.",
+      "formula_indicador": "Número de herramientas digitales adquiridas y en uso dividido entre el número total de herramientas priorizadas en el plan, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.6.1.",
+      "nivel": "accion",
+      "padre": "5.1.1.6",
+      "denominacion": "Cumplir con los requerimientos de transparencia y rendición de cuentas.",
+      "formula_indicador": "Número de obligaciones de transparencia publicadas y actualizadas en tiempo dividido entre el número total de obligaciones vigentes, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.6.2.",
+      "nivel": "accion",
+      "padre": "5.1.1.6",
+      "denominacion": "Cumplir con los requerimientos de control interno y administración de riesgos.",
+      "formula_indicador": "Número de controles y acciones de administración de riesgos implementados dividido entre el número total de controles y acciones previstos en el programa de control interno, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.6.3.",
+      "nivel": "accion",
+      "padre": "5.1.1.6",
+      "denominacion": "Atender los informes de auditoría preventivas y correctivas.",
+      "formula_indicador": "Número de observaciones atendidas y cerradas dividido entre el número total de observaciones registradas en el periodo, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.6.4.",
+      "nivel": "accion",
+      "padre": "5.1.1.6",
+      "denominacion": "Realizar auditorías internas y externas en el marco del Sistema de Gestión Integral.",
+      "formula_indicador": "Número de auditorías internas y externas realizadas dividido entre el número de auditorías programadas en el periodo, multiplicado por 100"
+    },
+    {
+      "clave": "5.1.1.6.5.",
+      "nivel": "accion",
+      "padre": "5.1.1.6",
+      "denominacion": "Elaborar reportes anuales de cumplimiento de metas del PIDE con indicadores verificables.",
+      "formula_indicador": "Número de metas del PIDE con indicador definido, línea base y avance anual reportado dividido entre el número total de metas del PIDE, multiplicado por 100"
+    }
+  ]
+}

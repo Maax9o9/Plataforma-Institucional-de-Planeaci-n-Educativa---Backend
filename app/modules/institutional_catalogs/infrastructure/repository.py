@@ -7,7 +7,7 @@ from itertools import count
 
 from app.shared.domain.exceptions import ConflictError
 
-from ..domain.entities import Area, Instrument
+from ..domain.entities import Area, Instrument, InstrumentVersion
 
 
 class InMemoryAreaRepository:
@@ -64,3 +64,29 @@ class InMemoryInstrumentRepository:
         async with self._lock:
             instrument.version += 1
             self._items[instrument.id] = instrument
+
+
+class InMemoryInstrumentVersionRepository:
+    def __init__(self) -> None:
+        self._items: dict[int, InstrumentVersion] = {}
+        self._next_id = count(1)
+        self._lock = asyncio.Lock()
+
+    async def add(self, version: InstrumentVersion) -> None:
+        async with self._lock:
+            if await self._con_etiqueta(version.instrument_id, version.label) is not None:
+                raise ConflictError(
+                    f"El instrumento ya tiene una version con la etiqueta «{version.label}»."
+                )
+            if version.id == 0:
+                version.id = next(self._next_id)
+            self._items[version.id] = version
+
+    async def get_by_label(self, instrument_id: int, label: str) -> InstrumentVersion | None:
+        return await self._con_etiqueta(instrument_id, label)
+
+    async def _con_etiqueta(self, instrument_id: int, label: str) -> InstrumentVersion | None:
+        for version in self._items.values():
+            if version.instrument_id == instrument_id and version.label == label:
+                return version
+        return None
