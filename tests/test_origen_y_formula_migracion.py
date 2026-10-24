@@ -136,7 +136,7 @@ async def test_el_origen_y_la_formula_guardan_el_texto_entero(conexion):
 
 
 @pytest.mark.asyncio
-async def test_la_0039_no_se_baja_con_origenes_ni_formulas_escritos(conexion):
+async def test_la_0039_se_baja_con_filas_que_no_usan_las_columnas_nuevas(conexion):
     version = await _version(conexion)
     await _nodo(conexion, version, "1")
 
