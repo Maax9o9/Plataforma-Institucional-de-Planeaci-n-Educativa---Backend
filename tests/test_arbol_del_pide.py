@@ -29,7 +29,9 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, async_sessionmaker, create_async_engine
+from tests.test_restriccion_violada import _causa, _error
 
 from app.modules.institutional_catalogs.domain.ports.strategic_tree_repository import (
     StrategicTreeRepository,
@@ -47,6 +49,7 @@ from app.modules.institutional_catalogs.infrastructure.strategic_tree_repository
 )
 from app.modules.institutional_catalogs.infrastructure.strategic_tree_sql_repository import (
     SqlAlchemyStrategicTreeRepository,
+    _raise_domain_error,
 )
 from app.shared.domain.exceptions import (
     ConflictError,
@@ -262,13 +265,17 @@ async def test_el_nivel_llega_como_texto_y_se_guarda_como_nivel(arbol):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("clave", ["E1.L2.A3", "1.1.1.1.1", "12.10.11.13.14", "1.a", "A"])
+@pytest.mark.parametrize(
+    "clave", ["E1.L2.A3", "1.1.1.1.1", "12.10.11.13.14", "1.a", "A", "1.ñ", "Á2.3"]
+)
 async def test_la_clave_no_exige_formato_y_se_guarda_tal_cual(arbol, clave):
     """La fija el documento fuente y no tiene formato. Los valores son los que
     una regla de formato típica dejaría fuera: letras mezcladas con dígitos
     («E1.L2.A3»), los cinco segmentos del capítulo VII con segmentos de dos
-    dígitos, una letra minúscula tras el punto («1.a») y una clave de un solo
-    carácter sin puntos («A»). La clave del nodo no contiene la de su padre
+    dígitos, una letra minúscula tras el punto («1.a»), una clave de un solo
+    carácter sin puntos («A») y dos con acento («1.ñ», «Á2.3»), que es lo que
+    una regla «sólo ASCII» dejaría fuera sin que nada lo viera: ningún otro
+    valor de prueba lleva acento. La clave del nodo no contiene la de su padre
     («9»)."""
     version = await arbol.nueva_version()
     eje = await _nodo(arbol, version, "9", EJE)
@@ -281,10 +288,18 @@ async def test_la_clave_no_exige_formato_y_se_guarda_tal_cual(arbol, clave):
 async def test_la_clave_cabe_en_cincuenta_caracteres_y_no_en_cincuenta_y_uno(arbol):
     """`clave` es `VARCHAR(50)`: en PostgreSQL una de 51 revienta con un error de
     la base, y en memoria entraría sin protesta. El 50 exacto entra en las dos
-    -una regla «menos de 50» lo rechazaría-."""
+    -una regla «menos de 50» lo rechazaría-.
+
+    Y el tope es de **caracteres**, no de bytes: cincuenta eñes pesan cien
+    bytes en UTF-8, así que una regla que midiera `len(key.encode())` las
+    rechazaría donde `VARCHAR(50)` las acepta, y los dos adaptadores dejarían
+    de responder lo mismo ante la misma clave.
+    """
     version = await arbol.nueva_version()
     await _nodo(arbol, version, "x" * 50, EJE)
+    cincuenta_enes = await _nodo(arbol, version, "ñ" * 50, EJE, orden=2)
 
+    assert (await arbol.repo.get_by_id(cincuenta_enes.id)).key == "ñ" * 50
     with pytest.raises(ValidationError, match="clave"):
         await _nodo(arbol, version, "x" * 51, EJE)
 
@@ -970,13 +985,23 @@ async def test_actualizar_con_datos_ajenos_no_deja_nada_escrito(arbol):
 async def test_dos_hermanos_no_repiten_clave(arbol):
     """Hermanos son los que comparten padre. El duplicado difiere en todo lo
     demás -nivel, denominación y orden-, para que la única razón por la que
-    choque sea la clave: una regla que comparara más columnas lo dejaría pasar."""
+    choque sea la clave: una regla que comparara más columnas lo dejaría pasar.
+
+    Y después del choque el árbol es el que era: un `add` que guarda primero y
+    revisa después deja el duplicado escrito y levanta el conflicto igual, así
+    que mirar sólo la excepción no distingue las dos implementaciones.
+    """
     version = await arbol.nueva_version()
     eje = await _nodo(arbol, version, "1", EJE)
     await _nodo(arbol, version, "1.1", OBJETIVO_GENERAL, padre=eje, orden=1, nombre="Uno")
 
     with pytest.raises(ConflictError, match="clave"):
         await _nodo(arbol, version, "1.1", ACCION, padre=eje, orden=7, nombre="Otro texto")
+
+    assert [n.name for n in await arbol.repo.list_tree(version)] == [
+        "Denominación de 1",
+        "Uno",
+    ]
 
 
 @pytest.mark.asyncio
@@ -1007,6 +1032,31 @@ async def test_la_misma_clave_cabe_bajo_otro_padre_y_en_otra_version(arbol):
 
     assert len(await arbol.repo.list_tree(primera)) == 4
     assert len(await arbol.repo.list_tree(segunda)) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("una", "otra"),
+    [("1.1", "1.1 "), ("1.1", " 1.1"), ("a.b", "A.B")],
+    ids=["espacio_al_final", "espacio_al_principio", "mayusculas"],
+)
+async def test_la_unicidad_de_la_clave_compara_la_clave_tal_cual(arbol, una, otra):
+    """PostgreSQL compara `VARCHAR` carácter por carácter: «1.1» y «1.1 » son
+    dos claves distintas, y «a.b» y «A.B» también. La memoria tiene que hacer
+    lo mismo, o la unicidad de un adaptador deja de ser la del otro y lo que
+    uno acepta el otro lo rechaza sin que ninguna prueba lo vea.
+
+    Normalizar lo que el documento fuente imprime -el PDF trae unas claves con
+    punto final y otras sin él- es asunto de quien carga el PIDE. Lo que aquí
+    se fija es que el repositorio no normalice por su cuenta: si lo hiciera,
+    nadie podría cargar las dos claves que el documento distingue.
+    """
+    version = await arbol.nueva_version()
+    eje = await _nodo(arbol, version, "1", EJE)
+    await _nodo(arbol, version, una, OBJETIVO_GENERAL, padre=eje)
+    await _nodo(arbol, version, otra, OBJETIVO_GENERAL, padre=eje, orden=2)
+
+    assert [n.key for n in await arbol.repo.list_tree(version)] == ["1", una, otra]
 
 
 @pytest.mark.asyncio
@@ -1175,3 +1225,34 @@ async def test_una_version_que_no_existe_no_recibe_nodos(arbol_postgresql):
 
     with pytest.raises(ValidationError, match="versión"):
         await _nodo(arbol, INEXISTENTE, "1", EJE)
+
+
+# --------------------------------------------------------------------------- #
+# La traducción de los errores de la base
+# --------------------------------------------------------------------------- #
+
+
+def test_una_restriccion_que_el_repositorio_no_sabe_explicar_se_levanta_tal_cual():
+    """`_raise_domain_error` traduce dos restricciones por su nombre -la clave
+    repetida entre hermanos y la foránea de la versión- y vuelve a levantar lo
+    demás sin tocarlo. Las dos primeras ramas las ejercen otras pruebas por el
+    error de dominio que sale; la tercera no la ejercía nadie: traducir
+    **cualquier** `IntegrityError` como «clave repetida», o como un
+    `ValidationError` genérico, pasaba la suite entera.
+
+    Es la regresión exacta que el docstring de `viola_la_restriccion` describe:
+    decir «ya existe» cuando lo que falló fue un NOT NULL o una foránea de al
+    lado manda a buscar un duplicado que no está. Se exige que salga **la
+    misma** excepción y no una equivalente: una rama que levantara un
+    `IntegrityError` nuevo perdería el nombre de la restricción y el `DETAIL`
+    del servidor, que es con lo que se diagnostica.
+    """
+    ajeno = _error(causa=_causa("una_restriccion_de_al_lado"))
+    nodo = StrategicNode(
+        version_id=1, parent_id=None, kind=EJE, key="1", name="Da igual", order=1
+    )
+
+    with pytest.raises(IntegrityError) as caido:
+        _raise_domain_error(ajeno, nodo)
+
+    assert caido.value is ajeno
