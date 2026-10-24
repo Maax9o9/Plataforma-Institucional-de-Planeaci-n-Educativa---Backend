@@ -57,9 +57,7 @@ def rechazar_si_hay_valores(conexion: Connection, tabla: str, *columnas: str) ->
     for columna in columnas:
         if not _NOMBRE.match(columna):
             raise ValueError(f"«{columna}» no es un nombre de columna.")
-        cuantos = conexion.execute(
-            text(f"SELECT count({columna}) FROM {tabla}")
-        ).scalar_one()
+        cuantos = conexion.execute(text(f"SELECT count({columna}) FROM {tabla}")).scalar_one()
         if cuantos:
             con_valor.append(f"{tabla}.{columna} ({cuantos})")
     if not con_valor:

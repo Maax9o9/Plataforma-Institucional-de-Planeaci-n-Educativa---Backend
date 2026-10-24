@@ -1292,9 +1292,7 @@ def test_una_restriccion_que_el_repositorio_no_sabe_explicar_se_levanta_tal_cual
     del servidor, que es con lo que se diagnostica.
     """
     ajeno = _error(causa=_causa("una_restriccion_de_al_lado"))
-    nodo = StrategicNode(
-        version_id=1, parent_id=None, kind=EJE, key="1", name="Da igual", order=1
-    )
+    nodo = StrategicNode(version_id=1, parent_id=None, kind=EJE, key="1", name="Da igual", order=1)
 
     with pytest.raises(IntegrityError) as caido:
         _raise_domain_error(ajeno, nodo)

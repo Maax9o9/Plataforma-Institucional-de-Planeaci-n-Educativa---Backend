@@ -505,10 +505,7 @@ async def test_el_orden_se_exige_y_no_es_unico_entre_hermanos(conexion):
 
     empatados = (
         await conexion.execute(
-            text(
-                "SELECT count(*) FROM nodos_estrategicos "
-                "WHERE padre_id = :padre AND orden = 4"
-            ),
+            text("SELECT count(*) FROM nodos_estrategicos WHERE padre_id = :padre AND orden = 4"),
             {"padre": eje},
         )
     ).scalar_one()
@@ -595,9 +592,11 @@ async def _bajar_la_0038(conexion: AsyncConnection) -> None:
     asi que la base queda como estaba incluso cuando el downgrade llega a
     ejecutarse.
     """
-    modulo = ScriptDirectory.from_config(Config(str(RAIZ / "alembic.ini"))).get_revision(
-        "0038_arbol_del_pide"
-    ).module
+    modulo = (
+        ScriptDirectory.from_config(Config(str(RAIZ / "alembic.ini")))
+        .get_revision("0038_arbol_del_pide")
+        .module
+    )
 
     def correr(sincrona) -> None:
         with Operations.context(MigrationContext.configure(sincrona)):
