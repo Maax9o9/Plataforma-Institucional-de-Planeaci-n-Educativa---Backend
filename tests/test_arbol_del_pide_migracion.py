@@ -557,6 +557,21 @@ async def test_la_0038_no_se_baja_con_el_arbol_cargado(conexion):
     assert nodo_id == 0
 
 
+@pytest.mark.asyncio
+async def test_la_0038_no_se_baja_con_versiones_aunque_no_haya_ningun_nodo(conexion):
+    await _version(conexion, await _instrumento(conexion))
+
+    with pytest.raises(RuntimeError, match=r"instrumento_versiones \(1\)"):
+        await _bajar_la_0038(conexion)
+
+    assert (
+        await conexion.execute(text("SELECT count(*) FROM instrumento_versiones"))
+    ).scalar_one() == 1
+    assert (
+        await conexion.execute(text("SELECT to_regclass('nodos_estrategicos')"))
+    ).scalar_one() == "nodos_estrategicos"
+
+
 async def _indicador(conexion: AsyncConnection, nodo: int | None) -> int:
     sufijo = uuid4().hex[:8]
     area = (
