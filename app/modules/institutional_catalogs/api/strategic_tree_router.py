@@ -126,9 +126,11 @@ async def create_node(
     version_id: IdEnLaRuta,
     body: CrearNodoRequest,
     request: Request,
-    _user=Depends(requires_write_role),
+    usuario=Depends(requires_write_role),
 ) -> NodoRespuesta:
-    node = await CreateStrategicNode(request.app.state.strategic_tree_repository).execute(
+    node = await CreateStrategicNode(
+        request.app.state.strategic_tree_repository, request.app.state.event_bus
+    ).execute(
         version_id=version_id,
         parent_id=body.padre_id,
         kind=body.tipo,
@@ -136,6 +138,7 @@ async def create_node(
         name=body.denominacion,
         order=body.orden,
         indicator_formula=body.formula_indicador,
+        actor_id=usuario.id,
     )
     return NodoRespuesta.from_domain(node)
 
@@ -149,11 +152,11 @@ async def update_node(
     nodo_id: IdEnLaRuta,
     body: ActualizarNodoRequest,
     request: Request,
-    _user=Depends(requires_write_role),
+    usuario=Depends(requires_write_role),
 ) -> NodoRespuesta:
-    node = await UpdateStrategicNode(request.app.state.strategic_tree_repository).execute(
-        nodo_id, body.node_changes_from_sent_fields()
-    )
+    node = await UpdateStrategicNode(
+        request.app.state.strategic_tree_repository, request.app.state.event_bus
+    ).execute(nodo_id, body.node_changes_from_sent_fields(), actor_id=usuario.id)
     return NodoRespuesta.from_domain(node)
 
 
@@ -165,9 +168,9 @@ async def update_node(
 async def deactivate_node(
     nodo_id: IdEnLaRuta,
     request: Request,
-    _user=Depends(requires_write_role),
+    usuario=Depends(requires_write_role),
 ) -> NodoRespuesta:
-    node = await DeactivateStrategicNode(request.app.state.strategic_tree_repository).execute(
-        nodo_id
-    )
+    node = await DeactivateStrategicNode(
+        request.app.state.strategic_tree_repository, request.app.state.event_bus
+    ).execute(nodo_id, actor_id=usuario.id)
     return NodoRespuesta.from_domain(node)

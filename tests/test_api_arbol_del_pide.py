@@ -421,6 +421,31 @@ async def test_un_nodo_retirado_vuelve_con_patch_activo_pero_no_bajo_un_padre_re
     assert [n["clave"] for n in await _listar(escenario)] == ["E1", "E1.O1"]
 
 
+async def test_administrar_el_arbol_deja_bitacora(escenario):
+    clave = f"E-{uuid4().hex[:8]}"
+    eje = await _crear(escenario, clave)
+    corregido = await _corregir(escenario, eje, {"denominacion": "Corregida"})
+    retirado = await _retirar(escenario, eje)
+    assert (corregido.status_code, retirado.status_code) == (200, 200), corregido.text
+
+    escritas = await escenario.app.state.audit_repository.list(
+        aggregate_type="strategic_node", aggregate_id=eje["id"], limit=100, descending=False
+    )
+    mias = [entrada for entrada in escritas if entrada.data.get("key") == clave]
+
+    assert [(entrada.action, entrada.event_name) for entrada in mias] == [
+        ("created", "StrategicNodeCreated"),
+        ("updated", "StrategicNodeUpdated"),
+        ("deactivated", "StrategicNodeDeactivated"),
+    ]
+    assert [entrada.data for entrada in mias] == [
+        {"version_id": escenario.version, "key": clave, "kind": "eje"},
+        {"key": clave, "fields": ["name"]},
+        {"key": clave},
+    ]
+    assert {entrada.actor_name for entrada in mias} == {"Arbol PIDE planeacion"}
+
+
 @pytest.mark.parametrize("escritura", ["corregir", "retirar"])
 async def test_un_nodo_que_no_existe_contesta_404(escenario, escritura):
     metodo, url, cuerpo = _peticion(escritura, escenario.version, NODO_INEXISTENTE)

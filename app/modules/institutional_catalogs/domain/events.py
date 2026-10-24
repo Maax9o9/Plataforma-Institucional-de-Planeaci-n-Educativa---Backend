@@ -33,3 +33,18 @@ class InstrumentUpdated(DomainEvent):
 @dataclass(frozen=True)
 class InstrumentDeactivated(DomainEvent):
     pass
+
+
+@dataclass(frozen=True)
+class StrategicNodeCreated(DomainEvent):
+    pass
+
+
+@dataclass(frozen=True)
+class StrategicNodeUpdated(DomainEvent):
+    pass
+
+
+@dataclass(frozen=True)
+class StrategicNodeDeactivated(DomainEvent):
+    pass
