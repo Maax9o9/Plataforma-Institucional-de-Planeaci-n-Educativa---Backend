@@ -1114,16 +1114,32 @@ async def test_la_misma_clave_cabe_bajo_otro_padre_y_en_otra_version(arbol):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("una", "otra"),
-    [("1.1", "1.1 "), ("1.1", " 1.1"), ("a.b", "A.B")],
-    ids=["espacio_al_final", "espacio_al_principio", "mayusculas"],
+    [("1.1", "1.1 "), ("1.1", " 1.1"), (" 1.1 ", "1.1")],
+    ids=["espacio_al_final", "espacio_al_principio", "espacios_de_los_dos_lados"],
 )
-async def test_la_unicidad_de_la_clave_compara_la_clave_tal_cual(arbol, una, otra):
+async def test_la_clave_se_recorta_al_escribir_y_la_unicidad_lo_ve(arbol, una, otra):
     version = await arbol.nueva_version()
     eje = await _nodo(arbol, version, "1", EJE)
-    await _nodo(arbol, version, una, OBJETIVO_GENERAL, padre=eje)
-    await _nodo(arbol, version, otra, OBJETIVO_GENERAL, padre=eje, orden=2)
+    primero = await _nodo(arbol, version, una, OBJETIVO_GENERAL, padre=eje)
+    hermano = await _nodo(arbol, version, "9", OBJETIVO_GENERAL, padre=eje, orden=2)
 
-    assert [n.key for n in await arbol.repo.list_tree(version)] == ["1", una, otra]
+    with pytest.raises(ConflictError, match="clave"):
+        await _nodo(arbol, version, otra, OBJETIVO_GENERAL, padre=eje, orden=3)
+    with pytest.raises(ConflictError, match="clave"):
+        await arbol.repo.update(replace(hermano, key=otra))
+
+    assert primero.key == "1.1"
+    assert [n.key for n in await arbol.repo.list_tree(version)] == ["1", "1.1", "9"]
+
+
+@pytest.mark.asyncio
+async def test_la_unicidad_de_la_clave_distingue_mayusculas_de_minusculas(arbol):
+    version = await arbol.nueva_version()
+    eje = await _nodo(arbol, version, "1", EJE)
+    await _nodo(arbol, version, "a.b", OBJETIVO_GENERAL, padre=eje)
+    await _nodo(arbol, version, "A.B", OBJETIVO_GENERAL, padre=eje, orden=2)
+
+    assert [n.key for n in await arbol.repo.list_tree(version)] == ["1", "a.b", "A.B"]
 
 
 @pytest.mark.asyncio

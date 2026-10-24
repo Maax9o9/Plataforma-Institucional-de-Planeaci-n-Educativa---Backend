@@ -477,6 +477,14 @@ ERRORES_DEL_DOMINIO = {
         ),
         NO_CUMPLE_LAS_REGLAS,
     ),
+    "clave_repetida_salvo_por_los_espacios": (
+        lambda e, n: (
+            "POST",
+            f"{PIDE}/versiones/{e.version}/nodos",
+            {**CUERPO_DE_UN_EJE, "clave": " E1 "},
+        ),
+        CONFLICTO,
+    ),
     "clave_de_un_hermano": (
         lambda e, n: ("PATCH", f"{PIDE}/nodos/{n['eje']['id']}", {"clave": "E2"}),
         CONFLICTO,

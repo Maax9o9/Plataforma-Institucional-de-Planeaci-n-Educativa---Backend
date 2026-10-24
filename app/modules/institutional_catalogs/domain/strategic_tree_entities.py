@@ -85,7 +85,8 @@ class StrategicNode:
                 + ", ".join(kind.value for kind in NodeKind)
                 + "."
             ) from None
-        if not self.key.strip():
+        self.key = self.key.strip()
+        if not self.key:
             raise ValidationError("La clave del nodo es obligatoria.")
         if len(self.key) > KEY_MAX_LENGTH:
             raise ValidationError(
