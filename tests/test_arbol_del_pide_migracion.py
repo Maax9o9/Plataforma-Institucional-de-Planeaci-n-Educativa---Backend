@@ -21,14 +21,21 @@ from __future__ import annotations
 
 import os
 from datetime import date
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from alembic.script import ScriptDirectory
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 from app.shared.infrastructure.db.constraints import viola_la_restriccion
+
+RAIZ = Path(__file__).resolve().parents[1]
 
 #: Los cinco niveles que el capitulo VII del PIDE usa de verdad, de arriba a
 #: abajo. Tal como los guarda la columna `tipo`.
@@ -566,6 +573,79 @@ async def test_el_nivel_es_un_dato_y_el_esquema_no_lo_ata_a_la_posicion(conexion
         ("objetivo_general", True),
         ("accion", False),
     ]
+
+
+async def _bajar_la_0038(conexion: AsyncConnection) -> None:
+    """Corre el `downgrade` de verdad de la 0038 sobre esta conexion.
+
+    No es `alembic downgrade` en un proceso aparte -eso pide una base propia y
+    un minuto de migrar desde cero- sino la misma funcion que Alembic llamaria,
+    con el `op` que ella usa apuntando a la conexion de la prueba. Lo que se
+    mide es lo mismo: cambiar el cuerpo del `downgrade` por `pass` tiene que
+    hacer fallar esto. La transaccion de la fixture revierte el DDL al salir,
+    asi que la base queda como estaba incluso cuando el downgrade llega a
+    ejecutarse.
+    """
+    modulo = ScriptDirectory.from_config(Config(str(RAIZ / "alembic.ini"))).get_revision(
+        "0038_arbol_del_pide"
+    ).module
+
+    def correr(sincrona) -> None:
+        with Operations.context(MigrationContext.configure(sincrona)):
+            modulo.downgrade()
+
+    await conexion.run_sync(correr)
+
+
+@pytest.mark.asyncio
+async def test_la_0038_no_se_baja_con_el_arbol_cargado(conexion):
+    """El `downgrade` borraba las dos tablas y la columna sin mirar si habia
+    algo dentro, y ninguna prueba lo tocaba: cambiarlo por `pass` no rompia
+    nada. Con el arbol cargado se lleva lo que Planeacion haya editado o
+    retirado a mano, y a que nodo respondia cada indicador, sin dejar donde
+    volver a ponerlo.
+
+    El precedente es la 0037, que se niega a revertirse en vez de elegir que
+    perder. Aqui la negativa es condicional porque la perdida lo es: dice que
+    tabla y cuantas filas -quien baja una migracion a mano necesita saber que
+    iba a perder- y deja bajar cuando no hay nada que perder, que es lo que
+    necesita una instalacion recien migrada. Las dos mitades estan medidas: una
+    guarda incondicional pasaria la primera y se caeria en la segunda.
+    """
+    version = await _version(conexion, await _instrumento(conexion))
+    await _nodo(conexion, version, "1")
+
+    with pytest.raises(RuntimeError, match=r"nodos_estrategicos \(1\)"):
+        await _bajar_la_0038(conexion)
+
+    # Ni las tablas ni la columna se tocaron.
+    assert (
+        await conexion.execute(text("SELECT count(*) FROM nodos_estrategicos"))
+    ).scalar_one() == 1
+    assert (
+        await conexion.execute(text("SELECT to_regclass('instrumento_versiones')"))
+    ).scalar_one() == "instrumento_versiones"
+
+    # Y vacio si baja: el DDL vive en la transaccion de la fixture y se revierte.
+    await conexion.execute(text("DELETE FROM nodos_estrategicos"))
+    await conexion.execute(text("DELETE FROM instrumento_versiones"))
+    await _bajar_la_0038(conexion)
+
+    assert (
+        await conexion.execute(text("SELECT to_regclass('nodos_estrategicos')"))
+    ).scalar_one() is None
+    assert (
+        await conexion.execute(text("SELECT to_regclass('instrumento_versiones')"))
+    ).scalar_one() is None
+    nodo_id = (
+        await conexion.execute(
+            text(
+                "SELECT count(*) FROM information_schema.columns "
+                "WHERE table_name = 'indicadores' AND column_name = 'nodo_id'"
+            )
+        )
+    ).scalar_one()
+    assert nodo_id == 0
 
 
 async def _indicador(conexion: AsyncConnection, nodo: int | None) -> int:
