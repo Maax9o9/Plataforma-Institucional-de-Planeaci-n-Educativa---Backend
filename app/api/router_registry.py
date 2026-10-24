@@ -17,6 +17,9 @@ from app.modules.institutional_catalogs.api.reference_router import (
     router as reference_catalogs_router,
 )
 from app.modules.institutional_catalogs.api.router import router as catalogs_router
+from app.modules.institutional_catalogs.api.strategic_tree_router import (
+    router as strategic_tree_router,
+)
 from app.modules.notifications.api.router import router as notifications_router
 from app.modules.periods.api.router import router as periods_router
 from app.modules.poa_planning.api.cedula_router import router as poa_cedula_router
@@ -30,6 +33,7 @@ CORE_ROUTERS = (
     uploads_router,
     catalogs_router,
     reference_catalogs_router,
+    strategic_tree_router,
     periods_router,
     evidence_router,
     poa_planning_router,

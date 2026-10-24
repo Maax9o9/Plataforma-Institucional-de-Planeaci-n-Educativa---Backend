@@ -13,6 +13,9 @@ from app.modules.institutional_catalogs.infrastructure.sql_repository import (
     SqlAlchemyAreaRepository,
     SqlAlchemyInstrumentRepository,
 )
+from app.modules.institutional_catalogs.infrastructure.strategic_tree_sql_repository import (
+    SqlAlchemyStrategicTreeRepository,
+)
 from app.modules.periods.infrastructure.sql_repository import SqlAlchemyPeriodRepository
 
 
@@ -40,6 +43,7 @@ async def test_database_url_selects_sqlalchemy_adapters_without_connecting():
         assert isinstance(app.state.refresh_token_store, SqlAlchemyRefreshTokenStore)
         assert isinstance(app.state.area_repository, SqlAlchemyAreaRepository)
         assert isinstance(app.state.instrument_repository, SqlAlchemyInstrumentRepository)
+        assert isinstance(app.state.strategic_tree_repository, SqlAlchemyStrategicTreeRepository)
         assert isinstance(app.state.period_repository, SqlAlchemyPeriodRepository)
         assert isinstance(app.state.audit_repository, SqlAlchemyAuditRepository)
     finally:

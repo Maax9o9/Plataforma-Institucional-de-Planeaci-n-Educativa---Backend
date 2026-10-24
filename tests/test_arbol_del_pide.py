@@ -19,16 +19,17 @@ import os
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import UTC, date, datetime
 from itertools import count
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, async_sessionmaker, create_async_engine
 from tests.test_restriccion_violada import _causa, _error
 
+from app.modules.indicators_catalog.infrastructure.models import IndicatorModel
 from app.modules.institutional_catalogs.domain.ports.strategic_tree_repository import (
     StrategicTreeRepository,
 )
@@ -1041,6 +1042,64 @@ async def test_el_adaptador_sql_escribe_en_las_columnas_de_la_migracion(arbol_po
 
     await arbol.repo.deactivate(nodo.id)
     assert (await fila()).activo is False
+
+
+@pytest.mark.asyncio
+async def test_el_indicador_guarda_y_devuelve_el_nodo_al_que_responde(arbol_postgresql):
+    arbol = arbol_postgresql
+    version = await arbol.nueva_version()
+    nodo = await _nodo(arbol, version, "1", EJE)
+    sufijo = uuid4().hex[:8]
+    area = (
+        await arbol.conexion.execute(
+            text("INSERT INTO areas (nombre) VALUES (:nombre) RETURNING id"),
+            {"nombre": f"Area de prueba {sufijo}"},
+        )
+    ).scalar_one()
+    usuario = (
+        await arbol.conexion.execute(
+            text(
+                "INSERT INTO usuarios (nombre, correo, hash_password) "
+                "VALUES ('Prueba del modelo', :correo, 'test-only-hash') RETURNING id"
+            ),
+            {"correo": f"modelo-del-indicador-{sufijo}@example.com"},
+        )
+    ).scalar_one()
+    ahora = datetime.now(UTC)
+    fabrica = async_sessionmaker(
+        bind=arbol.conexion, expire_on_commit=False, join_transaction_mode="create_savepoint"
+    )
+    async with fabrica() as sesion:
+        sesion.add(
+            IndicatorModel(
+                clave=f"IND-{sufijo}",
+                nombre="Indicador de prueba",
+                metodo_calculo="(a / b) * 100",
+                unidad_medida="Porcentaje",
+                area_id=area,
+                responsable_id=usuario,
+                periodicidad="anual",
+                nodo_id=nodo.id,
+                creado_en=ahora,
+                actualizado_en=ahora,
+            )
+        )
+        await sesion.commit()
+
+    guardado = (
+        await arbol.conexion.execute(
+            text("SELECT nodo_id FROM indicadores WHERE clave = :clave"), {"clave": f"IND-{sufijo}"}
+        )
+    ).scalar_one()
+    async with fabrica() as sesion:
+        leido = (
+            await sesion.scalars(
+                select(IndicatorModel).where(IndicatorModel.clave == f"IND-{sufijo}")
+            )
+        ).one()
+
+    assert guardado == nodo.id
+    assert leido.nodo_id == nodo.id
 
 
 @pytest.mark.asyncio

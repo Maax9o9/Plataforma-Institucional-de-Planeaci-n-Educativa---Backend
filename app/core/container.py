@@ -76,6 +76,12 @@ from app.modules.institutional_catalogs.infrastructure.sql_repository import (
     SqlAlchemyAreaRepository,
     SqlAlchemyInstrumentRepository,
 )
+from app.modules.institutional_catalogs.infrastructure.strategic_tree_repository import (
+    InMemoryStrategicTreeRepository,
+)
+from app.modules.institutional_catalogs.infrastructure.strategic_tree_sql_repository import (
+    SqlAlchemyStrategicTreeRepository,
+)
 from app.modules.institutional_catalogs.infrastructure.unit_of_measure_repository import (
     InMemoryUnitOfMeasureRepository,
 )
@@ -121,6 +127,7 @@ class Resources:
     criteria_repository: object
     indicator_type_repository: object
     unit_of_measure_repository: object
+    strategic_tree_repository: object
     state_change_repository: object
     threshold_config_repository: object
     poa_repository: object
@@ -154,6 +161,7 @@ def create_resources(settings: Settings) -> Resources:
         criteria_repository = InMemoryReferenceRepository()
         indicator_type_repository = InMemoryReferenceRepository()
         unit_of_measure_repository = InMemoryUnitOfMeasureRepository()
+        strategic_tree_repository = InMemoryStrategicTreeRepository()
         state_change_repository = InMemoryStateChangeRepository()
         threshold_config_repository = InMemoryThresholdConfigRepository()
         poa_repository = InMemoryPoaRepository()
@@ -194,6 +202,7 @@ def create_resources(settings: Settings) -> Resources:
             IndicatorTypeModel,
         )
         unit_of_measure_repository = SqlAlchemyUnitOfMeasureRepository(db_session_factory)
+        strategic_tree_repository = SqlAlchemyStrategicTreeRepository(db_session_factory)
         state_change_repository = SqlAlchemyStateChangeRepository(db_session_factory)
         threshold_config_repository = SqlAlchemyThresholdConfigRepository(db_session_factory)
         poa_repository = SqlAlchemyPoaRepository(db_session_factory)
@@ -225,6 +234,7 @@ def create_resources(settings: Settings) -> Resources:
         criteria_repository=criteria_repository,
         indicator_type_repository=indicator_type_repository,
         unit_of_measure_repository=unit_of_measure_repository,
+        strategic_tree_repository=strategic_tree_repository,
         state_change_repository=state_change_repository,
         threshold_config_repository=threshold_config_repository,
         poa_repository=poa_repository,
