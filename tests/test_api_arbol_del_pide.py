@@ -371,7 +371,7 @@ async def test_retirar_con_activos_colgando_se_niega_y_dice_cuantos(escenario):
 
     respuesta = await _retirar(escenario, eje)
 
-    assert respuesta.status_code == 422, respuesta.text
+    assert (respuesta.status_code, respuesta.json()["code"]) == CONFLICTO, respuesta.text
     assert re.findall(r"\d+", respuesta.json()["message"]) == ["2"]
     assert [
         (n["clave"], n["activo"]) for n in await _listar(escenario, incluir_inactivos=True)

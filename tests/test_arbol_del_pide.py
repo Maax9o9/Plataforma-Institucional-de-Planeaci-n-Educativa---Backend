@@ -692,7 +692,7 @@ async def test_retirar_con_update_no_deja_activos_colgando(arbol):
     ya_retirado = await _nodo(arbol, version, "1.3", OBJETIVO_GENERAL, padre=eje, orden=3)
     await arbol.repo.deactivate(ya_retirado.id)
 
-    with pytest.raises(ValidationError, match="2 nodos activos cuelgan"):
+    with pytest.raises(ConflictError, match="2 nodos activos cuelgan"):
         await arbol.repo.update(replace(eje, is_active=False))
     assert (await arbol.repo.get_by_id(eje.id)).is_active is True
 

@@ -209,7 +209,7 @@ def ensure_nothing_active_hangs(node: StrategicNode, children: Iterable[Strategi
     activos = [child for child in children if child.is_active]
     if not activos:
         return
-    raise ValidationError(
+    raise ConflictError(
         f"«{node.key}» no se puede retirar: {len(activos)} nodos activos cuelgan de él "
         "y quedarían ofreciéndose bajo algo retirado. Retire primero lo que cuelga."
     )
