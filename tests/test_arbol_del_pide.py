@@ -572,9 +572,7 @@ def test_el_recorrido_desempata_por_id_con_la_entrada_barajada():
 
 
 def test_el_recorrido_grita_con_los_nodos_que_un_ciclo_esconde():
-    de_arriba = StrategicNode(
-        id=1, version_id=1, parent_id=2, kind=EJE, key="A", name="A", order=1
-    )
+    de_arriba = StrategicNode(id=1, version_id=1, parent_id=2, kind=EJE, key="A", name="A", order=1)
     de_abajo = StrategicNode(
         id=2, version_id=1, parent_id=1, kind=OBJETIVO_GENERAL, key="B", name="B", order=1
     )

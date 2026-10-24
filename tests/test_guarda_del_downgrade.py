@@ -73,9 +73,7 @@ def test_la_guarda_se_niega_nombrando_cada_tabla_y_columna_con_su_conteo():
     with pytest.raises(RuntimeError) as por_filas:
         rechazar_si_hay_filas(_ConexionQueApunta(cuantas=3), "nodos_estrategicos")
     with pytest.raises(RuntimeError) as por_valores:
-        rechazar_si_hay_valores(
-            _ConexionQueApunta(cuantas=7), "instrumento_versiones", "origen"
-        )
+        rechazar_si_hay_valores(_ConexionQueApunta(cuantas=7), "instrumento_versiones", "origen")
 
     assert "nodos_estrategicos (3)" in str(por_filas.value)
     assert "instrumento_versiones.origen (7)" in str(por_valores.value)

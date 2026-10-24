@@ -189,9 +189,7 @@ async def test_la_0039_no_se_baja_llevandose_lo_que_cuelga_de_sus_columnas(conex
 
     await intento.rollback()
     assert (
-        await conexion.execute(
-            text("SELECT count(*) FROM pg_views WHERE viewname LIKE 'sonda%'")
-        )
+        await conexion.execute(text("SELECT count(*) FROM pg_views WHERE viewname LIKE 'sonda%'"))
     ).scalar_one() == 1
     assert await _existe_la_columna(conexion, "nodos_estrategicos", "formula_indicador") == 1
     assert await _existe_la_columna(conexion, "instrumento_versiones", "origen") == 1
