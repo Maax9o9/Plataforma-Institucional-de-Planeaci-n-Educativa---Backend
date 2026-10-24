@@ -15,6 +15,7 @@ from ..application.use_cases.manage_strategic_tree import (
 from ..domain.strategic_tree_entities import (
     MAYOR_ENTERO_DE_LA_BASE,
     MENOR_ENTERO_DE_LA_BASE,
+    NodeKind,
     StrategicNode,
 )
 
@@ -40,7 +41,7 @@ requires_write_role = require_roles("planeacion", "admin_sistema")
 class CrearNodoRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    tipo: str
+    tipo: NodeKind
     clave: str
     denominacion: str
     orden: Orden
@@ -51,7 +52,7 @@ class CrearNodoRequest(BaseModel):
 class ActualizarNodoRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    tipo: str | None = None
+    tipo: NodeKind | None = None
     clave: str | None = None
     denominacion: str | None = None
     orden: Orden | None = None
@@ -77,7 +78,7 @@ class NodoRespuesta(BaseModel):
     id: int
     version_id: int
     padre_id: int | None
-    tipo: str
+    tipo: NodeKind
     clave: str
     denominacion: str
     orden: int

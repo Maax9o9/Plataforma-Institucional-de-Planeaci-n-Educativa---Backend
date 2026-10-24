@@ -460,6 +460,7 @@ async def test_un_nodo_que_no_existe_contesta_404(escenario, escritura):
 
 CONFLICTO = (409, "CONFLICT")
 NO_CUMPLE_LAS_REGLAS = (422, "BUSINESS_VALIDATION_ERROR")
+NO_CUMPLE_EL_ESQUEMA = (422, "REQUEST_VALIDATION_ERROR")
 
 ERRORES_DEL_DOMINIO = {
     "clave_repetida_entre_las_raices": (
@@ -492,7 +493,7 @@ ERRORES_DEL_DOMINIO = {
             f"{PIDE}/versiones/{e.version}/nodos",
             {**CUERPO_DE_UN_EJE, "tipo": "capitulo"},
         ),
-        NO_CUMPLE_LAS_REGLAS,
+        NO_CUMPLE_EL_ESQUEMA,
     ),
     "clave_en_blanco": (
         lambda e, n: (
@@ -659,6 +660,37 @@ async def test_un_null_explicito_se_rechaza_donde_el_nodo_no_admite_nulo(escenar
     assert respuesta.status_code == 422, respuesta.text
     assert respuesta.json()["code"] == "REQUEST_VALIDATION_ERROR"
     assert await _listar(escenario, incluir_inactivos=True) == [eje]
+
+
+def _referencias_del_tipo(esquemas: dict, nombre: str) -> list[str]:
+    propiedad = esquemas[nombre]["properties"]["tipo"]
+    return [
+        alternativa["$ref"]
+        for alternativa in propiedad.get("anyOf", [propiedad])
+        if "$ref" in alternativa
+    ]
+
+
+def test_el_openapi_declara_los_cinco_niveles_en_vez_de_una_cadena_libre():
+    esquemas = create_app(
+        Settings(
+            environment="testing",
+            secret_key="test-secret-key-with-more-than-32-characters",
+            database_url=None,
+            email_provider="console",
+        )
+    ).openapi()["components"]["schemas"]
+
+    assert esquemas["NodeKind"]["enum"] == [
+        "eje",
+        "objetivo_general",
+        "objetivo_especifico",
+        "linea_estrategica",
+        "accion",
+    ]
+    assert esquemas["NodeKind"]["type"] == "string"
+    for esquema in ("CrearNodoRequest", "ActualizarNodoRequest", "NodoRespuesta"):
+        assert _referencias_del_tipo(esquemas, esquema) == ["#/components/schemas/NodeKind"]
 
 
 def test_el_arbol_del_pide_se_publica_aunque_el_modulo_de_indicadores_duerma():
