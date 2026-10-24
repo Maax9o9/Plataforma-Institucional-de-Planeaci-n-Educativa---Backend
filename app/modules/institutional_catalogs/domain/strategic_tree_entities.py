@@ -204,5 +204,7 @@ def ensure_nothing_active_hangs(node: StrategicNode, children: Iterable[Strategi
 
 
 def repeated_key_error(node: StrategicNode) -> ConflictError:
-    """Dos hermanos no repiten clave -los ejes tampoco entre sí-."""
-    return ConflictError(f"Ya existe un nodo con la clave «{node.key}» bajo ese padre.")
+    entre_quienes = (
+        "bajo ese padre" if node.parent_id is not None else "entre las raíces de la versión"
+    )
+    return ConflictError(f"Ya existe un nodo con la clave «{node.key}» {entre_quienes}.")

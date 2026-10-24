@@ -35,6 +35,7 @@ from app.modules.institutional_catalogs.domain.ports.strategic_tree_repository i
 from app.modules.institutional_catalogs.domain.strategic_tree_entities import (
     NodeKind,
     StrategicNode,
+    in_traversal_order,
 )
 from app.modules.institutional_catalogs.infrastructure.models import (
     InstrumentModel,
@@ -472,6 +473,22 @@ async def test_el_arbol_se_lista_en_orden_de_recorrido_y_la_clave_no_ordena(arbo
     ]
 
 
+def test_el_recorrido_desempata_por_id_con_la_entrada_barajada():
+    raiz = StrategicNode(id=1, version_id=1, parent_id=None, kind=EJE, key="r", name="r", order=1)
+    orden_dos_id_diez = StrategicNode(
+        id=10, version_id=1, parent_id=1, kind=OBJETIVO_GENERAL, key="a", name="b", order=2
+    )
+    orden_uno_id_veinte = StrategicNode(
+        id=20, version_id=1, parent_id=1, kind=OBJETIVO_GENERAL, key="z", name="z", order=1
+    )
+    orden_uno_id_treinta = StrategicNode(
+        id=30, version_id=1, parent_id=1, kind=OBJETIVO_GENERAL, key="m", name="a", order=1
+    )
+    barajados = [orden_uno_id_treinta, raiz, orden_dos_id_diez, orden_uno_id_veinte]
+
+    assert [n.id for n in in_traversal_order(barajados)] == [1, 20, 30, 10]
+
+
 @pytest.mark.asyncio
 async def test_lo_retirado_sale_del_listado_normal_pero_no_arrastra_lo_que_cuelga_de_el(arbol):
     """«Retirarlo no afecta a lo que ya cuelga de él»: la acción de una línea
@@ -884,7 +901,7 @@ async def test_dos_hermanos_no_repiten_clave(arbol):
     eje = await _nodo(arbol, version, "1", EJE)
     await _nodo(arbol, version, "1.1", OBJETIVO_GENERAL, padre=eje, orden=1, nombre="Uno")
 
-    with pytest.raises(ConflictError, match="clave"):
+    with pytest.raises(ConflictError, match="«1.1» bajo ese padre"):
         await _nodo(arbol, version, "1.1", ACCION, padre=eje, orden=7, nombre="Otro texto")
 
     assert [n.name for n in await arbol.repo.list_tree(version)] == [
@@ -902,7 +919,7 @@ async def test_dos_ejes_de_la_misma_version_no_repiten_clave(arbol):
     version = await arbol.nueva_version()
     await _nodo(arbol, version, "1", EJE)
 
-    with pytest.raises(ConflictError, match="clave"):
+    with pytest.raises(ConflictError, match="«1» entre las raíces de la versión"):
         await _nodo(arbol, version, "1", EJE, orden=2, nombre="Otro eje")
 
 
