@@ -1020,8 +1020,12 @@ async def test_dos_ejes_de_la_misma_version_no_repiten_clave(arbol):
 @pytest.mark.asyncio
 async def test_la_misma_clave_cabe_bajo_otro_padre_y_en_otra_version(arbol):
     """La contraparte: la unicidad es entre hermanos de una versión, no más
-    ancha. Una que valiera para toda la versión, o para toda la base, impediría
-    cargar la versión siguiente del PIDE -que repite casi todas las claves-."""
+    ancha. Las dos que se podrían poner en su lugar se caen por razones
+    distintas: `UNIQUE (version_id, clave)` deja cargar la versión siguiente
+    -cada versión tiene su id- pero prohíbe la misma clave bajo dos padres de
+    una misma versión, que es lo que el documento trae; una que no lleve la
+    versión impide además cargar la siguiente, que repite casi todas las
+    claves."""
     primera = await arbol.nueva_version()
     segunda = await arbol.nueva_version()
     eje_uno = await _nodo(arbol, primera, "1", EJE)

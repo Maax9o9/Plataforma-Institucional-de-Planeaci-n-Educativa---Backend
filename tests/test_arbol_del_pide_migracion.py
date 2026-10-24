@@ -303,9 +303,18 @@ async def test_dos_ejes_de_la_misma_version_no_repiten_clave(conexion):
 @pytest.mark.asyncio
 async def test_la_misma_clave_cabe_bajo_otro_padre_y_en_otra_version(conexion):
     """La contraparte: la unicidad es entre hermanos de una version, no mas
-    ancha. Una que valiera para toda la version, o para toda la base, impediria
-    cargar la version siguiente del PIDE -que repite casi todas las claves- y
-    obligaria a que la clave dijera donde cuelga, que es justo lo que se evita."""
+    ancha. Las dos que se podrian poner en su lugar se caen por razones
+    distintas, y conviene no confundirlas:
+
+    - `UNIQUE (version_id, clave)` si deja cargar la version siguiente -cada
+      version tiene su id-, pero prohibe la misma clave bajo dos padres de una
+      misma version, que es lo que el documento trae;
+    - `UNIQUE (clave)` a secas, o cualquiera que no lleve la version, ademas
+      impide cargar la version siguiente del PIDE, que repite casi todas las
+      claves.
+
+    Las dos obligarian a que la clave dijera donde cuelga, que es justo lo que
+    esta migracion evita."""
     instrumento = await _instrumento(conexion)
     primera = await _version(conexion, instrumento, "V1")
     segunda = await _version(conexion, instrumento, "V2")
@@ -649,7 +658,11 @@ async def test_la_0038_no_se_baja_con_el_arbol_cargado(conexion):
 
 
 async def _indicador(conexion: AsyncConnection, nodo: int | None) -> int:
-    """Un indicador del catalogo nacional, con su area y su responsable."""
+    """Un indicador del catalogo por area, con su area y su responsable.
+
+    `indicadores` es el catalogo de cada area y por eso exige `area_id` y
+    `responsable_id`. En este proyecto «nacional» es el POA y el PSE, que son
+    otras tablas."""
     sufijo = uuid4().hex[:8]
     area = (
         await conexion.execute(

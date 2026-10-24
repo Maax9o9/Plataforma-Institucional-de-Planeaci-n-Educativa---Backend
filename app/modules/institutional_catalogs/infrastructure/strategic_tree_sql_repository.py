@@ -199,7 +199,8 @@ class SqlAlchemyStrategicTreeRepository:
         fija el documento fuente («E1.L2.A3») y puede no contener ni rastro de
         la de su padre: partirla encuentra nodos que no son o no encuentra nada.
         El padre está en `padre_id`, y subir por él es lo que hace esta
-        `WITH RECURSIVE`, la primera del repositorio.
+        `WITH RECURSIVE`, la primera de `app/`. La primera del repositorio la
+        dejó la tarea 1, en `tests/test_arbol_del_pide_migracion.py`.
 
         Es `UNION` y no `UNION ALL` a propósito. La base acepta un ciclo -la
         foránea compuesta sólo exige que el padre exista en la misma versión-, y
@@ -209,6 +210,17 @@ class SqlAlchemyStrategicTreeRepository:
         de colgar la petición. El repositorio no deja crear ciclos -`update` lo
         revisa antes de escribir-: esto es para cuando alguien los escriba por
         fuera.
+
+        **No agregue columnas a este `SELECT`.** Lo que hace terminar la
+        consulta es que `UNION` deduplique filas, y eso sólo funciona mientras
+        las filas sean `(id, padre_id)`: con una columna de distancia cada
+        vuelta del ciclo produce una fila distinta, `UNION` deja de deduplicar
+        y la consulta no termina. Medido sobre un ciclo escrito a mano: tal
+        como está termina en 1 ms; con la columna de distancia muere por
+        `statement_timeout` a los 2 s. Un tope de profundidad tampoco es la
+        salida -sobre un ciclo con `UNION` es inalcanzable, y sobre una cadena
+        legítima la truncaría en silencio: una de 5 000 niveles devuelve los
+        4 999 en 0.64 s-.
         """
         if start_id is None:
             return []

@@ -84,7 +84,9 @@ class StrategicNode:
     indicator_formula: str | None = None
 
     def validate(self) -> None:
-        """Lo que la base haría cumplir con un `CHECK` o un largo, y la memoria no.
+        """Lo que la base hace cumplir con un `CHECK` o un largo, y la memoria no
+        -más la clave y la denominación en blanco, que no las impide ninguna de
+        las dos: PostgreSQL acepta la cadena vacía en una columna `NOT NULL`-.
 
         Normaliza `kind`: acepta la cadena de un JSON y la deja como `NodeKind`,
         para que los dos adaptadores devuelvan el mismo tipo. No se llama al

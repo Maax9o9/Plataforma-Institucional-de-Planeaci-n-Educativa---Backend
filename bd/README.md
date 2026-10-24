@@ -12,7 +12,7 @@ de la cadena de revisiones de Alembic, que no es el del nombre**: cada uno
 depende de tipos y tablas creados en el anterior.
 
 La tabla de abajo documenta el **set inicial** (0001-0017). Lo que vino después
-—hasta la 0037— no se repite aquí: cada archivo lo dice en su cabecera, y una
+—de la 0018 en adelante— no se repite aquí: cada archivo lo dice en su cabecera, y una
 tabla que hay que actualizar a mano en cada migración es una tabla que se queda
 atrás, como ésta se quedó durante veinte. El índice que no miente es
 `ls bd/migrations/`; el que manda es `alembic/versions/`.
