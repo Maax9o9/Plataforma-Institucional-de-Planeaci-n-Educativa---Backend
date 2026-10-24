@@ -3,6 +3,7 @@ CREATE TABLE poa_inst_areas (
     ejercicio_id INTEGER NOT NULL,
     area_id      INTEGER NOT NULL,
     estado       VARCHAR(30) NOT NULL DEFAULT 'borrador',
+    version      INTEGER NOT NULL DEFAULT 1,
     creado_en    TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT fk_poa_inst_area_ejercicio
@@ -44,5 +45,6 @@ CREATE TABLE poa_inst_programacion_mensual (
         FOREIGN KEY (actividad_id) REFERENCES poa_inst_actividades(id) ON DELETE RESTRICT,
     CONSTRAINT uq_poa_inst_programacion_actividad_mes UNIQUE (actividad_id, mes),
     CONSTRAINT chk_poa_inst_programacion_mes CHECK (mes BETWEEN 1 AND 12),
-    CONSTRAINT chk_poa_inst_programacion_meta_no_negativa CHECK (meta >= 0)
+    CONSTRAINT chk_poa_inst_programacion_meta_no_negativa CHECK (meta >= 0),
+    CONSTRAINT chk_poa_inst_programacion_no_programado_sin_meta CHECK (programado OR meta = 0)
 );

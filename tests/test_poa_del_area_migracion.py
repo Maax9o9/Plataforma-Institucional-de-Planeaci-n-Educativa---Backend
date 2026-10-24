@@ -30,6 +30,7 @@ COLUMNAS = {
         "ejercicio_id": ("integer", False, None),
         "area_id": ("integer", False, None),
         "estado": ("character varying(30)", False, "'borrador'::character varying"),
+        "version": ("integer", False, "1"),
         "creado_en": ("timestamp with time zone", False, "now()"),
     },
     "poa_inst_actividades": {
@@ -87,6 +88,7 @@ RESTRICCIONES = {
     "uq_poa_inst_programacion_actividad_mes": "u",
     "chk_poa_inst_programacion_mes": "c",
     "chk_poa_inst_programacion_meta_no_negativa": "c",
+    "chk_poa_inst_programacion_no_programado_sin_meta": "c",
 }
 
 PADRE_DE = {
@@ -415,6 +417,26 @@ async def test_otra_area_u_otro_ejercicio_tienen_su_propio_poa(conexion):
     assert cuantos == 4
 
 
+async def test_un_poa_de_area_nace_en_borrador_en_la_version_uno_y_con_la_hora_de_su_creacion(
+    conexion,
+):
+    poa_area = await _poa_area(conexion)
+
+    fila = (
+        await conexion.execute(
+            text(
+                "SELECT estado, version, creado_en = now() AS con_la_hora "
+                "FROM poa_inst_areas WHERE id = :id"
+            ),
+            {"id": poa_area},
+        )
+    ).one()
+
+    assert fila.estado == "borrador"
+    assert fila.version == 1
+    assert fila.con_la_hora is True
+
+
 @pytest.mark.parametrize("estado", ["borrador", "enviado"])
 async def test_el_estado_de_un_poa_de_area_es_uno_de_los_dos_del_primer_tramo(conexion, estado):
     poa_area = await _poa_area(conexion, estado=estado)
@@ -533,6 +555,25 @@ async def test_una_meta_mensual_negativa_no_entra_pero_cero_si(conexion, meta):
     )
 
     assert viola_la_restriccion(error, "chk_poa_inst_programacion_meta_no_negativa")
+
+
+@pytest.mark.parametrize("meta", [Decimal("0.0001"), Decimal("5"), Decimal("1000")])
+async def test_un_mes_no_programado_no_lleva_meta_pero_la_misma_meta_cabe_en_uno_programado(
+    conexion, meta
+):
+    actividad = await _actividad(conexion)
+
+    error = await _intentar_insertar(
+        conexion,
+        "poa_inst_programacion_mensual",
+        actividad_id=actividad,
+        mes=1,
+        meta=meta,
+        programado=False,
+    )
+
+    assert viola_la_restriccion(error, "chk_poa_inst_programacion_no_programado_sin_meta")
+    await _programar(conexion, actividad, 1, meta, True)
 
 
 async def test_un_borrador_incompleto_se_guarda_con_solo_su_nombre(conexion):
