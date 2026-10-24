@@ -521,8 +521,20 @@ async def _bajar_la_0038(conexion: AsyncConnection) -> None:
     await conexion.run_sync(correr)
 
 
+@pytest.fixture
+async def sin_lo_que_cuelga_del_arbol(conexion):
+    guion = ScriptDirectory.from_config(Config(str(RAIZ / "alembic.ini")))
+    for revision in guion.iterate_revisions("head", "0038_arbol_del_pide"):
+
+        def correr(sincrona, modulo=revision.module) -> None:
+            with Operations.context(MigrationContext.configure(sincrona)):
+                modulo.downgrade()
+
+        await conexion.run_sync(correr)
+
+
 @pytest.mark.asyncio
-async def test_la_0038_no_se_baja_con_el_arbol_cargado(conexion):
+async def test_la_0038_no_se_baja_con_el_arbol_cargado(conexion, sin_lo_que_cuelga_del_arbol):
     version = await _version(conexion, await _instrumento(conexion))
     await _nodo(conexion, version, "1")
 
@@ -598,7 +610,9 @@ LO_QUE_SIGUE_COLGANDO = (
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("cuelga", list(LO_QUE_CUELGA_DE_LAS_TABLAS_DE_LA_0038))
-async def test_la_0038_no_se_baja_llevandose_lo_que_cuelga_de_sus_tablas(conexion, cuelga):
+async def test_la_0038_no_se_baja_llevandose_lo_que_cuelga_de_sus_tablas(
+    conexion, sin_lo_que_cuelga_del_arbol, cuelga
+):
     crear, se_queja_de = LO_QUE_CUELGA_DE_LAS_TABLAS_DE_LA_0038[cuelga]
     await conexion.execute(text(crear))
     intento = await conexion.begin_nested()
