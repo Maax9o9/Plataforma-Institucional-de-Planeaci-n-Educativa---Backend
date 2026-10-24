@@ -185,6 +185,28 @@ async def _ids(arbol: Arbol, version: int, **opciones) -> list[int]:
     return [n.id for n in await arbol.repo.list_tree(version, **opciones)]
 
 
+_COLUMNA_DE = {"is_active": "activo", "kind": "tipo"}
+
+
+async def _escrito_por_fuera(arbol: Arbol, nodo: StrategicNode, **cambios) -> None:
+    if arbol.conexion is None:
+        guardado = arbol.repo._nodes[nodo.id]
+        for atributo, valor in cambios.items():
+            setattr(guardado, atributo, valor)
+        return
+    asignaciones = ", ".join(f"{_COLUMNA_DE[atributo]} = :{atributo}" for atributo in cambios)
+    await arbol.conexion.execute(
+        text(f"UPDATE nodos_estrategicos SET {asignaciones} WHERE id = :id"),
+        {
+            "id": nodo.id,
+            **{
+                atributo: valor.value if isinstance(valor, NodeKind) else valor
+                for atributo, valor in cambios.items()
+            },
+        },
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Los niveles
 # --------------------------------------------------------------------------- #
@@ -396,6 +418,7 @@ async def test_los_ancestros_se_consultan_no_se_parsean(arbol):
     senuelo_eje = await _nodo(arbol, version, "E1", EJE)
     await _nodo(arbol, version, "E1.L2", OBJETIVO_GENERAL, padre=senuelo_eje)
     eje, general, especifico, linea = await _cadena(arbol, version, ("7", "Q", "R.9", "M"))
+    senuelo_posterior = await _cadena(arbol, version, ("Z", "Z.1", "Z.1.1", "Z.1.1.1"))
     accion = await _nodo(arbol, version, "E1.L2.A3", ACCION, padre=linea)
 
     ancestros = await arbol.repo.ancestors(accion.id)
@@ -403,6 +426,7 @@ async def test_los_ancestros_se_consultan_no_se_parsean(arbol):
     assert [n.id for n in ancestros] == [eje.id, general.id, especifico.id, linea.id]
     assert [n.kind for n in ancestros] == [EJE, OBJETIVO_GENERAL, OBJETIVO_ESPECIFICO, LINEA]
     assert ancestros == [eje, general, especifico, linea]
+    assert [n for n in senuelo_posterior if n in ancestros] == []
 
 
 @pytest.mark.asyncio
@@ -488,6 +512,25 @@ def test_el_recorrido_desempata_por_id_con_la_entrada_barajada():
     barajados = [orden_uno_id_treinta, raiz, orden_dos_id_diez, orden_uno_id_veinte]
 
     assert [n.id for n in in_traversal_order(barajados)] == [1, 20, 30, 10]
+
+
+def test_el_recorrido_grita_con_los_nodos_que_un_ciclo_esconde():
+    de_arriba = StrategicNode(
+        id=1, version_id=1, parent_id=2, kind=EJE, key="A", name="A", order=1
+    )
+    de_abajo = StrategicNode(
+        id=2, version_id=1, parent_id=1, kind=OBJETIVO_GENERAL, key="B", name="B", order=1
+    )
+    colgado = StrategicNode(
+        id=3, version_id=1, parent_id=2, kind=OBJETIVO_ESPECIFICO, key="D", name="D", order=1
+    )
+    nieto = StrategicNode(id=4, version_id=1, parent_id=3, kind=LINEA, key="E", name="E", order=1)
+    ajeno = StrategicNode(id=5, version_id=1, parent_id=None, kind=EJE, key="C", name="C", order=2)
+
+    with pytest.raises(InvalidStateError, match=r"4 nodos no se alcanzan.*ids 1, 2, 3, 4"):
+        in_traversal_order([de_arriba, de_abajo, colgado, nieto, ajeno])
+
+    assert [n.id for n in in_traversal_order([ajeno])] == [5]
 
 
 @pytest.mark.asyncio
@@ -602,6 +645,24 @@ async def test_retirar_con_update_no_deja_activos_colgando(arbol):
 
     await arbol.repo.update(replace(otro, is_active=False))
     assert (await arbol.repo.get_by_id(otro.id)).is_active is False
+
+
+@pytest.mark.asyncio
+async def test_un_nodo_ya_retirado_con_activos_colgando_se_corrige_y_se_vuelve_a_retirar(arbol):
+    version = await arbol.nueva_version()
+    eje = await _nodo(arbol, version, "1", EJE)
+    linea = await _nodo(arbol, version, "1.1", LINEA, padre=eje)
+    accion = await _nodo(arbol, version, "1.1.1", ACCION, padre=linea)
+    await _escrito_por_fuera(arbol, linea, is_active=False)
+    retirada = await arbol.repo.get_by_id(linea.id)
+    assert retirada.is_active is False
+
+    await arbol.repo.update(replace(retirada, name="Texto corregido"))
+    await arbol.repo.deactivate(linea.id)
+
+    assert await arbol.repo.get_by_id(linea.id) == replace(retirada, name="Texto corregido")
+    assert await arbol.repo.get_by_id(accion.id) == accion
+    assert (await arbol.repo.get_by_id(eje.id)).is_active is True
 
 
 @pytest.mark.asyncio
@@ -722,6 +783,61 @@ async def test_un_nodo_no_puede_ser_su_propio_ancestro(arbol, quien, bajo):
         await arbol.repo.update(replace(nodo, parent_id=descendiente.id))
 
     assert await arbol.repo.list_tree(version) == antes
+
+
+@pytest.mark.asyncio
+async def test_el_ciclo_se_rechaza_aunque_el_nivel_ya_no_lo_impida(arbol):
+    version = await arbol.nueva_version()
+    de_arriba = await _nodo(arbol, version, "A", EJE)
+    de_abajo = await _nodo(arbol, version, "B", OBJETIVO_GENERAL, padre=de_arriba)
+    await _escrito_por_fuera(arbol, de_arriba, kind=ACCION)
+    roto = await arbol.repo.get_by_id(de_arriba.id)
+    assert roto.kind is ACCION
+
+    with pytest.raises(ValidationError, match="descendientes"):
+        await arbol.repo.update(replace(roto, parent_id=de_abajo.id))
+
+    assert [n.id for n in await arbol.repo.ancestors(de_abajo.id)] == [de_arriba.id]
+    assert await _ids(arbol, version, include_inactive=True) == [de_arriba.id, de_abajo.id]
+
+
+@pytest.mark.asyncio
+async def test_un_ancestro_con_la_misma_clave_no_es_el_nodo_que_se_muda(arbol):
+    version = await arbol.nueva_version()
+    eje = await _nodo(arbol, version, "E", EJE)
+    ancestro_homonimo = await _nodo(arbol, version, "1.1", OBJETIVO_GENERAL, padre=eje)
+    destino = await _nodo(arbol, version, "D", OBJETIVO_ESPECIFICO, padre=ancestro_homonimo)
+    otro_eje = await _nodo(arbol, version, "F", EJE, orden=2)
+    mudado = await _nodo(arbol, version, "1.1", LINEA, padre=otro_eje)
+
+    await arbol.repo.update(replace(mudado, parent_id=destino.id))
+
+    assert [n.id for n in await arbol.repo.ancestors(mudado.id)] == [
+        eje.id,
+        ancestro_homonimo.id,
+        destino.id,
+    ]
+    assert await _ids(arbol, version, include_inactive=True) == [
+        eje.id,
+        ancestro_homonimo.id,
+        destino.id,
+        mudado.id,
+        otro_eje.id,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cambiar_el_nivel_de_un_hijo_sin_mudarlo_lo_mide_contra_su_padre(arbol):
+    version = await arbol.nueva_version()
+    eje = await _nodo(arbol, version, "1", EJE)
+    hijo = await _nodo(arbol, version, "1.1", OBJETIVO_GENERAL, padre=eje)
+
+    with pytest.raises(ValidationError, match="no puede colgar de uno de nivel"):
+        await arbol.repo.update(replace(hijo, kind=EJE))
+    assert (await arbol.repo.get_by_id(hijo.id)).kind is OBJETIVO_GENERAL
+
+    await arbol.repo.update(replace(hijo, kind=ACCION))
+    assert (await arbol.repo.get_by_id(hijo.id)).kind is ACCION
 
 
 @pytest.mark.asyncio
@@ -1130,26 +1246,6 @@ async def test_los_ancestros_terminan_aunque_la_base_tenga_un_ciclo(arbol_postgr
         await arbol.repo.list_tree(version, include_inactive=True)
 
     assert await arbol.repo.get_by_id(ajeno.id) == ajeno
-
-
-@pytest.mark.asyncio
-async def test_el_ciclo_se_rechaza_aunque_el_nivel_ya_no_lo_impida(arbol_postgresql):
-    arbol = arbol_postgresql
-    version = await arbol.nueva_version()
-    de_arriba = await _nodo(arbol, version, "A", EJE)
-    de_abajo = await _nodo(arbol, version, "B", OBJETIVO_GENERAL, padre=de_arriba)
-    await arbol.conexion.execute(
-        text("UPDATE nodos_estrategicos SET tipo = 'accion' WHERE id = :id"),
-        {"id": de_arriba.id},
-    )
-    roto = await arbol.repo.get_by_id(de_arriba.id)
-    assert roto.kind is ACCION
-
-    with pytest.raises(ValidationError, match="descendientes"):
-        await arbol.repo.update(replace(roto, parent_id=de_abajo.id))
-
-    assert [n.id for n in await arbol.repo.ancestors(de_abajo.id)] == [de_arriba.id]
-    assert await _ids(arbol, version, include_inactive=True) == [de_arriba.id, de_abajo.id]
 
 
 @pytest.mark.asyncio
