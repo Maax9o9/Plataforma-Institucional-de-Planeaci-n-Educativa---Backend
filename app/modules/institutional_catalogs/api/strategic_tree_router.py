@@ -12,15 +12,17 @@ from ..application.use_cases.manage_strategic_tree import (
     DeactivateStrategicNode,
     UpdateStrategicNode,
 )
-from ..domain.strategic_tree_entities import StrategicNode
+from ..domain.strategic_tree_entities import (
+    MAYOR_ENTERO_DE_LA_BASE,
+    MENOR_ENTERO_DE_LA_BASE,
+    StrategicNode,
+)
 
 router = APIRouter(prefix="/pide", tags=["Catalogo del PIDE"])
 
-INT32_MAX = 2_147_483_647
-
-IdEnLaRuta = Annotated[int, Path(ge=1, le=INT32_MAX)]
-IdDeNodo = Annotated[int, Field(ge=1, le=INT32_MAX)]
-Orden = Annotated[int, Field(ge=-INT32_MAX - 1, le=INT32_MAX)]
+IdEnLaRuta = Annotated[int, Path(ge=1, le=MAYOR_ENTERO_DE_LA_BASE)]
+IdDeNodo = Annotated[int, Field(ge=1, le=MAYOR_ENTERO_DE_LA_BASE)]
+Orden = Annotated[int, Field(ge=MENOR_ENTERO_DE_LA_BASE, le=MAYOR_ENTERO_DE_LA_BASE)]
 
 ATTRIBUTE_OF_FIELD = {
     "tipo": "kind",

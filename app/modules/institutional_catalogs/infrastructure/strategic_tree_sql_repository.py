@@ -15,6 +15,7 @@ from app.shared.infrastructure.db.constraints import viola_la_restriccion
 from ..domain.strategic_tree_entities import (
     NodeKind,
     StrategicNode,
+    cabe_en_el_entero_de_la_base,
     ensure_children_stay_deeper,
     ensure_kind_fits_under,
     ensure_no_cycle,
@@ -65,6 +66,8 @@ class SqlAlchemyStrategicTreeRepository:
     async def list_tree(
         self, version_id: int, *, include_inactive: bool = False
     ) -> list[StrategicNode]:
+        if not cabe_en_el_entero_de_la_base(version_id):
+            return []
         async with self.session_factory() as session:
             models = (
                 await session.scalars(
@@ -80,6 +83,8 @@ class SqlAlchemyStrategicTreeRepository:
         ]
 
     async def get_by_id(self, node_id: int) -> StrategicNode | None:
+        if not cabe_en_el_entero_de_la_base(node_id):
+            return None
         async with self.session_factory() as session:
             model = await session.get(StrategicNodeModel, node_id)
             return _to_domain(model) if model is not None else None
@@ -114,6 +119,8 @@ class SqlAlchemyStrategicTreeRepository:
 
     async def update(self, node: StrategicNode) -> None:
         node.validate()
+        if not cabe_en_el_entero_de_la_base(node.id):
+            raise ResourceNotFoundError("El nodo no existe.")
         async with self.session_factory() as session:
             model = await session.get(StrategicNodeModel, node.id)
             if model is None:
@@ -149,6 +156,8 @@ class SqlAlchemyStrategicTreeRepository:
                 _raise_domain_error(exc, node)
 
     async def deactivate(self, node_id: int) -> None:
+        if not cabe_en_el_entero_de_la_base(node_id):
+            raise ResourceNotFoundError("El nodo no existe.")
         async with self.session_factory() as session:
             result = await session.execute(
                 update(StrategicNodeModel)
@@ -160,6 +169,8 @@ class SqlAlchemyStrategicTreeRepository:
             await session.commit()
 
     async def ancestors(self, node_id: int) -> list[StrategicNode]:
+        if not cabe_en_el_entero_de_la_base(node_id):
+            raise ResourceNotFoundError("El nodo no existe.")
         async with self.session_factory() as session:
             desde_el_nodo_hasta_el_eje = await self._upward(session, node_id)
         if not desde_el_nodo_hasta_el_eje:

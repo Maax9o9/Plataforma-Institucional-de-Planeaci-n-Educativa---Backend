@@ -34,6 +34,8 @@ from app.modules.institutional_catalogs.domain.ports.strategic_tree_repository i
     StrategicTreeRepository,
 )
 from app.modules.institutional_catalogs.domain.strategic_tree_entities import (
+    MAYOR_ENTERO_DE_LA_BASE,
+    MENOR_ENTERO_DE_LA_BASE,
     NodeKind,
     StrategicNode,
     in_traversal_order,
@@ -321,6 +323,61 @@ async def test_la_clave_y_la_denominacion_no_pueden_estar_vacias(arbol, vacia):
         await _nodo(arbol, version, "1", EJE, nombre=vacia)
 
     assert await arbol.repo.list_tree(version, include_inactive=True) == []
+
+
+LO_QUE_LA_BASE_NO_PUEDE_GUARDAR = {
+    "orden_mas_grande_que_el_entero": ("order", MAYOR_ENTERO_DE_LA_BASE + 1, "no cabe"),
+    "orden_mas_chico_que_el_entero": ("order", MENOR_ENTERO_DE_LA_BASE - 1, "no cabe"),
+    "version_mas_grande_que_el_entero": ("version_id", MAYOR_ENTERO_DE_LA_BASE + 1, "no cabe"),
+    "padre_mas_grande_que_el_entero": ("parent_id", MAYOR_ENTERO_DE_LA_BASE + 1, "no cabe"),
+    "clave_con_el_caracter_nulo": ("key", "E1\0", "carácter nulo"),
+    "denominacion_con_el_caracter_nulo": ("name", "Denominación\0", "carácter nulo"),
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("caso", list(LO_QUE_LA_BASE_NO_PUEDE_GUARDAR))
+async def test_lo_que_la_base_no_puede_guardar_lo_niegan_los_dos_adaptadores(arbol, caso):
+    campo, valor, se_queja_de = LO_QUE_LA_BASE_NO_PUEDE_GUARDAR[caso]
+    version = await arbol.nueva_version()
+    guardado = await _nodo(arbol, version, "1", EJE)
+    nuevo = StrategicNode(
+        version_id=version, parent_id=None, kind=EJE, key="2", name="Otro eje", order=2
+    )
+
+    with pytest.raises(ValidationError, match=se_queja_de):
+        await arbol.repo.add(replace(nuevo, **{campo: valor}))
+    with pytest.raises(ValidationError, match=se_queja_de):
+        await arbol.repo.update(replace(guardado, **{campo: valor}))
+
+    assert await arbol.repo.list_tree(version, include_inactive=True) == [guardado]
+
+
+@pytest.mark.asyncio
+async def test_los_extremos_del_entero_de_la_base_si_se_guardan(arbol):
+    version = await arbol.nueva_version()
+    mayor = await _nodo(arbol, version, "1", EJE, orden=MAYOR_ENTERO_DE_LA_BASE)
+    menor = await _nodo(arbol, version, "2", EJE, orden=MENOR_ENTERO_DE_LA_BASE)
+
+    assert await _ids(arbol, version) == [menor.id, mayor.id]
+
+
+@pytest.mark.asyncio
+async def test_un_id_que_la_base_no_puede_guardar_no_existe_en_ninguno_de_los_dos(arbol):
+    version = await arbol.nueva_version()
+    eje = await _nodo(arbol, version, "1", EJE)
+    ni_cabe_ni_existe = MAYOR_ENTERO_DE_LA_BASE + 1
+
+    assert await arbol.repo.get_by_id(ni_cabe_ni_existe) is None
+    assert await arbol.repo.list_tree(ni_cabe_ni_existe) == []
+    with pytest.raises(ResourceNotFoundError):
+        await arbol.repo.ancestors(ni_cabe_ni_existe)
+    with pytest.raises(ResourceNotFoundError):
+        await arbol.repo.deactivate(ni_cabe_ni_existe)
+    with pytest.raises(ResourceNotFoundError):
+        await arbol.repo.update(replace(eje, id=ni_cabe_ni_existe))
+
+    assert await arbol.repo.list_tree(version, include_inactive=True) == [eje]
 
 
 # --------------------------------------------------------------------------- #

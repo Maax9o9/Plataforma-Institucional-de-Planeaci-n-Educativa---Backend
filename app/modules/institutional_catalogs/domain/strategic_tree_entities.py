@@ -26,6 +26,13 @@ from app.shared.domain.exceptions import ConflictError, InvalidStateError, Valid
 #: `clave` es `VARCHAR(50)` en la base.
 KEY_MAX_LENGTH = 50
 
+MAYOR_ENTERO_DE_LA_BASE = 2**31 - 1
+MENOR_ENTERO_DE_LA_BASE = -(2**31)
+
+
+def cabe_en_el_entero_de_la_base(numero: int) -> bool:
+    return MENOR_ENTERO_DE_LA_BASE <= numero <= MAYOR_ENTERO_DE_LA_BASE
+
 
 class NodeKind(StrEnum):
     """Los cinco niveles, de arriba a abajo.
@@ -86,6 +93,19 @@ class StrategicNode:
             )
         if not self.name.strip():
             raise ValidationError("La denominación del nodo es obligatoria.")
+        if "\0" in self.key or "\0" in self.name:
+            raise ValidationError(
+                "Ni la clave ni la denominación del nodo admiten el carácter nulo."
+            )
+        for campo, numero in (
+            ("orden", self.order),
+            ("versión", self.version_id),
+            ("padre", self.parent_id),
+        ):
+            if numero is not None and not cabe_en_el_entero_de_la_base(numero):
+                raise ValidationError(
+                    f"El «{campo}» del nodo no cabe en el entero de la base: {numero}."
+                )
 
 
 def in_traversal_order(nodes: Iterable[StrategicNode]) -> list[StrategicNode]:
