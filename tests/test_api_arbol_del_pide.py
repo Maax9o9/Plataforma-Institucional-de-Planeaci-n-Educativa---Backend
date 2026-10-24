@@ -24,6 +24,7 @@ from app.modules.institutional_catalogs.infrastructure.strategic_tree_sql_reposi
 
 PIDE = "/api/v1/pide"
 NODO_INEXISTENTE = 10**9
+VERSION_INEXISTENTE = 10**9 - 1
 ENTERO_MAS_GRANDE_QUE_LA_BASE = 2**31
 ENTERO_MAS_CHICO_QUE_LA_BASE = -(2**31) - 1
 ENTERO_MAS_GRANDE_QUE_CABE = 2**31 - 1
@@ -46,8 +47,8 @@ class Escenario:
     version: int
 
 
-async def _cabeceras(app, client, rol: Role) -> dict[str, str]:
-    correo = f"arbol-pide-{rol.value}-{uuid4().hex[:8]}@example.com"
+async def _cabeceras(app, client, rol: Role, correo: str | None = None) -> dict[str, str]:
+    correo = correo or f"arbol-pide-{rol.value}-{uuid4().hex[:8]}@example.com"
     await CreateUser(
         app.state.user_repository, app.state.password_hasher, app.state.event_bus
     ).execute(
@@ -231,7 +232,7 @@ async def test_los_roles_de_escritura_crean_corrigen_y_retiran(escenario, rol):
 async def test_el_arbol_llega_en_orden_de_recorrido(escenario):
     e2 = await _crear(escenario, "E2", orden=2)
     await _crear(escenario, "E2.O1", "objetivo_general", padre=e2, orden=1)
-    await _crear(escenario, "E10", orden=3)
+    await _crear(escenario, "E10", orden=0)
     e1 = await _crear(escenario, "E1", orden=1)
     await _crear(escenario, "E1.O2", "objetivo_general", padre=e1, orden=2)
     e1_o1 = await _crear(escenario, "E1.O1", "objetivo_general", padre=e1, orden=1)
@@ -240,13 +241,13 @@ async def test_el_arbol_llega_en_orden_de_recorrido(escenario):
     nodos = await _listar(escenario)
 
     assert [(nodo["clave"], nodo["padre_id"]) for nodo in nodos] == [
+        ("E10", None),
         ("E1", None),
         ("E1.O1", e1["id"]),
         ("E1.O1.1", e1_o1["id"]),
         ("E1.O2", e1["id"]),
         ("E2", None),
         ("E2.O1", e2["id"]),
-        ("E10", None),
     ]
 
 
@@ -665,6 +666,83 @@ async def test_un_entero_del_cuerpo_que_la_base_no_acepta_se_rechaza_antes_de_ll
     assert respuesta.status_code == 422, respuesta.text
     assert respuesta.json()["code"] == "REQUEST_VALIDATION_ERROR"
     assert await _listar(escenario) == [eje]
+
+
+@pytest.mark.parametrize("falta", list(CUERPO_DE_UN_EJE))
+async def test_el_alta_exige_los_cuatro_campos_del_nodo(escenario, falta):
+    eje = await _crear(escenario, "E1")
+    cuerpo = {campo: valor for campo, valor in CUERPO_DE_UN_EJE.items() if campo != falta}
+
+    respuesta = await escenario.client.post(
+        f"{PIDE}/versiones/{escenario.version}/nodos", headers=escenario.cabeceras, json=cuerpo
+    )
+
+    assert (respuesta.status_code, respuesta.json()["code"]) == NO_CUMPLE_EL_ESQUEMA, respuesta.text
+    assert await _listar(escenario, incluir_inactivos=True) == [eje]
+
+
+@pytest.mark.parametrize("orden", [ENTERO_MAS_GRANDE_QUE_CABE, ENTERO_MAS_CHICO_QUE_CABE])
+async def test_corregir_acepta_los_extremos_del_entero_de_la_base(escenario, orden):
+    eje = await _crear(escenario, "E1")
+
+    corregido = await _corregir(escenario, eje, {"orden": orden})
+
+    assert corregido.status_code == 200, corregido.text
+    assert corregido.json()["orden"] == orden
+
+
+async def test_corregir_con_el_padre_mas_grande_que_cabe_llega_al_dominio(escenario):
+    eje = await _crear(escenario, "E1")
+
+    corregido = await _corregir(escenario, eje, {"padre_id": ENTERO_MAS_GRANDE_QUE_CABE})
+
+    assert (corregido.status_code, corregido.json()["code"]) == NO_CUMPLE_LAS_REGLAS, corregido.text
+    assert await _listar(escenario, incluir_inactivos=True) == [eje]
+
+
+@pytest.mark.parametrize("peticion", ["listar", "crear", "corregir", "retirar"])
+async def test_una_cabecera_que_no_lleva_un_token_contesta_401(escenario, peticion):
+    eje = await _crear(escenario, "E1")
+    metodo, url, cuerpo = _peticion(peticion, escenario.version, eje["id"])
+
+    respuesta = await escenario.client.request(
+        metodo, url, headers={"Authorization": "Bearer esto-no-es-un-token"}, json=cuerpo
+    )
+
+    assert respuesta.status_code == 401, respuesta.text
+    assert await _listar(escenario, incluir_inactivos=True) == [eje]
+
+
+async def test_el_token_de_quien_dejo_de_estar_activo_no_lee_el_arbol(escenario):
+    correo = f"arbol-pide-baja-{uuid4().hex[:8]}@example.com"
+    cabeceras = await _cabeceras(escenario.app, escenario.client, Role.CONSULTA, correo)
+    url = f"{PIDE}/versiones/{escenario.version}/nodos"
+    mientras_estaba_activo = await escenario.client.get(url, headers=cabeceras)
+
+    usuario = await escenario.app.state.user_repository.get_by_email(correo)
+    usuario.is_active = False
+    await escenario.app.state.user_repository.update(usuario)
+    despues_de_la_baja = await escenario.client.get(url, headers=cabeceras)
+
+    assert mientras_estaba_activo.status_code == 200, mientras_estaba_activo.text
+    assert despues_de_la_baja.status_code == 401, despues_de_la_baja.text
+
+
+async def test_una_version_que_no_existe_no_recibe_nodos_ni_los_acepta(escenario):
+    if escenario.fabrica is None:
+        pytest.skip("la memoria no tiene tabla de versiones y no puede saber que no existe")
+    nodos = await escenario.client.get(
+        f"{PIDE}/versiones/{VERSION_INEXISTENTE}/nodos", headers=escenario.cabeceras
+    )
+    creado = await escenario.client.post(
+        f"{PIDE}/versiones/{VERSION_INEXISTENTE}/nodos",
+        headers=escenario.cabeceras,
+        json=CUERPO_DE_UN_EJE,
+    )
+
+    assert (nodos.status_code, nodos.json()) == (200, []), nodos.text
+    assert (creado.status_code, creado.json()["code"]) == NO_CUMPLE_LAS_REGLAS, creado.text
+    assert "versión" in creado.json()["message"]
 
 
 @pytest.mark.parametrize(
