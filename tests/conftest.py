@@ -13,6 +13,7 @@ from app.main import create_app
 from app.modules.identity_access.application.dto import RegisterUserCommand
 from app.modules.identity_access.application.use_cases.create_user import CreateUser
 from app.modules.identity_access.domain.value_objects import Role
+from app.modules.institutional_catalogs.domain.entities import Area
 
 # `tests/helpers.py` no es un archivo de prueba, asi que pytest no reescribe
 # sus aserciones por su cuenta: un `assert creada.status_code == 201` que falla
@@ -102,6 +103,29 @@ async def backend_client(request, tmp_path):
             await application.state.db_engine.dispose()
 
 
+async def cabeceras_de_una_cuenta(
+    backend_client, rol: Role, *, area_id: int | None
+) -> dict[str, str]:
+    app, client = backend_client
+    correo = f"{rol.value}-{uuid4().hex[:8]}@example.com"
+    await CreateUser(
+        app.state.user_repository, app.state.password_hasher, app.state.event_bus
+    ).execute(
+        RegisterUserCommand(
+            email=correo,
+            full_name=f"Cuenta de pruebas con rol {rol.value}",
+            password="password-seguro",
+            roles={rol},
+            area_id=area_id,
+        )
+    )
+    login = await client.post(
+        "/api/v1/auth/login", json={"correo": correo, "contrasena": "password-seguro"}
+    )
+    assert login.status_code == 200, login.text
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
 @pytest.fixture
 async def planeacion_headers(backend_client) -> dict[str, str]:
     """Las cabeceras de una cuenta de Planeación recién creada.
@@ -110,25 +134,50 @@ async def planeacion_headers(backend_client) -> dict[str, str]:
     en las dos variantes (memoria y PostgreSQL) sin crear una aplicación propia.
     El correo lleva sufijo único porque la base de PostgreSQL persiste durante
     la corrida y los correos son únicos.
+
+    Esta cuenta no tiene área y Planeación está exenta de la guarda por área,
+    así que una prueba de autorización por área escrita sólo con ella pasa sin
+    comparar nunca un área: para eso están `capturista_de_su_area_headers` y
+    `capturista_sin_area_headers`.
     """
-    app, client = backend_client
-    correo = f"planeacion-{uuid4().hex[:8]}@example.com"
-    await CreateUser(
-        app.state.user_repository, app.state.password_hasher, app.state.event_bus
-    ).execute(
-        RegisterUserCommand(
-            email=correo,
-            full_name="Planeación de pruebas",
-            password="password-seguro",
-            roles={Role.PLANEACION},
-            area_id=None,
+    return await cabeceras_de_una_cuenta(backend_client, Role.PLANEACION, area_id=None)
+
+
+@pytest.fixture
+def nueva_area(backend_client):
+    app, _ = backend_client
+
+    async def crear() -> int:
+        area = Area.create(
+            code=f"PRUEBA-{uuid4().hex[:8]}", name=f"Área de pruebas {uuid4().hex[:8]}"
         )
-    )
-    login = await client.post(
-        "/api/v1/auth/login", json={"correo": correo, "contrasena": "password-seguro"}
-    )
-    assert login.status_code == 200, login.text
-    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+        await app.state.area_repository.add(area)
+        return area.id
+
+    return crear
+
+
+@pytest.fixture
+def cuenta_con_rol(backend_client):
+    async def crear(rol: Role, *, area_id: int | None) -> dict[str, str]:
+        return await cabeceras_de_una_cuenta(backend_client, rol, area_id=area_id)
+
+    return crear
+
+
+@pytest.fixture
+async def area_propia(nueva_area) -> int:
+    return await nueva_area()
+
+
+@pytest.fixture
+async def capturista_de_su_area_headers(backend_client, area_propia) -> dict[str, str]:
+    return await cabeceras_de_una_cuenta(backend_client, Role.CAPTURISTA_POA, area_id=area_propia)
+
+
+@pytest.fixture
+async def capturista_sin_area_headers(backend_client) -> dict[str, str]:
+    return await cabeceras_de_una_cuenta(backend_client, Role.CAPTURISTA_POA, area_id=None)
 
 
 @pytest.fixture

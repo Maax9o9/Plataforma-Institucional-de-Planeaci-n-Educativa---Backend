@@ -1,0 +1,157 @@
+from __future__ import annotations
+
+from decimal import Decimal
+from typing import Annotated, Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+
+from app.core.types import NonNegativeInstitutionalDecimal
+from app.modules.institutional_catalogs.domain.strategic_tree_entities import (
+    MAYOR_ENTERO_DE_LA_BASE,
+)
+
+from ..domain.entities import (
+    MESES_DEL_EJERCICIO,
+    Activity,
+    MonthlyTarget,
+    PoaArea,
+    PoaAreaStatus,
+    sin_la_escala_de_la_base,
+)
+
+IdDeLaBase = Annotated[int, Field(ge=1, le=MAYOR_ENTERO_DE_LA_BASE)]
+MesDelEjercicio = Annotated[int, Field(ge=min(MESES_DEL_EJERCICIO), le=max(MESES_DEL_EJERCICIO))]
+VersionSobreLaQueSeEdita = Annotated[int, Field(ge=1, le=MAYOR_ENTERO_DE_LA_BASE)]
+
+ATRIBUTO_DEL_DOMINIO = {
+    "denominacion": "name",
+    "nodo_id": "node_id",
+    "unidad_medida_id": "unit_id",
+    "metodo_evaluacion": "evaluation_method",
+    "meta_anual": "annual_target",
+    "programacion": "monthly",
+    "activa": "is_active",
+}
+
+CAMPOS_QUE_NO_ADMITEN_NULO = ("denominacion", "programacion", "activa")
+
+
+class MesProgramadoRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mes: MesDelEjercicio
+    meta: NonNegativeInstitutionalDecimal = Decimal(0)
+    incluido: bool = True
+
+    def to_domain(self) -> MonthlyTarget:
+        return MonthlyTarget(month=self.mes, target=self.meta, included=self.incluido)
+
+
+class ActividadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    denominacion: str | None = None
+    nodo_id: IdDeLaBase | None = None
+    unidad_medida_id: IdDeLaBase | None = None
+    metodo_evaluacion: str | None = None
+    meta_anual: NonNegativeInstitutionalDecimal | None = None
+    programacion: list[MesProgramadoRequest] | None = None
+    activa: bool | None = None
+
+    @field_validator(*CAMPOS_QUE_NO_ADMITEN_NULO)
+    @classmethod
+    def rechazar_el_nulo_explicito(cls, valor: Any) -> Any:
+        if valor is None:
+            raise ValueError("Este campo no admite nulo: omítalo para dejarlo como está.")
+        return valor
+
+    def lo_que_se_mando(self) -> dict[str, Any]:
+        return {
+            ATRIBUTO_DEL_DOMINIO[campo]: self._valor_de_dominio(campo)
+            for campo in ATRIBUTO_DEL_DOMINIO
+            if campo in self.model_fields_set
+        }
+
+    def _valor_de_dominio(self, campo: str) -> Any:
+        valor = getattr(self, campo)
+        if campo == "programacion":
+            return [mes.to_domain() for mes in valor]
+        return valor
+
+
+class CrearActividadRequest(ActividadRequest):
+    denominacion: str
+
+
+class ActualizarActividadRequest(ActividadRequest):
+    version: VersionSobreLaQueSeEdita
+
+
+class PresentarPoaDelAreaRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: VersionSobreLaQueSeEdita
+
+
+class MesProgramadoRespuesta(BaseModel):
+    mes: int
+    meta: Decimal
+    incluido: bool
+
+    @field_serializer("meta")
+    def dicha_sin_la_escala_de_la_base(self, meta: Decimal) -> str:
+        return sin_la_escala_de_la_base(meta)
+
+    @classmethod
+    def from_domain(cls, mes: MonthlyTarget) -> MesProgramadoRespuesta:
+        return cls(mes=mes.month, meta=mes.target, incluido=mes.included)
+
+
+class ActividadRespuesta(BaseModel):
+    id: int
+    version: int
+    nodo_id: int | None
+    denominacion: str
+    unidad_medida_id: int | None
+    metodo_evaluacion: str | None
+    meta_anual: Decimal | None
+    programacion: list[MesProgramadoRespuesta]
+    activa: bool
+
+    @field_serializer("meta_anual")
+    def dicha_sin_la_escala_de_la_base(self, meta: Decimal | None) -> str | None:
+        return None if meta is None else sin_la_escala_de_la_base(meta)
+
+    @classmethod
+    def from_domain(cls, activity: Activity) -> ActividadRespuesta:
+        return cls(
+            id=activity.id,
+            version=activity.version,
+            nodo_id=activity.node_id,
+            denominacion=activity.name,
+            unidad_medida_id=activity.unit_id,
+            metodo_evaluacion=activity.evaluation_method,
+            meta_anual=activity.annual_target,
+            programacion=[MesProgramadoRespuesta.from_domain(mes) for mes in activity.months()],
+            activa=activity.is_active,
+        )
+
+
+class PoaDelAreaRespuesta(BaseModel):
+    id: int
+    ejercicio_id: int
+    area_id: int
+    estado: PoaAreaStatus
+    version: int
+    actividades: list[ActividadRespuesta]
+
+    @classmethod
+    def from_domain(cls, poa_area: PoaArea, actividades: list[Activity]) -> PoaDelAreaRespuesta:
+        return cls(
+            id=poa_area.id,
+            ejercicio_id=poa_area.exercise_id,
+            area_id=poa_area.area_id,
+            estado=poa_area.status,
+            version=poa_area.version,
+            actividades=[ActividadRespuesta.from_domain(una) for una in actividades],
+        )
