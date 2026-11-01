@@ -292,7 +292,7 @@ async def test_el_nivel_llega_como_texto_y_se_guarda_como_nivel(arbol):
 @pytest.mark.parametrize(
     "clave", ["E1.L2.A3", "1.1.1.1.1", "12.10.11.13.14", "1.a", "A", "1.ñ", "Á2.3"]
 )
-async def test_la_clave_no_exige_formato_y_se_guarda_tal_cual(arbol, clave):
+async def test_la_clave_no_exige_formato_y_conserva_lo_que_se_ve(arbol, clave):
     version = await arbol.nueva_version()
     eje = await _nodo(arbol, version, "9", EJE)
     nodo = await _nodo(arbol, version, clave, OBJETIVO_GENERAL, padre=eje)
@@ -682,17 +682,6 @@ def test_el_recorrido_grita_con_los_nodos_que_un_ciclo_esconde():
 
 @pytest.mark.asyncio
 async def test_lo_retirado_sale_del_listado_normal_pero_no_arrastra_lo_que_cuelga_de_el(arbol):
-    """«Retirarlo no afecta a lo que ya cuelga de él»: la acción de una línea
-    retirada sigue activa, así que sigue en el listado, en el lugar que le
-    toca. Tres reglas equivocadas lo delatan:
-
-    - filtrar **antes** de recorrer: la acción quedaría sin padre y, según el
-      recorrido, desaparece o sube a la raíz y sale al final;
-    - no filtrar: la línea retirada seguiría saliendo.
-
-    La segunda línea, hermana de la retirada, va después de la acción: si la
-    acción subiera a la raíz o se perdiera, el orden cambiaría.
-    """
     version = await arbol.nueva_version()
     eje, general, especifico, linea = await _cadena(arbol, version, ("1", "1.1", "1.1.1", "L"))
     accion = await _nodo(arbol, version, "A", ACCION, padre=linea)
@@ -718,15 +707,6 @@ async def test_lo_retirado_sale_del_listado_normal_pero_no_arrastra_lo_que_cuelg
 
 @pytest.mark.asyncio
 async def test_desactivar_no_borra_y_el_nodo_sigue_legible(arbol):
-    """El nodo retirado sigue en la base, se lee por su id, sigue contando como
-    ancestro de lo que cuelga de él y sólo él cambia: ni su padre, ni su hermano,
-    ni su hijo, ni el nodo de otra versión con la misma clave.
-
-    Reglas equivocadas que esto delata: borrar (desaparece de `include_inactive`
-    y de `get_by_id`), desactivar por clave en vez de por id (cae el de la otra
-    versión y el hermano homónimo de otro padre), desactivar a los vecinos, y
-    filtrar los ancestros por activo (la acción perdería a su línea).
-    """
     version = await arbol.nueva_version()
     otra = await arbol.nueva_version()
     eje, general, especifico, linea = await _cadena(arbol, version, ("1", "1.1", "1.1.1", "L"))
