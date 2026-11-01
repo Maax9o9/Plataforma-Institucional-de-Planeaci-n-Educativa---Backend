@@ -962,6 +962,80 @@ async def test_un_null_explicito_se_rechaza_donde_el_nodo_no_admite_nulo(escenar
     assert await _listar(escenario, incluir_inactivos=True) == [eje]
 
 
+CODIGOS_DEL_409_POR_OPERACION = {
+    (f"{PIDE}/versiones/{{version_id}}/nodos", "post"): {"STRATEGIC_NODE_KEY_REPEATED"},
+    (f"{PIDE}/nodos/{{nodo_id}}", "patch"): {
+        "STRATEGIC_NODE_KEY_REPEATED",
+        "STRATEGIC_NODE_HAS_ACTIVE_CHILDREN",
+    },
+    (f"{PIDE}/nodos/{{nodo_id}}/desactivar", "post"): {"STRATEGIC_NODE_HAS_ACTIVE_CHILDREN"},
+}
+
+
+def _codigos_del_409(operacion: dict) -> set[str]:
+    contenido = operacion["responses"]["409"]["content"]["application/json"]
+    if "examples" in contenido:
+        return {ejemplo["value"]["code"] for ejemplo in contenido["examples"].values()}
+    return {contenido["example"]["code"]}
+
+
+def test_el_openapi_nombra_los_dos_409_del_arbol_por_endpoint():
+    rutas = create_app(
+        Settings(
+            environment="testing",
+            secret_key="test-secret-key-with-more-than-32-characters",
+            database_url=None,
+            email_provider="console",
+        )
+    ).openapi()["paths"]
+
+    declarados = {
+        (ruta, metodo): _codigos_del_409(rutas[ruta][metodo])
+        for ruta, metodo in CODIGOS_DEL_409_POR_OPERACION
+    }
+
+    assert declarados == CODIGOS_DEL_409_POR_OPERACION
+    assert _codigos_del_409(rutas[f"{PIDE}/versiones/{{version_id}}/nodos"]["get"]) == {"CONFLICT"}
+
+
+async def test_los_409_que_el_arbol_devuelve_son_los_que_su_openapi_declara(escenario):
+    eje = await _crear(escenario, "E1")
+    await _crear(escenario, "E2", orden=2)
+    await _crear(escenario, "E1.O1", "objetivo_general", padre=eje)
+    peticiones = (
+        (
+            (f"{PIDE}/versiones/{{version_id}}/nodos", "post"),
+            (
+                "POST",
+                f"{PIDE}/versiones/{escenario.version}/nodos",
+                {**CUERPO_DE_UN_EJE, "clave": "E1"},
+            ),
+        ),
+        (
+            (f"{PIDE}/nodos/{{nodo_id}}", "patch"),
+            ("PATCH", f"{PIDE}/nodos/{eje['id']}", {"clave": "E2"}),
+        ),
+        (
+            (f"{PIDE}/nodos/{{nodo_id}}", "patch"),
+            ("PATCH", f"{PIDE}/nodos/{eje['id']}", {"activo": False}),
+        ),
+        (
+            (f"{PIDE}/nodos/{{nodo_id}}/desactivar", "post"),
+            ("POST", f"{PIDE}/nodos/{eje['id']}/desactivar", None),
+        ),
+    )
+
+    devueltos: dict[tuple[str, str], set[str]] = {}
+    for operacion, (metodo, url, cuerpo) in peticiones:
+        respuesta = await escenario.client.request(
+            metodo, url, headers=escenario.cabeceras, json=cuerpo
+        )
+        assert respuesta.status_code == 409, respuesta.text
+        devueltos.setdefault(operacion, set()).add(respuesta.json()["code"])
+
+    assert devueltos == CODIGOS_DEL_409_POR_OPERACION
+
+
 def _referencias_del_tipo(esquemas: dict, nombre: str) -> list[str]:
     propiedad = esquemas[nombre]["properties"]["tipo"]
     return [

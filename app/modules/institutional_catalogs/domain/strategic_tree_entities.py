@@ -33,10 +33,12 @@ MENOR_ENTERO_DE_LA_BASE = -(2**31)
 
 class RepeatedKeyError(ConflictError):
     code = "STRATEGIC_NODE_KEY_REPEATED"
+    default_message = "La clave ya esta ocupada entre los hermanos de ese nodo."
 
 
 class ActiveChildrenError(ConflictError):
     code = "STRATEGIC_NODE_HAS_ACTIVE_CHILDREN"
+    default_message = "El nodo no se puede retirar porque algo activo cuelga de el."
 
 
 def cabe_en_el_entero_de_la_base(numero: int) -> bool:

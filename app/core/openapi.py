@@ -5,6 +5,13 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
+from app.core.error_responses import (
+    CONTRATO_DEL_ERROR,
+    ERRORES_QUE_CUALQUIER_OPERACION_PUEDE_DEVOLVER,
+    ejemplo_del_error,
+    respuesta_de_error,
+)
+
 
 def custom_openapi(app: FastAPI):
     if app.openapi_schema:
@@ -51,34 +58,17 @@ def custom_openapi(app: FastAPI):
         # cierre repetido siga siendo idempotente.
         logout_operation["security"] = [{"bearerAuth": []}]
 
-    error_schema = {"$ref": "#/components/schemas/ErrorResponse"}
-    error_example = {
-        "code": "REQUEST_VALIDATION_ERROR",
-        "message": "La solicitud contiene datos invalidos.",
-        "details": None,
-        "request_id": "req_01JEXAMPLE",
-    }
+    error_schema = CONTRATO_DEL_ERROR
+    error_example = ejemplo_del_error(
+        "REQUEST_VALIDATION_ERROR", "La solicitud contiene datos invalidos."
+    )
     for path_item in schema.get("paths", {}).values():
         for operation in path_item.values():
             if not isinstance(operation, dict) or "responses" not in operation:
                 continue
             responses = operation["responses"]
-            for status, code, message in (
-                ("503", "SERVICE_UNAVAILABLE", "Servicio de datos temporalmente no disponible."),
-                ("409", "CONFLICT", "Conflicto con un registro o versión existente."),
-            ):
-                responses.setdefault(
-                    status,
-                    {
-                        "description": message,
-                        "content": {
-                            "application/json": {
-                                "schema": error_schema,
-                                "example": {**error_example, "code": code, "message": message},
-                            }
-                        },
-                    },
-                )
+            for status, code, message in ERRORES_QUE_CUALQUIER_OPERACION_PUEDE_DEVOLVER:
+                responses.setdefault(status, respuesta_de_error(code, message))
             if "422" in responses:
                 responses["422"] = {
                     "description": "Solicitud o regla de negocio invalida.",

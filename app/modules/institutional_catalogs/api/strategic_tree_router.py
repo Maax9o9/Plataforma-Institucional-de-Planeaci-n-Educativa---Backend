@@ -5,6 +5,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Path, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.error_responses import los_errores_que_devuelve
 from app.core.security import get_current_user, require_roles
 
 from ..application.use_cases.manage_strategic_tree import (
@@ -15,7 +16,9 @@ from ..application.use_cases.manage_strategic_tree import (
 from ..domain.strategic_tree_entities import (
     MAYOR_ENTERO_DE_LA_BASE,
     MENOR_ENTERO_DE_LA_BASE,
+    ActiveChildrenError,
     NodeKind,
+    RepeatedKeyError,
     StrategicNode,
 )
 
@@ -122,6 +125,7 @@ async def list_nodes(
     response_model=NodoRespuesta,
     status_code=status.HTTP_201_CREATED,
     summary="Registrar un nodo del arbol",
+    responses=los_errores_que_devuelve(RepeatedKeyError),
 )
 async def create_node(
     version_id: IdEnLaRuta,
@@ -148,6 +152,7 @@ async def create_node(
     "/nodos/{nodo_id}",
     response_model=NodoRespuesta,
     summary="Corregir un nodo del arbol",
+    responses=los_errores_que_devuelve(RepeatedKeyError, ActiveChildrenError),
 )
 async def update_node(
     nodo_id: IdEnLaRuta,
@@ -165,6 +170,7 @@ async def update_node(
     "/nodos/{nodo_id}/desactivar",
     response_model=NodoRespuesta,
     summary="Retirar un nodo del arbol",
+    responses=los_errores_que_devuelve(ActiveChildrenError),
 )
 async def deactivate_node(
     nodo_id: IdEnLaRuta,
