@@ -143,6 +143,57 @@ async def test_las_escrituras_del_catalogo_dejan_pasar_a_quien_administra(
     assert respuesta.status_code not in (401, 403), respuesta.text
 
 
+async def _un_indicador_con_umbrales(cliente, cabeceras) -> dict:
+    area = await cliente.post(
+        "/api/v1/catalogos/areas",
+        json={"codigo": f"A{uuid4().hex[:6]}", "nombre": f"Area {uuid4().hex[:6]}"},
+        headers=cabeceras,
+    )
+    assert area.status_code == 201, area.text
+    yo = await cliente.get("/api/v1/auth/me", headers=cabeceras)
+    assert yo.status_code == 200, yo.text
+    creado = await cliente.post(
+        f"{PREFIJO}/indicadores",
+        json={
+            "clave": f"IND-{uuid4().hex[:6]}",
+            "nombre": "Cobertura educativa",
+            "metodo_calculo": "Resultado / meta * 100",
+            "unidad_medida": "Porcentaje",
+            "area_id": area.json()["id"],
+            "responsable_id": yo.json()["id"],
+            "periodicidad": "mensual",
+            "umbral_verde_min": 90,
+            "umbral_amarillo_min": 70,
+        },
+        headers=cabeceras,
+    )
+    assert creado.status_code == 201, creado.text
+    return creado.json()
+
+
+@pytest.mark.parametrize("umbral", ["umbral_verde_min", "umbral_amarillo_min"])
+async def test_el_patch_rechaza_un_umbral_en_vez_de_contestar_200_sin_cambiarlo(catalogo, umbral):
+    aplicacion, cliente = catalogo
+    cabeceras = await _cabeceras(aplicacion, cliente, Role.PLANEACION)
+    indicador = await _un_indicador_con_umbrales(cliente, cabeceras)
+    ruta = f"{PREFIJO}/indicadores/{indicador['id']}"
+
+    con_el_umbral = await cliente.patch(
+        ruta, json={"nombre": "Cobertura corregida", umbral: 50}, headers=cabeceras
+    )
+    el_umbral_solo = await cliente.patch(ruta, json={umbral: 50}, headers=cabeceras)
+    sin_el_umbral = await cliente.patch(
+        ruta, json={"nombre": "Cobertura corregida"}, headers=cabeceras
+    )
+
+    assert con_el_umbral.status_code == 422, con_el_umbral.text
+    assert con_el_umbral.json()["code"] == "REQUEST_VALIDATION_ERROR"
+    assert el_umbral_solo.status_code == 422, el_umbral_solo.text
+    assert sin_el_umbral.status_code == 200, sin_el_umbral.text
+    assert sin_el_umbral.json()["nombre"] == "Cobertura corregida"
+    assert sin_el_umbral.json()[umbral] == indicador[umbral]
+
+
 @POR_ROL
 async def test_las_lecturas_del_catalogo_las_abre_cualquier_rol_autenticado(catalogo, rol):
     aplicacion, cliente = catalogo

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.types import (
     InstitutionalDecimal,
@@ -36,6 +36,8 @@ class RegistrarIndicadorRequest(BaseModel):
 
 
 class ActualizarIndicadorRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     version: int | None = Field(default=None, ge=1)
     nombre: str | None = Field(default=None, min_length=2, max_length=300)
     metodo_calculo: str | None = None
