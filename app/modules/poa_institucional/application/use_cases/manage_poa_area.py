@@ -4,12 +4,17 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 from enum import Enum, auto
 
+from app.modules.institutional_catalogs.domain.ports.repositories import AreaRepository
 from app.modules.institutional_catalogs.domain.ports.strategic_tree_repository import (
     StrategicTreeRepository,
 )
-from app.shared.domain.exceptions import ResourceNotFoundError, ValidationError
+from app.modules.poa_planning.domain.ports.repositories import PoaRepository
+from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError, ValidationError
 
 from ...domain.entities import (
+    EL_AREA_NO_EXISTE,
+    EL_EJERCICIO_POA_NO_EXISTE,
+    LA_ACTIVIDAD_LA_MOVIERON,
     Activity,
     MonthlyTarget,
     PoaArea,
@@ -66,13 +71,24 @@ class SubmitPoaAreaCommand:
 
 
 class OpenPoaArea:
-    def __init__(self, poa_areas: PoaAreaRepository) -> None:
+    def __init__(
+        self,
+        poa_areas: PoaAreaRepository,
+        exercises: PoaRepository,
+        areas: AreaRepository,
+    ) -> None:
         self.poa_areas = poa_areas
+        self.exercises = exercises
+        self.areas = areas
 
     async def execute(self, cmd: OpenPoaAreaCommand) -> PoaArea:
         existente = await self.poa_areas.find_poa_area(cmd.exercise_id, cmd.area_id)
         if existente is not None:
             return existente
+        if await self.exercises.get_exercise(cmd.exercise_id) is None:
+            raise ValidationError(EL_EJERCICIO_POA_NO_EXISTE)
+        if await self.areas.get_by_id(cmd.area_id) is None:
+            raise ValidationError(EL_AREA_NO_EXISTE)
         abierto = PoaArea(exercise_id=cmd.exercise_id, area_id=cmd.area_id)
         await self.poa_areas.add_poa_area(abierto)
         return abierto
@@ -90,6 +106,10 @@ class SavePoaActivity:
         ensure_is_still_a_draft(poa_area)
 
         guardada = await self._la_que_se_edita(cmd)
+        if guardada is not None and not _lo_que_se_mando(cmd):
+            if guardada.version != cmd.version:
+                raise ConflictError(LA_ACTIVIDAD_LA_MOVIERON)
+            return guardada
         actividad = _con_lo_que_se_mando(guardada, cmd)
         if actividad.node_id is not None and (
             guardada is None or actividad.node_id != guardada.node_id
@@ -135,6 +155,14 @@ class SubmitPoaArea:
         return enviado
 
 
+def _lo_que_se_mando(cmd: SaveActivityCommand) -> dict[str, object]:
+    return {
+        campo: getattr(cmd, campo)
+        for campo in CAMPOS_QUE_EL_GUARDADO_PARCIAL_PUEDE_OMITIR
+        if getattr(cmd, campo) is not SIN_CAMBIO
+    }
+
+
 def _con_lo_que_se_mando(guardada: Activity | None, cmd: SaveActivityCommand) -> Activity:
     if guardada is None:
         if cmd.name is SIN_CAMBIO:
@@ -142,9 +170,4 @@ def _con_lo_que_se_mando(guardada: Activity | None, cmd: SaveActivityCommand) ->
         partida = Activity(poa_area_id=cmd.poa_area_id, name=cmd.name)
     else:
         partida = replace(guardada, monthly=list(guardada.monthly), version=cmd.version)
-    cambios = {
-        campo: getattr(cmd, campo)
-        for campo in CAMPOS_QUE_EL_GUARDADO_PARCIAL_PUEDE_OMITIR
-        if getattr(cmd, campo) is not SIN_CAMBIO
-    }
-    return replace(partida, **cambios)
+    return replace(partida, **_lo_que_se_mando(cmd))

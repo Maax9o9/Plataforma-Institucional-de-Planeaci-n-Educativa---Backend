@@ -4,13 +4,22 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Request, status
 
-from app.core.authorization import ensure_area_or_planning
+from app.core.authorization import (
+    ROLES_QUE_VEN_TODA_AREA,
+    ensure_area_or_institutional_reader,
+    ensure_area_or_planning,
+)
 from app.core.error_responses import los_errores_que_devuelve
 from app.core.security import require_roles
 from app.modules.institutional_catalogs.domain.strategic_tree_entities import (
     MAYOR_ENTERO_DE_LA_BASE,
 )
-from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError
+from app.shared.domain.exceptions import (
+    AuthenticationError,
+    ConflictError,
+    ForbiddenError,
+    ResourceNotFoundError,
+)
 
 from ..application.use_cases.manage_poa_area import (
     OpenPoaArea,
@@ -20,7 +29,7 @@ from ..application.use_cases.manage_poa_area import (
     SubmitPoaArea,
     SubmitPoaAreaCommand,
 )
-from ..domain.entities import PoaArea
+from ..domain.entities import Activity, PoaArea, reasons_it_cannot_be_submitted
 from .dependencies import get_open_poa_area, get_save_poa_activity, get_submit_poa_area
 from .schemas import (
     ActividadRespuesta,
@@ -33,30 +42,47 @@ from .schemas import (
 router = APIRouter(prefix="/poa-institucional", tags=["POA del área"])
 
 ROLES_QUE_FORMULAN = ("planeacion", "planeacion_admin", "admin_sistema", "capturista_poa")
-ROLES_QUE_CONSULTAN = (*ROLES_QUE_FORMULAN, "responsable_area")
+ROLES_QUE_CONSULTAN = (*ROLES_QUE_FORMULAN, "responsable_area", "rectoria", "revisor_poa")
+
+#: Quien lee el POA de cualquier área sin ser de ninguna: los de
+#: `ROLES_QUE_VEN_TODA_AREA` más el revisor del POA, que dictamina el de las
+#: áreas y en la base no tiene área asignada. Sin esto, `ensure_area_or_planning`
+#: les contesta 403 aunque `require_roles` los haya dejado pasar.
+ROLES_QUE_LEEN_CUALQUIER_AREA = frozenset({*ROLES_QUE_VEN_TODA_AREA, "revisor_poa"})
 
 requiere_formular = require_roles(*ROLES_QUE_FORMULAN)
 requiere_consultar = require_roles(*ROLES_QUE_CONSULTAN)
+
+SIN_SESION_NI_PERMISO = los_errores_que_devuelve(AuthenticationError, ForbiddenError)
+SIN_SESION_NI_PERMISO_NI_POA_ABIERTO = los_errores_que_devuelve(
+    AuthenticationError, ForbiddenError, ResourceNotFoundError
+)
 
 IdEnLaRuta = Annotated[int, Path(ge=1, le=MAYOR_ENTERO_DE_LA_BASE)]
 EjercicioEnLaConsulta = Annotated[int, Query(ge=1, le=MAYOR_ENTERO_DE_LA_BASE)]
 
 EL_POA_DEL_AREA_SIN_ABRIR = (
-    "El área todavía no tiene su POA en este ejercicio: consúltelo una vez para abrirlo."
+    "El área todavía no tiene su POA en este ejercicio: ábralo antes de consultarlo "
+    "o de formularlo."
 )
-
-
-async def _actividades(request: Request, poa_area: PoaArea, *, incluir_inactivas: bool):
-    return await request.app.state.poa_area_repository.list_activities(
-        poa_area.id, include_inactive=incluir_inactivas
-    )
 
 
 async def _respuesta(
     request: Request, poa_area: PoaArea, *, incluir_inactivas: bool = False
 ) -> PoaDelAreaRespuesta:
+    todas: list[Activity] = await request.app.state.poa_area_repository.list_activities(
+        poa_area.id, include_inactive=True
+    )
+    falta = reasons_it_cannot_be_submitted(
+        todas,
+        area_has_person_in_charge=await request.app.state.area_leadership.has_person_in_charge(
+            poa_area.area_id
+        ),
+    )
     return PoaDelAreaRespuesta.from_domain(
-        poa_area, await _actividades(request, poa_area, incluir_inactivas=incluir_inactivas)
+        poa_area,
+        todas if incluir_inactivas else [una for una in todas if una.is_active],
+        falta_para_presentar=falta,
     )
 
 
@@ -80,7 +106,8 @@ async def _abierto_aunque_otro_lo_abra_a_la_vez(
 @router.get(
     "/areas/{area_id}",
     response_model=PoaDelAreaRespuesta,
-    summary="Consultar el POA del area en un ejercicio, abriendolo si hace falta",
+    summary="Consultar el POA del area en un ejercicio",
+    responses=SIN_SESION_NI_PERMISO_NI_POA_ABIERTO,
 )
 async def consultar_el_poa_del_area(
     area_id: IdEnLaRuta,
@@ -88,11 +115,28 @@ async def consultar_el_poa_del_area(
     ejercicio_id: EjercicioEnLaConsulta,
     incluir_inactivas: bool = Query(default=False),
     usuario=Depends(requiere_consultar),
+) -> PoaDelAreaRespuesta:
+    ensure_area_or_institutional_reader(usuario, area_id, lectores=ROLES_QUE_LEEN_CUALQUIER_AREA)
+    poa_area = await _el_poa_del_area_ya_abierto(request, ejercicio_id, area_id)
+    return await _respuesta(request, poa_area, incluir_inactivas=incluir_inactivas)
+
+
+@router.post(
+    "/areas/{area_id}/abrir",
+    response_model=PoaDelAreaRespuesta,
+    summary="Abrir el POA del area en un ejercicio",
+    responses=SIN_SESION_NI_PERMISO,
+)
+async def abrir_el_poa_del_area(
+    area_id: IdEnLaRuta,
+    request: Request,
+    ejercicio_id: EjercicioEnLaConsulta,
+    usuario=Depends(requiere_formular),
     abrir: OpenPoaArea = Depends(get_open_poa_area),
 ) -> PoaDelAreaRespuesta:
     ensure_area_or_planning(usuario, area_id)
     poa_area = await _abierto_aunque_otro_lo_abra_a_la_vez(abrir, ejercicio_id, area_id)
-    return await _respuesta(request, poa_area, incluir_inactivas=incluir_inactivas)
+    return await _respuesta(request, poa_area)
 
 
 @router.post(
@@ -100,7 +144,7 @@ async def consultar_el_poa_del_area(
     response_model=ActividadRespuesta,
     status_code=status.HTTP_201_CREATED,
     summary="Registrar una actividad en el POA del area",
-    responses=los_errores_que_devuelve(ResourceNotFoundError),
+    responses=SIN_SESION_NI_PERMISO_NI_POA_ABIERTO,
 )
 async def registrar_actividad(
     area_id: IdEnLaRuta,
@@ -122,7 +166,7 @@ async def registrar_actividad(
     "/areas/{area_id}/actividades/{actividad_id}",
     response_model=ActividadRespuesta,
     summary="Guardar los campos que se manden de una actividad del POA del area",
-    responses=los_errores_que_devuelve(ResourceNotFoundError),
+    responses=SIN_SESION_NI_PERMISO_NI_POA_ABIERTO,
 )
 async def corregir_actividad(
     area_id: IdEnLaRuta,
@@ -150,7 +194,7 @@ async def corregir_actividad(
     "/areas/{area_id}/presentar",
     response_model=PoaDelAreaRespuesta,
     summary="Presentar el POA del area a Planeacion",
-    responses=los_errores_que_devuelve(ResourceNotFoundError),
+    responses=SIN_SESION_NI_PERMISO_NI_POA_ABIERTO,
 )
 async def presentar_el_poa_del_area(
     area_id: IdEnLaRuta,

@@ -20,12 +20,18 @@ from app.modules.identity_access.application.use_cases.create_user import Create
 from app.modules.identity_access.domain.entities import User
 from app.modules.identity_access.domain.value_objects import Role
 from app.modules.identity_access.infrastructure.repository import InMemoryUserRepository
+from app.modules.institutional_catalogs.domain.entities import Area
+from app.modules.institutional_catalogs.domain.ports.repositories import AreaRepository
 from app.modules.institutional_catalogs.domain.ports.strategic_tree_repository import (
     StrategicTreeRepository,
 )
 from app.modules.institutional_catalogs.domain.strategic_tree_entities import (
     NodeKind,
     StrategicNode,
+)
+from app.modules.institutional_catalogs.infrastructure.repository import InMemoryAreaRepository
+from app.modules.institutional_catalogs.infrastructure.sql_repository import (
+    SqlAlchemyAreaRepository,
 )
 from app.modules.institutional_catalogs.infrastructure.strategic_tree_repository import (
     InMemoryStrategicTreeRepository,
@@ -60,6 +66,10 @@ from app.modules.poa_institucional.infrastructure.sql_repository import (
     SqlAlchemyAreaLeadership,
     SqlAlchemyPoaAreaRepository,
 )
+from app.modules.poa_planning.domain.entities import PoaExercise
+from app.modules.poa_planning.domain.ports.repositories import PoaRepository
+from app.modules.poa_planning.infrastructure.repository import InMemoryPoaRepository
+from app.modules.poa_planning.infrastructure.sql_repository import SqlAlchemyPoaRepository
 from app.shared.domain.exceptions import (
     ConflictError,
     InvalidStateError,
@@ -103,6 +113,8 @@ class Tablero:
     repo: PoaAreaRepository
     arbol: StrategicTreeRepository
     liderazgo: AreaLeadership
+    ejercicios: PoaRepository
+    areas: AreaRepository
     nuevo_ejercicio: Callable[[], Awaitable[int]]
     nueva_area: Callable[[], Awaitable[int]]
     nueva_unidad: Callable[[], Awaitable[int]]
@@ -112,7 +124,7 @@ class Tablero:
     conexion: AsyncConnection | None = None
 
     def abrir(self) -> OpenPoaArea:
-        return OpenPoaArea(self.repo)
+        return OpenPoaArea(self.repo, self.ejercicios, self.areas)
 
     def guardar(self) -> SavePoaActivity:
         return SavePoaActivity(self.repo, self.arbol)
@@ -122,15 +134,26 @@ class Tablero:
 
 
 def _tablero_en_memoria() -> Tablero:
-    ejercicios = count(1)
-    areas = count(1)
     unidades = count(1)
     versiones = count(1)
+    anios = count(2000)
 
     usuarios = InMemoryUserRepository()
+    ejercicios = InMemoryPoaRepository()
+    areas = InMemoryAreaRepository()
 
     async def siguiente(contador) -> int:
         return next(contador)
+
+    async def nuevo_ejercicio() -> int:
+        ejercicio = PoaExercise.create(next(anios), catalog_id=1)
+        await ejercicios.add_exercise(ejercicio)
+        return ejercicio.id
+
+    async def nueva_area() -> int:
+        area = Area.create(code=f"PRUEBA-{uuid4().hex[:8]}", name=f"Área {uuid4().hex[:8]}")
+        await areas.add(area)
+        return area.id
 
     async def nuevo_usuario(area_id: int, rol: str | None, *, activo: bool = True) -> int:
         usuario = User(
@@ -151,8 +174,10 @@ def _tablero_en_memoria() -> Tablero:
         repo=InMemoryPoaAreaRepository(),
         arbol=InMemoryStrategicTreeRepository(),
         liderazgo=InMemoryAreaLeadership(usuarios),
-        nuevo_ejercicio=lambda: siguiente(ejercicios),
-        nueva_area=lambda: siguiente(areas),
+        ejercicios=ejercicios,
+        areas=areas,
+        nuevo_ejercicio=nuevo_ejercicio,
+        nueva_area=nueva_area,
         nueva_unidad=lambda: siguiente(unidades),
         nueva_version=lambda: siguiente(versiones),
         dar_responsable=dar_responsable,
@@ -250,6 +275,8 @@ async def _tablero_en_postgresql():
                     repo=SqlAlchemyPoaAreaRepository(fabrica),
                     arbol=SqlAlchemyStrategicTreeRepository(fabrica),
                     liderazgo=SqlAlchemyAreaLeadership(fabrica),
+                    ejercicios=SqlAlchemyPoaRepository(fabrica),
+                    areas=SqlAlchemyAreaRepository(fabrica),
                     nuevo_ejercicio=nuevo_ejercicio,
                     nueva_area=nueva_area,
                     nueva_unidad=nueva_unidad,

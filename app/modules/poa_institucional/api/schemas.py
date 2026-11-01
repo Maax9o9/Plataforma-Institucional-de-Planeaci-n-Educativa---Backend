@@ -17,6 +17,7 @@ from ..domain.entities import (
     PoaArea,
     PoaAreaStatus,
     sin_la_escala_de_la_base,
+    whats_missing_to_submit,
 )
 
 IdDeLaBase = Annotated[int, Field(ge=1, le=MAYOR_ENTERO_DE_LA_BASE)]
@@ -35,6 +36,21 @@ ATRIBUTO_DEL_DOMINIO = {
 
 CAMPOS_QUE_NO_ADMITEN_NULO = ("denominacion", "programacion", "activa")
 
+EL_NULO_NO_ES_LEGAL_AQUI = "Este campo no admite nulo: omítalo para dejarlo como está."
+
+
+def _sin_la_rama_del_nulo(esquema: dict[str, Any]) -> None:
+    ramas = [rama for rama in esquema.pop("anyOf", []) if rama != {"type": "null"}]
+    esquema.pop("default", None)
+    if len(ramas) == 1:
+        esquema.update(ramas[0])
+    elif ramas:
+        esquema["anyOf"] = ramas
+
+
+def _que_el_esquema_tampoco_admita_nulo() -> Any:
+    return Field(default=None, json_schema_extra=_sin_la_rama_del_nulo)
+
 
 class MesProgramadoRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -50,19 +66,19 @@ class MesProgramadoRequest(BaseModel):
 class ActividadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    denominacion: str | None = None
+    denominacion: str | None = _que_el_esquema_tampoco_admita_nulo()
     nodo_id: IdDeLaBase | None = None
     unidad_medida_id: IdDeLaBase | None = None
     metodo_evaluacion: str | None = None
     meta_anual: NonNegativeInstitutionalDecimal | None = None
-    programacion: list[MesProgramadoRequest] | None = None
-    activa: bool | None = None
+    programacion: list[MesProgramadoRequest] | None = _que_el_esquema_tampoco_admita_nulo()
+    activa: bool | None = _que_el_esquema_tampoco_admita_nulo()
 
     @field_validator(*CAMPOS_QUE_NO_ADMITEN_NULO)
     @classmethod
     def rechazar_el_nulo_explicito(cls, valor: Any) -> Any:
         if valor is None:
-            raise ValueError("Este campo no admite nulo: omítalo para dejarlo como está.")
+            raise ValueError(EL_NULO_NO_ES_LEGAL_AQUI)
         return valor
 
     def lo_que_se_mando(self) -> dict[str, Any]:
@@ -117,6 +133,7 @@ class ActividadRespuesta(BaseModel):
     meta_anual: Decimal | None
     programacion: list[MesProgramadoRespuesta]
     activa: bool
+    falta_para_presentar: list[str]
 
     @field_serializer("meta_anual")
     def dicha_sin_la_escala_de_la_base(self, meta: Decimal | None) -> str | None:
@@ -125,6 +142,7 @@ class ActividadRespuesta(BaseModel):
     @classmethod
     def from_domain(cls, activity: Activity) -> ActividadRespuesta:
         return cls(
+            falta_para_presentar=whats_missing_to_submit(activity),
             id=activity.id,
             version=activity.version,
             nodo_id=activity.node_id,
@@ -144,9 +162,16 @@ class PoaDelAreaRespuesta(BaseModel):
     estado: PoaAreaStatus
     version: int
     actividades: list[ActividadRespuesta]
+    falta_para_presentar: list[str]
 
     @classmethod
-    def from_domain(cls, poa_area: PoaArea, actividades: list[Activity]) -> PoaDelAreaRespuesta:
+    def from_domain(
+        cls,
+        poa_area: PoaArea,
+        actividades: list[Activity],
+        *,
+        falta_para_presentar: list[str],
+    ) -> PoaDelAreaRespuesta:
         return cls(
             id=poa_area.id,
             ejercicio_id=poa_area.exercise_id,
@@ -154,4 +179,5 @@ class PoaDelAreaRespuesta(BaseModel):
             estado=poa_area.status,
             version=poa_area.version,
             actividades=[ActividadRespuesta.from_domain(una) for una in actividades],
+            falta_para_presentar=falta_para_presentar,
         )
