@@ -411,6 +411,20 @@ async def test_una_actividad_completa_se_guarda_y_se_lee_igual(escenario):
     assert all(mes["incluido"] for mes in leida["programacion"])
 
 
+async def test_la_programacion_sale_en_orden_aunque_se_mande_revuelta(escenario):
+    al_reves = _programacion(DOCE_METAS_QUE_SUMAN_24)[::-1]
+
+    registrada = await _registrar(
+        escenario, {"denominacion": "Con los meses al revés", "programacion": al_reves}
+    )
+
+    assert registrada.status_code == 201, registrada.text
+    assert [mes["mes"] for mes in registrada.json()["programacion"]] == list(range(1, 13))
+    assert [mes["meta"] for mes in registrada.json()["programacion"]] == [
+        str(meta) for meta in DOCE_METAS_QUE_SUMAN_24
+    ]
+
+
 async def test_lo_que_el_guardado_parcial_no_manda_no_se_borra(escenario):
     completa = await _actividad_completa(escenario)
 
