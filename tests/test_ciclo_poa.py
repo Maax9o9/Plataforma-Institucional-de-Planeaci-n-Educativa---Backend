@@ -29,13 +29,7 @@ from app.modules.poa_planning.domain.entities import PoaExercise
 from app.shared.application.actor import ActorContext
 from app.shared.domain.exceptions import ForbiddenError, InvalidStateError
 from app.shared.infrastructure.db.sql_loader import split_sql
-from helpers import cuatrimestres, poa_inicial_id
-
-
-def _random_year() -> int:
-    # El anio es unico en poa_ejercicios y la base de pruebas persiste entre
-    # corridas: se genera al azar en vez de usar un valor fijo.
-    return 2000 + (uuid4().int % 200)
+from helpers import anio_libre, cuatrimestres, poa_inicial_id
 
 
 async def _account(app, client, role: Role, suffix: str, area_id: int | None = None):
@@ -61,16 +55,13 @@ async def _account(app, client, role: Role, suffix: str, area_id: int | None = N
 
 async def _new_exercise(client, headers, *, with_deadline: bool = False) -> dict:
     catalogo_id = await poa_inicial_id(client, headers)
-    for _ in range(8):
-        anio = _random_year()
-        body = {"anio": anio, "catalogo_id": catalogo_id}
-        if with_deadline:
-            body["fecha_limite_formulacion"] = f"{anio}-02-20"
-        response = await client.post("/api/v1/poa/ejercicios", headers=headers, json=body)
-        if response.status_code == 201:
-            return response.json()
-        assert response.status_code == 409, response.text
-    raise AssertionError("No se encontro un anio libre para el ejercicio POA de prueba.")
+    anio = await anio_libre(client, headers)
+    body = {"anio": anio, "catalogo_id": catalogo_id}
+    if with_deadline:
+        body["fecha_limite_formulacion"] = f"{anio}-02-20"
+    response = await client.post("/api/v1/poa/ejercicios", headers=headers, json=body)
+    assert response.status_code == 201, response.text
+    return response.json()
 
 
 async def _scenario(app, client) -> dict:
@@ -690,14 +681,18 @@ async def test_migracion_0031_conserva_los_criterios_de_la_columna_singular():
             assert sin_criterio not in [fila[0] for fila in migrado]
 
             columnas = (
-                await connection.execute(
-                    text(
-                        "SELECT column_name FROM information_schema.columns "
-                        "WHERE table_schema = :schema AND table_name = 'poa_cedula_actividades'"
-                    ),
-                    {"schema": schema},
+                (
+                    await connection.execute(
+                        text(
+                            "SELECT column_name FROM information_schema.columns "
+                            "WHERE table_schema = :schema AND table_name = 'poa_cedula_actividades'"
+                        ),
+                        {"schema": schema},
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             assert "criterio_seaes_id" not in columnas
             assert "actividad_upe" in columnas
     finally:

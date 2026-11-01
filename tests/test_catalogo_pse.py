@@ -22,7 +22,7 @@ from app.modules.poa_planning.infrastructure.cedula_repository import (
 )
 from app.shared.application.actor import ActorContext
 from app.shared.domain.exceptions import ForbiddenError
-from helpers import cuatrimestres, poa_inicial_id
+from helpers import anio_libre, crear_ejercicio_de_un_anio_libre, crear_poa, cuatrimestres
 
 CATALOGO = "/api/v1/poa/catalogos"
 
@@ -55,16 +55,18 @@ async def _account(app, client, role: Role, suffix: str, area_id: int | None = N
 
 
 async def _nueva_rama(client, headers) -> dict[str, str | int]:
-    """Da de alta un objetivo propio con su estrategia, indicador y accion.
+    """Da de alta un POA propio con un objetivo, su estrategia, indicador y accion.
 
-    Se usa un numero de objetivo libre en vez de tocar el PSE cargado: asi la
-    prueba puede deshabilitar lo que acaba de crear sin dejar inservible el
-    catalogo real para las demas pruebas de la misma base.
+    El POA es propio y no el sembrado. Antes se le anadia un objetivo al POA
+    sembrado «POA 2026» con `max(numero) + 1`, y eso lo dejaba con 11 objetivos
+    en vez de 6 al terminar **cualquier** corrida: el `assert 6` de
+    `test_catalogo_por_poa.py` sobrevivia solo porque `por` va antes que `pse`
+    en el alfabeto -invirtiendo el orden de los archivos fallaba-. Un POA propio
+    no estorba a nadie en ningun orden.
     """
-    catalogo_id = await poa_inicial_id(client, headers)
-    objetivos = await client.get(_poa(catalogo_id, "objetivos?solo_activos=false"), headers=headers)
-    assert objetivos.status_code == 200, objetivos.text
-    numero = max((item["numero"] for item in objetivos.json()), default=0) + 1
+    anio = await anio_libre(client, headers)
+    catalogo_id = (await crear_poa(client, headers, anio))["id"]
+    numero = 1
     estrategia = f"{numero}.1"
     indicador = f"{numero}.1"
     accion = f"{numero}.1.1"
@@ -151,26 +153,14 @@ async def _deshabilitar(client, headers, rama) -> None:
 
 
 async def _cedula_con_la_rama(client, headers, rama, area_id: int) -> dict:
-    catalogo_id = await poa_inicial_id(client, headers)
-    anio = 2000 + (uuid4().int % 200)
-    for _ in range(8):
-        ejercicio = await client.post(
-            "/api/v1/poa/ejercicios",
-            headers=headers,
-            json={"anio": anio, "catalogo_id": catalogo_id},
-        )
-        if ejercicio.status_code == 201:
-            break
-        assert ejercicio.status_code == 409, ejercicio.text
-        anio = 2000 + (uuid4().int % 200)
-    else:
-        raise AssertionError("No se encontro un anio libre para el ejercicio POA de prueba.")
+    ejercicio = await crear_ejercicio_de_un_anio_libre(client, headers, rama["catalogo_id"])
+    anio = ejercicio["anio"]
 
     cedula = await client.post(
         "/api/v1/poa/cedulas",
         headers=headers,
         json={
-            "ejercicio_id": ejercicio.json()["id"],
+            "ejercicio_id": ejercicio["id"],
             "estrategia_clave": rama["estrategia"],
             "area_responsable_id": area_id,
             "cuatrimestres": cuatrimestres(anio),
@@ -209,7 +199,7 @@ async def _cedula_con_la_rama(client, headers, rama, area_id: int) -> dict:
         json={"periodo_id": periodo_id, "programado": "1"},
     )
     assert seguimiento.status_code in (200, 201), seguimiento.text
-    return {"id": cedula_id, "ejercicio_id": ejercicio.json()["id"], "anio": anio}
+    return {"id": cedula_id, "ejercicio_id": ejercicio["id"], "anio": anio}
 
 
 async def _area(client, headers, suffix: str) -> int:

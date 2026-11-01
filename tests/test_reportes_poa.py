@@ -15,7 +15,7 @@ import pytest
 from app.modules.identity_access.application.dto import RegisterUserCommand
 from app.modules.identity_access.application.use_cases.create_user import CreateUser
 from app.modules.identity_access.domain.value_objects import Role
-from helpers import cuatrimestres, poa_inicial_id
+from helpers import crear_ejercicio_de_un_anio_libre, cuatrimestres, poa_inicial_id
 
 API = "/api/v1"
 
@@ -101,20 +101,9 @@ async def test_el_cuatrimestre_filtra_todo_el_ejercicio_y_el_periodo_una_sola_ce
     area_id = area.json()["id"]
 
     catalogo_id = await poa_inicial_id(client, headers)
-    anio = 2000 + (uuid4().int % 200)
-    for _ in range(8):
-        ejercicio = await client.post(
-            f"{API}/poa/ejercicios",
-            headers=headers,
-            json={"anio": anio, "catalogo_id": catalogo_id},
-        )
-        if ejercicio.status_code == 201:
-            break
-        assert ejercicio.status_code == 409, ejercicio.text
-        anio = 2000 + (uuid4().int % 200)
-    else:
-        raise AssertionError("No se encontró un año libre para el ejercicio POA de prueba.")
-    ejercicio_id = ejercicio.json()["id"]
+    ejercicio = await crear_ejercicio_de_un_anio_libre(client, headers, catalogo_id)
+    anio = ejercicio["anio"]
+    ejercicio_id = ejercicio["id"]
 
     primera = await _cedula_con_actividad(
         client, headers, ejercicio_id=ejercicio_id, anio=anio, estrategia="1.1", area_id=area_id
@@ -209,19 +198,9 @@ async def test_rectoria_lee_los_reportes_de_todas_las_areas(backend_client):
     assert area.status_code == 201, area.text
 
     catalogo_id = await poa_inicial_id(client, headers)
-    anio = 2000 + (uuid4().int % 200)
-    for _ in range(8):
-        ejercicio = await client.post(
-            f"{API}/poa/ejercicios",
-            headers=headers,
-            json={"anio": anio, "catalogo_id": catalogo_id},
-        )
-        if ejercicio.status_code == 201:
-            break
-        anio = 2000 + (uuid4().int % 200)
-    else:
-        raise AssertionError("No se encontró un año libre.")
-    ejercicio_id = ejercicio.json()["id"]
+    ejercicio = await crear_ejercicio_de_un_anio_libre(client, headers, catalogo_id)
+    anio = ejercicio["anio"]
+    ejercicio_id = ejercicio["id"]
     await _cedula_con_actividad(
         client,
         headers,
@@ -252,21 +231,10 @@ async def test_rectoria_descarga_el_formato_que_tiene_que_validar(backend_client
     rectoria = await _rectoria(app, client, suffix)
 
     catalogo_id = await poa_inicial_id(client, headers)
-    anio = 2000 + (uuid4().int % 200)
-    for _ in range(8):
-        ejercicio = await client.post(
-            f"{API}/poa/ejercicios",
-            headers=headers,
-            json={"anio": anio, "catalogo_id": catalogo_id},
-        )
-        if ejercicio.status_code == 201:
-            break
-        anio = 2000 + (uuid4().int % 200)
-    else:
-        raise AssertionError("No se encontró un año libre.")
+    ejercicio = await crear_ejercicio_de_un_anio_libre(client, headers, catalogo_id)
 
     descarga = await client.get(
-        f"{API}/poa/reportes/formato-sep?ejercicio_id={ejercicio.json()['id']}", headers=rectoria
+        f"{API}/poa/reportes/formato-sep?ejercicio_id={ejercicio['id']}", headers=rectoria
     )
 
     assert descarga.status_code == 200, descarga.text[:200]
@@ -334,19 +302,9 @@ async def test_planeacion_filtra_por_el_area_que_pide(backend_client):
         areas.append(area.json()["id"])
 
     catalogo_id = await poa_inicial_id(client, headers)
-    anio = 2000 + (uuid4().int % 200)
-    for _ in range(8):
-        ejercicio = await client.post(
-            f"{API}/poa/ejercicios",
-            headers=headers,
-            json={"anio": anio, "catalogo_id": catalogo_id},
-        )
-        if ejercicio.status_code == 201:
-            break
-        anio = 2000 + (uuid4().int % 200)
-    else:
-        raise AssertionError("No se encontró un año libre.")
-    ejercicio_id = ejercicio.json()["id"]
+    ejercicio = await crear_ejercicio_de_un_anio_libre(client, headers, catalogo_id)
+    anio = ejercicio["anio"]
+    ejercicio_id = ejercicio["id"]
     for estrategia, area_id in (("1.1", areas[0]), ("1.3", areas[1])):
         await _cedula_con_actividad(
             client,
@@ -393,19 +351,9 @@ async def test_rectoria_abre_el_poa_que_tiene_que_dictaminar(backend_client):
     )
     assert area.status_code == 201, area.text
     catalogo_id = await poa_inicial_id(client, headers)
-    anio = 2000 + (uuid4().int % 200)
-    for _ in range(8):
-        ejercicio = await client.post(
-            f"{API}/poa/ejercicios",
-            headers=headers,
-            json={"anio": anio, "catalogo_id": catalogo_id},
-        )
-        if ejercicio.status_code == 201:
-            break
-        anio = 2000 + (uuid4().int % 200)
-    else:
-        raise AssertionError("No se encontró un año libre.")
-    ejercicio_id = ejercicio.json()["id"]
+    ejercicio = await crear_ejercicio_de_un_anio_libre(client, headers, catalogo_id)
+    anio = ejercicio["anio"]
+    ejercicio_id = ejercicio["id"]
     cedula = await _cedula_con_actividad(
         client,
         headers,
