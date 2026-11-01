@@ -783,6 +783,12 @@ class SqlAlchemyPoaFormRepository:
                     statement.order_by(
                         PoaFormActivityModel.actividad_clave,
                         PoaActivityFollowUpModel.cuatrimestre,
+                        # Desempate unico: `(clave, cuatrimestre)` no lo es -las
+                        # filas medidas comparten `(6.1.1, 1)`- y con
+                        # `offset/limit` el orden de las empatadas lo decidiria
+                        # el plan de PostgreSQL, asi que una pagina podria
+                        # repetir u omitir filas.
+                        PoaActivityFollowUpModel.id,
                     )
                     .offset(offset)
                     .limit(limit)
