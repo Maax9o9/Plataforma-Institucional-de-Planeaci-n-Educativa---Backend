@@ -12,7 +12,10 @@ branch_labels = None
 depends_on = None
 
 SQL_FILE = (
-    Path(__file__).resolve().parents[2] / "bd" / "migrations" / "0036_catalogo_pse_administrable.sql"
+    Path(__file__).resolve().parents[2]
+    / "bd"
+    / "migrations"
+    / "0036_catalogo_pse_administrable.sql"
 )
 
 
@@ -24,7 +27,9 @@ def downgrade() -> None:
     # Vuelve a atar el número de objetivo a 1..6. Si para entonces existe un
     # objetivo fuera de ese rango, el CHECK no se puede crear y el downgrade
     # falla: es correcto, borrar ese objetivo en silencio sería peor.
-    op.execute("ALTER TABLE poa_catalogo_objetivos DROP CONSTRAINT IF EXISTS chk_poa_objetivo_numero")
+    op.execute(
+        "ALTER TABLE poa_catalogo_objetivos DROP CONSTRAINT IF EXISTS chk_poa_objetivo_numero"
+    )
     op.execute(
         "ALTER TABLE poa_catalogo_objetivos ADD CONSTRAINT chk_poa_objetivo_numero "
         "CHECK (numero >= 1 AND numero <= 6)"
