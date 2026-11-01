@@ -9,6 +9,7 @@ from app.shared.domain.exceptions import ResourceNotFoundError
 from ...domain.events import (
     StrategicNodeCreated,
     StrategicNodeDeactivated,
+    StrategicNodeReactivated,
     StrategicNodeUpdated,
 )
 from ...domain.ports.strategic_tree_repository import StrategicTreeRepository
@@ -68,10 +69,11 @@ class UpdateStrategicNode:
         updated = replace(node, **changes)
         await self.repository.update(updated)
         se_retira = node.is_active and not updated.is_active
+        se_reactiva = updated.is_active and not node.is_active
         cambiados = sorted(
             campo for campo in changes if getattr(updated, campo) != getattr(node, campo)
         )
-        campos_corregidos = [campo for campo in cambiados if campo != "is_active" or not se_retira]
+        campos_corregidos = [campo for campo in cambiados if campo != "is_active"]
         if campos_corregidos:
             await self.event_bus.publish(
                 StrategicNodeUpdated(
@@ -89,6 +91,16 @@ class UpdateStrategicNode:
                     aggregate_type=NODO_ESTRATEGICO,
                     aggregate_id=updated.id,
                     action="deactivated",
+                    data={"key": updated.key},
+                )
+            )
+        if se_reactiva:
+            await self.event_bus.publish(
+                StrategicNodeReactivated(
+                    actor_id=actor_id,
+                    aggregate_type=NODO_ESTRATEGICO,
+                    aggregate_id=updated.id,
+                    action="reactivated",
                     data={"key": updated.key},
                 )
             )

@@ -48,3 +48,8 @@ class StrategicNodeUpdated(DomainEvent):
 @dataclass(frozen=True)
 class StrategicNodeDeactivated(DomainEvent):
     pass
+
+
+@dataclass(frozen=True)
+class StrategicNodeReactivated(DomainEvent):
+    pass

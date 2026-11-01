@@ -598,6 +598,39 @@ async def test_el_retiro_por_patch_se_asienta_como_retiro_y_no_como_correccion(e
     ]
 
 
+async def test_la_reactivacion_por_patch_se_asienta_como_reactivacion(escenario):
+    clave = f"E-{uuid4().hex[:8]}"
+    eje = await _crear(escenario, clave)
+    assert (await _retirar(escenario, eje)).status_code == 200
+
+    reactivado = await _corregir(escenario, eje, {"activo": True, "denominacion": "Corregida"})
+
+    assert reactivado.status_code == 200, reactivado.text
+    assert reactivado.json() == {**eje, "activo": True, "denominacion": "Corregida"}
+    assert await _bitacora(escenario, eje, clave) == [
+        _alta_de(escenario, clave),
+        ("deactivated", {"key": clave}),
+        ("updated", {"key": clave, "fields": ["name"]}),
+        ("reactivated", {"key": clave}),
+    ]
+
+
+async def test_los_dos_verbos_del_activo_no_se_confunden_entre_si(escenario):
+    clave = f"E-{uuid4().hex[:8]}"
+    eje = await _crear(escenario, clave)
+
+    assert (await _corregir(escenario, eje, {"activo": False})).status_code == 200
+    assert (await _corregir(escenario, eje, {"activo": True})).status_code == 200
+    assert (await _retirar(escenario, eje)).status_code == 200
+
+    assert [accion for accion, _ in await _bitacora(escenario, eje, clave)] == [
+        "created",
+        "deactivated",
+        "reactivated",
+        "deactivated",
+    ]
+
+
 @pytest.mark.parametrize(
     "cuerpo",
     [
