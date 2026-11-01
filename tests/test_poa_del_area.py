@@ -43,6 +43,7 @@ from app.modules.poa_institucional.application.use_cases.manage_poa_area import 
 )
 from app.modules.poa_institucional.domain.entities import (
     MESES_DEL_EJERCICIO,
+    META_MAS_ALTA_QUE_CABE,
     Activity,
     MonthlyTarget,
     PoaArea,
@@ -428,6 +429,27 @@ async def test_un_invisible_no_entra_en_la_denominacion_ni_en_el_metodo(tablero,
     )
 
 
+@pytest.mark.parametrize(
+    ("campo", "esperado"),
+    [
+        ("name", "denominación de la actividad no admite el carácter nulo"),
+        ("evaluation_method", "método de evaluación no admite el carácter nulo"),
+    ],
+)
+async def test_el_caracter_nulo_no_entra_ni_en_la_denominacion_ni_en_el_metodo(
+    tablero, campo, esperado
+):
+    poa_area = await _poa_area(tablero)
+    mandado = {"name": "Impartir el taller", campo: "Con el nulo\0 adentro"}
+
+    with pytest.raises(ValidationError, match=esperado):
+        await tablero.guardar().execute(
+            SaveActivityCommand(poa_area_id=poa_area.id, **mandado)
+        )
+
+    assert await tablero.repo.list_activities(poa_area.id) == []
+
+
 async def test_una_actividad_no_se_guarda_en_un_poa_de_area_que_no_existe(tablero):
     with pytest.raises(ResourceNotFoundError):
         await tablero.guardar().execute(
@@ -641,6 +663,20 @@ async def test_una_meta_que_la_base_no_guarda_tal_cual_se_rechaza_en_vez_de_redo
     assert await tablero.repo.list_activities(poa_area.id) == []
 
 
+async def test_la_meta_mas_alta_que_la_columna_guarda_se_acepta(tablero):
+    poa_area = await _poa_area(tablero)
+
+    guardada = await tablero.guardar().execute(
+        SaveActivityCommand(
+            poa_area_id=poa_area.id,
+            name="Con el tope exacto de la columna",
+            annual_target=META_MAS_ALTA_QUE_CABE,
+        )
+    )
+
+    assert (await tablero.repo.get_activity(guardada.id)).annual_target == META_MAS_ALTA_QUE_CABE
+
+
 async def test_una_meta_mensual_que_la_base_redondearia_se_rechaza(tablero):
     poa_area = await _poa_area(tablero)
     meses = _programacion(DOCE_METAS_DESIGUALES_QUE_SUMAN_24)
@@ -805,6 +841,34 @@ async def test_una_actividad_que_nace_retirada_se_guarda_retirada(tablero):
 
     assert (await tablero.repo.get_activity(guardada.id)).is_active is False
     assert await tablero.repo.list_activities(poa_area.id) == []
+
+
+async def test_el_listado_sigue_el_orden_del_alta_y_no_el_del_ultimo_guardado(tablero):
+    poa_area = await _poa_area(tablero)
+    primera = await tablero.guardar().execute(
+        SaveActivityCommand(poa_area_id=poa_area.id, name="Zapatear el patio")
+    )
+    segunda = await tablero.guardar().execute(
+        SaveActivityCommand(poa_area_id=poa_area.id, name="Mejorar el taller")
+    )
+    tercera = await tablero.guardar().execute(
+        SaveActivityCommand(poa_area_id=poa_area.id, name="Archivar lo viejo")
+    )
+
+    await tablero.guardar().execute(
+        SaveActivityCommand(
+            poa_area_id=poa_area.id,
+            activity_id=primera.id,
+            version=primera.version,
+            name="Zapatear el patio, corregido",
+        )
+    )
+
+    assert [una.id for una in await tablero.repo.list_activities(poa_area.id)] == [
+        primera.id,
+        segunda.id,
+        tercera.id,
+    ]
 
 
 async def test_una_actividad_de_otro_poa_de_area_no_se_edita_desde_este(tablero):
@@ -1169,6 +1233,24 @@ async def test_un_poa_de_area_ya_enviado_no_se_vuelve_a_enviar_ni_admite_cambios
     guardado = await tablero.repo.get_poa_area(poa_area.id)
     assert (guardado.status, guardado.version) == (PoaAreaStatus.ENVIADO, 2)
     assert (await tablero.repo.get_activity(actividad.id)).name == actividad.name
+
+
+async def test_abrir_un_poa_de_area_ya_enviado_lo_devuelve_enviado(tablero):
+    poa_area = await _poa_area(tablero)
+    await _actividad_completa(tablero, poa_area)
+    enviado = await tablero.enviar().execute(
+        SubmitPoaAreaCommand(poa_area_id=poa_area.id, version=poa_area.version)
+    )
+
+    reabierto = await tablero.abrir().execute(
+        OpenPoaAreaCommand(exercise_id=poa_area.exercise_id, area_id=poa_area.area_id)
+    )
+
+    assert (reabierto.id, reabierto.status, reabierto.version) == (
+        poa_area.id,
+        PoaAreaStatus.ENVIADO,
+        enviado.version,
+    )
 
 
 async def test_presentar_con_una_version_vieja_no_pisa_el_cambio_ajeno(tablero):
