@@ -85,6 +85,8 @@ DOCE_METAS_DESIGUALES_QUE_SUMAN_24 = (
 
 DOCE_METAS_DESIGUALES_QUE_SUMAN_22 = DOCE_METAS_DESIGUALES_QUE_SUMAN_24[:-1] + (Decimal(0),)
 
+DOCE_METAS_DESIGUALES_QUE_SUMAN_30 = DOCE_METAS_DESIGUALES_QUE_SUMAN_24[:-1] + (Decimal(8),)
+
 ONCE_METAS_DESIGUALES_QUE_SUMAN_24_Y_UN_DOCEAVO_EN_CERO = DOCE_METAS_DESIGUALES_QUE_SUMAN_24[
     :10
 ] + (Decimal(5), Decimal(0))
@@ -828,6 +830,18 @@ async def test_no_se_presenta_si_los_meses_no_suman_la_meta(tablero):
     await _actividad_completa(tablero, poa_area, metas=DOCE_METAS_DESIGUALES_QUE_SUMAN_22)
 
     with pytest.raises(ValidationError, match="suman 22 de 24"):
+        await tablero.enviar().execute(
+            SubmitPoaAreaCommand(poa_area_id=poa_area.id, version=poa_area.version)
+        )
+
+    assert (await tablero.repo.get_poa_area(poa_area.id)).status is PoaAreaStatus.BORRADOR
+
+
+async def test_no_se_presenta_si_los_meses_suman_mas_que_la_meta(tablero):
+    poa_area = await _poa_area(tablero)
+    await _actividad_completa(tablero, poa_area, metas=DOCE_METAS_DESIGUALES_QUE_SUMAN_30)
+
+    with pytest.raises(ValidationError, match="suman 30 de 24"):
         await tablero.enviar().execute(
             SubmitPoaAreaCommand(poa_area_id=poa_area.id, version=poa_area.version)
         )
