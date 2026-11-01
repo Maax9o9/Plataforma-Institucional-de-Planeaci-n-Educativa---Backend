@@ -67,15 +67,31 @@ class UpdateStrategicNode:
         node = await _existing(self.repository, node_id)
         updated = replace(node, **changes)
         await self.repository.update(updated)
-        await self.event_bus.publish(
-            StrategicNodeUpdated(
-                actor_id=actor_id,
-                aggregate_type=NODO_ESTRATEGICO,
-                aggregate_id=updated.id,
-                action="updated",
-                data={"key": updated.key, "fields": sorted(changes)},
-            )
+        se_retira = node.is_active and not updated.is_active
+        cambiados = sorted(
+            campo for campo in changes if getattr(updated, campo) != getattr(node, campo)
         )
+        campos_corregidos = [campo for campo in cambiados if campo != "is_active" or not se_retira]
+        if campos_corregidos:
+            await self.event_bus.publish(
+                StrategicNodeUpdated(
+                    actor_id=actor_id,
+                    aggregate_type=NODO_ESTRATEGICO,
+                    aggregate_id=updated.id,
+                    action="updated",
+                    data={"key": updated.key, "fields": campos_corregidos},
+                )
+            )
+        if se_retira:
+            await self.event_bus.publish(
+                StrategicNodeDeactivated(
+                    actor_id=actor_id,
+                    aggregate_type=NODO_ESTRATEGICO,
+                    aggregate_id=updated.id,
+                    action="deactivated",
+                    data={"key": updated.key},
+                )
+            )
         return updated
 
 
@@ -88,15 +104,16 @@ class DeactivateStrategicNode:
         node = await _existing(self.repository, node_id)
         retired = replace(node, is_active=False)
         await self.repository.update(retired)
-        await self.event_bus.publish(
-            StrategicNodeDeactivated(
-                actor_id=actor_id,
-                aggregate_type=NODO_ESTRATEGICO,
-                aggregate_id=retired.id,
-                action="deactivated",
-                data={"key": retired.key},
+        if node.is_active:
+            await self.event_bus.publish(
+                StrategicNodeDeactivated(
+                    actor_id=actor_id,
+                    aggregate_type=NODO_ESTRATEGICO,
+                    aggregate_id=retired.id,
+                    action="deactivated",
+                    data={"key": retired.key},
+                )
             )
-        )
         return retired
 
 

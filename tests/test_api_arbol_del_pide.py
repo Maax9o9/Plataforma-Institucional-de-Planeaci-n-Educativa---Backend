@@ -461,6 +461,21 @@ async def test_un_nodo_retirado_vuelve_con_patch_activo_pero_no_bajo_un_padre_re
     assert [n["clave"] for n in await _listar(escenario)] == ["E1", "E1.O1"]
 
 
+async def _bitacora(escenario: Escenario, nodo: dict, clave: str) -> list[tuple[str, dict]]:
+    escritas = await escenario.app.state.audit_repository.list(
+        aggregate_type="strategic_node", aggregate_id=nodo["id"], limit=100, descending=False
+    )
+    return [
+        (entrada.action, entrada.data)
+        for entrada in escritas
+        if entrada.data.get("key") == clave
+    ]
+
+
+def _alta_de(escenario: Escenario, clave: str) -> tuple[str, dict]:
+    return ("created", {"version_id": escenario.version, "key": clave, "kind": "eje"})
+
+
 async def test_administrar_el_arbol_deja_bitacora(escenario):
     clave = f"E-{uuid4().hex[:8]}"
     eje = await _crear(escenario, clave)
@@ -484,6 +499,77 @@ async def test_administrar_el_arbol_deja_bitacora(escenario):
         {"key": clave},
     ]
     assert {entrada.actor_name for entrada in mias} == {"Arbol PIDE planeacion"}
+
+
+async def test_lo_que_el_arbol_rechaza_no_queda_asentado_como_si_hubiera_pasado(escenario):
+    clave = f"E-{uuid4().hex[:8]}"
+    eje = await _crear(escenario, clave)
+    hijo = await _crear(escenario, f"{clave}.O1", "objetivo_general", padre=eje)
+
+    por_el_puerto = await _retirar(escenario, eje)
+    por_el_patch = await _corregir(escenario, eje, {"activo": False})
+    despues_de_los_rechazos = await _bitacora(escenario, eje, clave)
+
+    assert (por_el_puerto.status_code, por_el_patch.status_code) == (409, 409), por_el_puerto.text
+    assert despues_de_los_rechazos == [_alta_de(escenario, clave)]
+    assert (await _retirar(escenario, hijo)).status_code == 200
+    assert (await _retirar(escenario, eje)).status_code == 200
+    assert await _bitacora(escenario, eje, clave) == [
+        _alta_de(escenario, clave),
+        ("deactivated", {"key": clave}),
+    ]
+
+
+async def test_el_retiro_por_patch_se_asienta_como_retiro_y_no_como_correccion(escenario):
+    clave = f"E-{uuid4().hex[:8]}"
+    eje = await _crear(escenario, clave)
+
+    retirado = await _corregir(escenario, eje, {"activo": False, "denominacion": "Corregida"})
+
+    assert retirado.status_code == 200, retirado.text
+    assert retirado.json() == {**eje, "activo": False, "denominacion": "Corregida"}
+    assert await _bitacora(escenario, eje, clave) == [
+        _alta_de(escenario, clave),
+        ("updated", {"key": clave, "fields": ["name"]}),
+        ("deactivated", {"key": clave}),
+    ]
+
+
+@pytest.mark.parametrize(
+    "cuerpo",
+    [
+        lambda clave: {},
+        lambda clave: {"denominacion": "La de origen"},
+        lambda clave: {"activo": True},
+        lambda clave: {"clave": f" {clave} "},
+    ],
+    ids=["sin_campos", "la_misma_denominacion", "el_mismo_activo", "la_misma_clave_con_espacios"],
+)
+async def test_un_patch_que_no_cambia_nada_no_deja_entrada(escenario, cuerpo):
+    clave = f"E-{uuid4().hex[:8]}"
+    eje = await _crear(escenario, clave, denominacion="La de origen")
+
+    corregido = await _corregir(escenario, eje, cuerpo(clave))
+
+    assert corregido.status_code == 200, corregido.text
+    assert corregido.json() == eje
+    assert await _bitacora(escenario, eje, clave) == [_alta_de(escenario, clave)]
+
+
+async def test_retirar_lo_que_ya_estaba_retirado_no_deja_una_segunda_entrada(escenario):
+    clave = f"E-{uuid4().hex[:8]}"
+    eje = await _crear(escenario, clave)
+
+    primera = await _retirar(escenario, eje)
+    segunda = await _retirar(escenario, eje)
+    por_el_patch = await _corregir(escenario, eje, {"activo": False})
+
+    assert (primera.status_code, segunda.status_code) == (200, 200), primera.text
+    assert por_el_patch.status_code == 200, por_el_patch.text
+    assert await _bitacora(escenario, eje, clave) == [
+        _alta_de(escenario, clave),
+        ("deactivated", {"key": clave}),
+    ]
 
 
 @pytest.mark.parametrize("escritura", ["corregir", "retirar"])
