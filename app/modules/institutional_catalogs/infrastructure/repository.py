@@ -85,6 +85,19 @@ class InMemoryInstrumentVersionRepository:
     async def get_by_label(self, instrument_id: int, label: str) -> InstrumentVersion | None:
         return await self._con_etiqueta(instrument_id, label)
 
+    async def list(self, *, instrument_id: int | None = None) -> list[InstrumentVersion]:
+        del_instrumento = [
+            version
+            for version in self._items.values()
+            if instrument_id is None or version.instrument_id == instrument_id
+        ]
+        de_la_mas_reciente = sorted(
+            del_instrumento,
+            key=lambda version: (version.effective_from, version.id),
+            reverse=True,
+        )
+        return sorted(de_la_mas_reciente, key=lambda version: version.instrument_id)
+
     async def _con_etiqueta(self, instrument_id: int, label: str) -> InstrumentVersion | None:
         for version in self._items.values():
             if version.instrument_id == instrument_id and version.label == label:

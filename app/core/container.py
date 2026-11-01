@@ -71,10 +71,12 @@ from app.modules.institutional_catalogs.infrastructure.reference_sql_repository 
 from app.modules.institutional_catalogs.infrastructure.repository import (
     InMemoryAreaRepository,
     InMemoryInstrumentRepository,
+    InMemoryInstrumentVersionRepository,
 )
 from app.modules.institutional_catalogs.infrastructure.sql_repository import (
     SqlAlchemyAreaRepository,
     SqlAlchemyInstrumentRepository,
+    SqlAlchemyInstrumentVersionRepository,
 )
 from app.modules.institutional_catalogs.infrastructure.strategic_tree_repository import (
     InMemoryStrategicTreeRepository,
@@ -127,6 +129,7 @@ class Resources:
     revoked_token_store: object
     area_repository: object
     instrument_repository: object
+    instrument_version_repository: object
     period_repository: object
     audit_repository: object
     indicator_repository: object
@@ -163,6 +166,7 @@ def create_resources(settings: Settings) -> Resources:
         revoked_token_store = InMemoryRevokedTokenStore()
         area_repository = InMemoryAreaRepository()
         instrument_repository = InMemoryInstrumentRepository()
+        instrument_version_repository = InMemoryInstrumentVersionRepository()
         period_repository = InMemoryPeriodRepository()
         audit_repository = InMemoryAuditRepository()
         indicator_repository = InMemoryIndicatorRepository()
@@ -203,6 +207,7 @@ def create_resources(settings: Settings) -> Resources:
         revoked_token_store = SqlAlchemyRevokedTokenStore(db_session_factory)
         area_repository = SqlAlchemyAreaRepository(db_session_factory)
         instrument_repository = SqlAlchemyInstrumentRepository(db_session_factory)
+        instrument_version_repository = SqlAlchemyInstrumentVersionRepository(db_session_factory)
         period_repository = SqlAlchemyPeriodRepository(db_session_factory)
         audit_repository = SqlAlchemyAuditRepository(db_session_factory)
         indicator_repository = SqlAlchemyIndicatorRepository(db_session_factory)
@@ -240,6 +245,7 @@ def create_resources(settings: Settings) -> Resources:
         revoked_token_store=revoked_token_store,
         area_repository=area_repository,
         instrument_repository=instrument_repository,
+        instrument_version_repository=instrument_version_repository,
         period_repository=period_repository,
         audit_repository=audit_repository,
         indicator_repository=indicator_repository,

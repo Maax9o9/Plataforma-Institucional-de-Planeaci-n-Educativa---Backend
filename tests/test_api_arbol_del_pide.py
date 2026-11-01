@@ -1081,6 +1081,7 @@ def test_el_arbol_del_pide_se_publica_aunque_el_ciclo_mensual_duerma():
     assert {
         ruta: set(metodos) for ruta, metodos in rutas.items() if ruta.startswith(f"{PIDE}/")
     } == {
+        f"{PIDE}/versiones": {"get"},
         f"{PIDE}/versiones/{{version_id}}/nodos": {"get", "post"},
         f"{PIDE}/nodos/{{nodo_id}}": {"patch"},
         f"{PIDE}/nodos/{{nodo_id}}/desactivar": {"post"},

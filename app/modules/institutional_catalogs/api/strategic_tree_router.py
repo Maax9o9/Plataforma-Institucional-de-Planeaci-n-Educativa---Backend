@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Request, status
@@ -13,6 +14,7 @@ from ..application.use_cases.manage_strategic_tree import (
     DeactivateStrategicNode,
     UpdateStrategicNode,
 )
+from ..domain.entities import InstrumentVersion
 from ..domain.strategic_tree_entities import (
     MAYOR_ENTERO_DE_LA_BASE,
     MENOR_ENTERO_DE_LA_BASE,
@@ -25,6 +27,7 @@ from ..domain.strategic_tree_entities import (
 router = APIRouter(prefix="/pide", tags=["Catalogo del PIDE"])
 
 IdEnLaRuta = Annotated[int, Path(ge=1, le=MAYOR_ENTERO_DE_LA_BASE)]
+IdEnElFiltro = Annotated[int | None, Query(ge=1, le=MAYOR_ENTERO_DE_LA_BASE)]
 IdDeNodo = Annotated[int, Field(ge=1, le=MAYOR_ENTERO_DE_LA_BASE)]
 Orden = Annotated[int, Field(ge=MENOR_ENTERO_DE_LA_BASE, le=MAYOR_ENTERO_DE_LA_BASE)]
 
@@ -75,6 +78,42 @@ class ActualizarNodoRequest(BaseModel):
             ATTRIBUTE_OF_FIELD[field]: value
             for field, value in self.model_dump(exclude_unset=True).items()
         }
+
+
+class VersionRespuesta(BaseModel):
+    id: int
+    instrumento_id: int
+    etiqueta: str
+    vigente_desde: date
+    publicada_en: datetime | None
+    origen: str | None
+
+    @classmethod
+    def from_domain(cls, version: InstrumentVersion) -> VersionRespuesta:
+        return cls(
+            id=version.id,
+            instrumento_id=version.instrument_id,
+            etiqueta=version.label,
+            vigente_desde=version.effective_from,
+            publicada_en=version.published_at,
+            origen=version.origin,
+        )
+
+
+@router.get(
+    "/versiones",
+    response_model=list[VersionRespuesta],
+    summary="Consultar las versiones de los instrumentos",
+)
+async def list_versions(
+    request: Request,
+    instrumento_id: IdEnElFiltro = None,
+    _user=Depends(get_current_user),
+) -> list[VersionRespuesta]:
+    versiones = await request.app.state.instrument_version_repository.list(
+        instrument_id=instrumento_id
+    )
+    return [VersionRespuesta.from_domain(version) for version in versiones]
 
 
 class NodoRespuesta(BaseModel):

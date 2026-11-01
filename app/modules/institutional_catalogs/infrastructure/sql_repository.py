@@ -242,3 +242,15 @@ class SqlAlchemyInstrumentVersionRepository:
                 )
             )
             return _version_a_dominio(model) if model is not None else None
+
+    async def list(self, *, instrument_id: int | None = None) -> list[InstrumentVersion]:
+        consulta = select(InstrumentVersionModel).order_by(
+            InstrumentVersionModel.instrumento_id,
+            InstrumentVersionModel.vigente_desde.desc(),
+            InstrumentVersionModel.id.desc(),
+        )
+        if instrument_id is not None:
+            consulta = consulta.where(InstrumentVersionModel.instrumento_id == instrument_id)
+        async with self.session_factory() as session:
+            modelos = (await session.scalars(consulta)).all()
+            return [_version_a_dominio(model) for model in modelos]
