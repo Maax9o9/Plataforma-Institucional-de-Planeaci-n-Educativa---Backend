@@ -557,9 +557,10 @@ async def test_una_meta_mensual_negativa_no_entra_pero_cero_si(conexion, meta):
     assert viola_la_restriccion(error, "chk_poa_inst_programacion_meta_no_negativa")
 
 
+@pytest.mark.parametrize("mes", [1, 6, 12])
 @pytest.mark.parametrize("meta", [Decimal("0.0001"), Decimal("5"), Decimal("1000")])
 async def test_un_mes_no_incluido_no_lleva_meta_pero_la_misma_meta_cabe_en_uno_incluido(
-    conexion, meta
+    conexion, meta, mes
 ):
     actividad = await _actividad(conexion)
 
@@ -567,13 +568,13 @@ async def test_un_mes_no_incluido_no_lleva_meta_pero_la_misma_meta_cabe_en_uno_i
         conexion,
         "poa_inst_programacion_mensual",
         actividad_id=actividad,
-        mes=1,
+        mes=mes,
         meta=meta,
         incluido=False,
     )
 
     assert viola_la_restriccion(error, "chk_poa_inst_programacion_no_incluido_sin_meta")
-    await _programar(conexion, actividad, 1, meta, True)
+    await _programar(conexion, actividad, mes, meta, True)
 
 
 async def test_un_borrador_incompleto_se_guarda_con_solo_su_nombre(conexion):
