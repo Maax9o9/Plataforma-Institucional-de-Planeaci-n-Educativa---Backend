@@ -209,3 +209,57 @@ def test_la_aplicacion_de_modulo_no_abre_conexion_contra_su_base():
         "sólo porque `tests/conftest.py` importa de `app.main`. Si la suite se "
         "conecta por ahí, está escribiendo en la base de desarrollo."
     )
+
+
+@pytest.mark.asyncio
+async def test_cada_sesion_de_pytest_escribe_en_su_copia_y_no_en_la_plantilla(backend_client):
+    """La cuarta cara: *cuál* base de pruebas, cuando hay más de una sesión.
+
+    Hasta la ronda 5 la suite entera compartía una sola base persistente, con un
+    `TRUNCATE` por sesión y cero reversión por prueba. Funcionaba mientras sólo
+    hubiera una sesión de pytest por base, y nadie lo declaraba ni lo
+    verificaba: dos sesiones escalonadas 120 s sobre la misma base dieron, con
+    el mismo commit, una corrida en verde y otra con fallas -el `TRUNCATE` de la
+    segunda borraba por debajo lo que la primera llevaba acumulado-.
+
+    Ahora cada sesión saca su copia con `CREATE DATABASE ... TEMPLATE` y la tira
+    en un `finally`. Lo que esto sujeta no es el nombre: es que una escritura de
+    la suite **no aparece** en la plantilla.
+    """
+    from uuid import uuid4
+
+    import asyncpg
+    from sqlalchemy import text
+
+    from app.modules.institutional_catalogs.domain.entities import Area
+    from conftest import PLANTILLA_DE_LA_BASE_DE_PRUEBAS
+
+    aplicacion, _ = backend_client
+    if aplicacion.state.db_engine is None:
+        pytest.skip("Sin TEST_DATABASE_URL no hay base de pruebas que copiar.")
+
+    plantilla = make_url(PLANTILLA_DE_LA_BASE_DE_PRUEBAS)
+    en_uso = make_url(os.environ["TEST_DATABASE_URL"])
+    codigo = f"COPIA-{uuid4().hex[:8].upper()}"
+    await aplicacion.state.area_repository.add(Area.create(code=codigo, name=f"Área {codigo}"))
+
+    async with aplicacion.state.db_engine.connect() as conexion:
+        conectada_a = await conexion.scalar(text("SELECT current_database()"))
+        en_la_copia = await conexion.scalar(
+            text("SELECT count(*) FROM areas WHERE codigo = :codigo"), {"codigo": codigo}
+        )
+    dsn = plantilla.render_as_string(hide_password=False).replace(
+        "postgresql+asyncpg://", "postgresql://"
+    )
+    plantilla_abierta = await asyncpg.connect(dsn)
+    try:
+        en_la_plantilla = await plantilla_abierta.fetchval(
+            "SELECT count(*) FROM areas WHERE codigo = $1", codigo
+        )
+    finally:
+        await plantilla_abierta.close()
+
+    assert en_uso.database == f"{plantilla.database}_{os.getpid()}"
+    assert conectada_a == en_uso.database
+    assert conectada_a != plantilla.database
+    assert (en_la_copia, en_la_plantilla) == (1, 0)
