@@ -48,6 +48,7 @@ from app.modules.poa_institucional.domain.entities import (
     MonthlyTarget,
     PoaArea,
     PoaAreaStatus,
+    whats_missing_to_submit,
 )
 from app.modules.poa_institucional.domain.ports.area_leadership import AreaLeadership
 from app.modules.poa_institucional.domain.ports.repositories import PoaAreaRepository
@@ -448,6 +449,28 @@ async def test_el_caracter_nulo_no_entra_ni_en_la_denominacion_ni_en_el_metodo(
         )
 
     assert await tablero.repo.list_activities(poa_area.id) == []
+
+
+@pytest.mark.parametrize("en_blanco", ["", "   "], ids=["vacio", "solo_espacios"])
+async def test_un_metodo_de_evaluacion_en_blanco_se_guarda_como_no_puesto(tablero, en_blanco):
+    poa_area = await _poa_area(tablero)
+
+    guardada = await tablero.guardar().execute(
+        SaveActivityCommand(
+            poa_area_id=poa_area.id, name="Con el método en blanco", evaluation_method=en_blanco
+        )
+    )
+
+    assert guardada.evaluation_method is None
+    assert (await tablero.repo.get_activity(guardada.id)).evaluation_method is None
+
+
+def test_un_metodo_de_evaluacion_vacio_cuenta_como_lo_que_falta():
+    sin_el_campo = Activity(poa_area_id=1, name="Sin método", evaluation_method=None)
+    vacio = Activity(poa_area_id=1, name="Con el método vacío", evaluation_method="")
+
+    assert "el método de evaluación" in whats_missing_to_submit(sin_el_campo)
+    assert "el método de evaluación" in whats_missing_to_submit(vacio)
 
 
 async def test_una_actividad_no_se_guarda_en_un_poa_de_area_que_no_existe(tablero):
