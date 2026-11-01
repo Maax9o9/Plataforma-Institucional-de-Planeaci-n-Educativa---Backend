@@ -1,5 +1,3 @@
-"""Lo que una operacion declara que puede devolver cuando falla."""
-
 from __future__ import annotations
 
 from typing import Any

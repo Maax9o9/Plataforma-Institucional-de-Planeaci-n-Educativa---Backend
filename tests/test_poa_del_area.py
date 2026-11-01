@@ -444,9 +444,7 @@ async def test_el_caracter_nulo_no_entra_ni_en_la_denominacion_ni_en_el_metodo(
     mandado = {"name": "Impartir el taller", campo: "Con el nulo\0 adentro"}
 
     with pytest.raises(ValidationError, match=esperado):
-        await tablero.guardar().execute(
-            SaveActivityCommand(poa_area_id=poa_area.id, **mandado)
-        )
+        await tablero.guardar().execute(SaveActivityCommand(poa_area_id=poa_area.id, **mandado))
 
     assert await tablero.repo.list_activities(poa_area.id) == []
 
