@@ -537,6 +537,24 @@ async def test_a_un_nodo_retirado_no_se_le_cuelgan_actividades_nuevas(tablero):
         )
 
 
+async def test_una_actividad_existente_tampoco_se_muda_a_un_nodo_retirado(tablero):
+    poa_area = await _poa_area(tablero)
+    guardada = await _actividad_completa(tablero, poa_area)
+    retirado = await _nodo_raiz(tablero, NodeKind.ACCION, activo=False)
+
+    with pytest.raises(ValidationError, match="retirado"):
+        await tablero.guardar().execute(
+            SaveActivityCommand(
+                poa_area_id=poa_area.id,
+                activity_id=guardada.id,
+                version=guardada.version,
+                node_id=retirado,
+            )
+        )
+
+    assert (await tablero.repo.get_activity(guardada.id)).node_id == guardada.node_id
+
+
 async def test_una_actividad_puede_colgar_de_un_nodo_desactivado_ya_usado(tablero):
     poa_area = await _poa_area(tablero)
     accion = await _nodo_raiz(tablero, NodeKind.ACCION)

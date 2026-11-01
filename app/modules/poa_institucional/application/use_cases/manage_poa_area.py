@@ -16,7 +16,7 @@ from ...domain.entities import (
     PoaAreaStatus,
     ensure_can_be_submitted,
     ensure_is_still_a_draft,
-    ensure_node_can_take_new_activities,
+    ensure_node_can_be_chosen,
 )
 from ...domain.ports.area_leadership import AreaLeadership
 from ...domain.ports.repositories import PoaAreaRepository
@@ -94,7 +94,7 @@ class SavePoaActivity:
         if actividad.node_id is not None and (
             guardada is None or actividad.node_id != guardada.node_id
         ):
-            ensure_node_can_take_new_activities(await self.tree.get_by_id(actividad.node_id))
+            ensure_node_can_be_chosen(await self.tree.get_by_id(actividad.node_id))
 
         if guardada is None:
             await self.poa_areas.add_activity(actividad)

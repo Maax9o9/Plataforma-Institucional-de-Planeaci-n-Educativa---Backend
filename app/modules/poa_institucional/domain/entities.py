@@ -148,7 +148,7 @@ def _exigir_meta_que_la_base_guarda_sin_redondear(meta: Decimal, de_quien: str) 
         )
 
 
-def ensure_node_can_take_new_activities(node: StrategicNode | None) -> None:
+def ensure_node_can_be_chosen(node: StrategicNode | None) -> None:
     if node is None:
         raise ValidationError("La acción del PIDE a la que responde la actividad no existe.")
     if node.kind is not NIVEL_DE_LA_ACTIVIDAD:
