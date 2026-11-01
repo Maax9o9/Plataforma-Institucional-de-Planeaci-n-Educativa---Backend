@@ -49,7 +49,7 @@ COLUMNAS = {
         "actividad_id": ("integer", False, None),
         "mes": ("smallint", False, None),
         "meta": ("numeric(18,4)", False, None),
-        "programado": ("boolean", False, None),
+        "incluido": ("boolean", False, None),
     },
 }
 
@@ -88,7 +88,7 @@ RESTRICCIONES = {
     "uq_poa_inst_programacion_actividad_mes": "u",
     "chk_poa_inst_programacion_mes": "c",
     "chk_poa_inst_programacion_meta_no_negativa": "c",
-    "chk_poa_inst_programacion_no_programado_sin_meta": "c",
+    "chk_poa_inst_programacion_no_incluido_sin_meta": "c",
 }
 
 PADRE_DE = {
@@ -245,7 +245,7 @@ async def _actividad(conexion: AsyncConnection, poa_area: int | None = None, **v
 
 
 async def _programar(
-    conexion: AsyncConnection, actividad: int, mes: int, meta: Decimal, programado: bool
+    conexion: AsyncConnection, actividad: int, mes: int, meta: Decimal, incluido: bool
 ) -> int:
     return await _insertar(
         conexion,
@@ -253,7 +253,7 @@ async def _programar(
         actividad_id=actividad,
         mes=mes,
         meta=meta,
-        programado=programado,
+        incluido=incluido,
     )
 
 
@@ -353,16 +353,16 @@ async def test_el_esquema_de_las_tres_tablas_es_el_que_las_tareas_siguientes_dan
     assert await _esquema(conexion) == COLUMNAS
 
 
-async def test_un_mes_no_programado_se_distingue_de_un_cero(conexion):
+async def test_un_mes_no_incluido_se_distingue_de_un_cero(conexion):
     actividad = await _actividad(conexion)
     esperado = {2: False, 3: True, 8: True, 11: False}
-    for mes, programado in esperado.items():
-        await _programar(conexion, actividad, mes, Decimal(0), programado)
+    for mes, incluido in esperado.items():
+        await _programar(conexion, actividad, mes, Decimal(0), incluido)
 
     guardado = (
         await conexion.execute(
             text(
-                "SELECT mes, meta, programado FROM poa_inst_programacion_mensual "
+                "SELECT mes, meta, incluido FROM poa_inst_programacion_mensual "
                 "WHERE actividad_id = :actividad ORDER BY mes"
             ),
             {"actividad": actividad},
@@ -371,13 +371,13 @@ async def test_un_mes_no_programado_se_distingue_de_un_cero(conexion):
 
     assert [mes for mes, _, _ in guardado] == [2, 3, 8, 11]
     assert all(meta == 0 for _, meta, _ in guardado)
-    assert all(programado is esperado[mes] for mes, _, programado in guardado)
+    assert all(incluido is esperado[mes] for mes, _, incluido in guardado)
 
 
-@pytest.mark.parametrize("omitido", ["programado", "meta"])
+@pytest.mark.parametrize("omitido", ["incluido", "meta"])
 async def test_cada_mes_declara_cuanto_y_si_se_programa_sin_valores_por_omision(conexion, omitido):
     actividad = await _actividad(conexion)
-    valores = {"actividad_id": actividad, "mes": 5, "meta": Decimal(0), "programado": True}
+    valores = {"actividad_id": actividad, "mes": 5, "meta": Decimal(0), "incluido": True}
     del valores[omitido]
 
     error = await _intentar_insertar(conexion, "poa_inst_programacion_mensual", **valores)
@@ -481,7 +481,7 @@ async def test_un_mes_fuera_de_1_a_12_no_entra(conexion, mes):
         actividad_id=actividad,
         mes=mes,
         meta=Decimal(1),
-        programado=True,
+        incluido=True,
     )
 
     assert viola_la_restriccion(error, "chk_poa_inst_programacion_mes")
@@ -497,7 +497,7 @@ async def test_un_mes_no_se_programa_dos_veces_en_la_misma_actividad(conexion):
         actividad_id=actividad,
         mes=4,
         meta=Decimal(5),
-        programado=True,
+        incluido=True,
     )
 
     assert viola_la_restriccion(error, "uq_poa_inst_programacion_actividad_mes")
@@ -551,14 +551,14 @@ async def test_una_meta_mensual_negativa_no_entra_pero_cero_si(conexion, meta):
         actividad_id=actividad,
         mes=2,
         meta=meta,
-        programado=True,
+        incluido=True,
     )
 
     assert viola_la_restriccion(error, "chk_poa_inst_programacion_meta_no_negativa")
 
 
 @pytest.mark.parametrize("meta", [Decimal("0.0001"), Decimal("5"), Decimal("1000")])
-async def test_un_mes_no_programado_no_lleva_meta_pero_la_misma_meta_cabe_en_uno_programado(
+async def test_un_mes_no_incluido_no_lleva_meta_pero_la_misma_meta_cabe_en_uno_incluido(
     conexion, meta
 ):
     actividad = await _actividad(conexion)
@@ -569,10 +569,10 @@ async def test_un_mes_no_programado_no_lleva_meta_pero_la_misma_meta_cabe_en_uno
         actividad_id=actividad,
         mes=1,
         meta=meta,
-        programado=False,
+        incluido=False,
     )
 
-    assert viola_la_restriccion(error, "chk_poa_inst_programacion_no_programado_sin_meta")
+    assert viola_la_restriccion(error, "chk_poa_inst_programacion_no_incluido_sin_meta")
     await _programar(conexion, actividad, 1, meta, True)
 
 

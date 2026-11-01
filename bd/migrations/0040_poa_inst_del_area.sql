@@ -39,12 +39,12 @@ CREATE TABLE poa_inst_programacion_mensual (
     actividad_id INTEGER NOT NULL,
     mes          SMALLINT NOT NULL,
     meta         NUMERIC(18, 4) NOT NULL,
-    programado   BOOLEAN NOT NULL,
+    incluido     BOOLEAN NOT NULL,
 
     CONSTRAINT fk_poa_inst_programacion_actividad
         FOREIGN KEY (actividad_id) REFERENCES poa_inst_actividades(id) ON DELETE RESTRICT,
     CONSTRAINT uq_poa_inst_programacion_actividad_mes UNIQUE (actividad_id, mes),
     CONSTRAINT chk_poa_inst_programacion_mes CHECK (mes BETWEEN 1 AND 12),
     CONSTRAINT chk_poa_inst_programacion_meta_no_negativa CHECK (meta >= 0),
-    CONSTRAINT chk_poa_inst_programacion_no_programado_sin_meta CHECK (programado OR meta = 0)
+    CONSTRAINT chk_poa_inst_programacion_no_incluido_sin_meta CHECK (incluido OR meta = 0)
 );

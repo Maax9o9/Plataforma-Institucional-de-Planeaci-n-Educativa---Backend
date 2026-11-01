@@ -92,6 +92,14 @@ from app.modules.notifications.infrastructure.repository import InMemoryNotifica
 from app.modules.notifications.infrastructure.sql_repository import SqlAlchemyNotificationRepository
 from app.modules.periods.infrastructure.repository import InMemoryPeriodRepository
 from app.modules.periods.infrastructure.sql_repository import SqlAlchemyPeriodRepository
+from app.modules.poa_institucional.infrastructure.repository import (
+    InMemoryAreaLeadership,
+    InMemoryPoaAreaRepository,
+)
+from app.modules.poa_institucional.infrastructure.sql_repository import (
+    SqlAlchemyAreaLeadership,
+    SqlAlchemyPoaAreaRepository,
+)
 from app.modules.poa_planning.application.period_recipients import PoaPeriodRecipients
 from app.modules.poa_planning.infrastructure.cedula_repository import (
     InMemoryPoaFormRepository,
@@ -131,6 +139,8 @@ class Resources:
     state_change_repository: object
     threshold_config_repository: object
     poa_repository: object
+    poa_area_repository: object
+    area_leadership: object
     poa_form_repository: object
     poa_report_service: object
     poa_period_recipients: object
@@ -165,6 +175,8 @@ def create_resources(settings: Settings) -> Resources:
         state_change_repository = InMemoryStateChangeRepository()
         threshold_config_repository = InMemoryThresholdConfigRepository()
         poa_repository = InMemoryPoaRepository()
+        poa_area_repository = InMemoryPoaAreaRepository()
+        area_leadership = InMemoryAreaLeadership()
         poa_form_repository = InMemoryPoaFormRepository()
         poa_report_service = PoaReportService(
             poa_form_repository, evidence_repository, area_repository
@@ -206,6 +218,8 @@ def create_resources(settings: Settings) -> Resources:
         state_change_repository = SqlAlchemyStateChangeRepository(db_session_factory)
         threshold_config_repository = SqlAlchemyThresholdConfigRepository(db_session_factory)
         poa_repository = SqlAlchemyPoaRepository(db_session_factory)
+        poa_area_repository = SqlAlchemyPoaAreaRepository(db_session_factory)
+        area_leadership = SqlAlchemyAreaLeadership(db_session_factory)
         poa_form_repository = SqlAlchemyPoaFormRepository(db_session_factory)
         poa_report_service = PoaReportService(
             poa_form_repository, evidence_repository, area_repository
@@ -238,6 +252,8 @@ def create_resources(settings: Settings) -> Resources:
         state_change_repository=state_change_repository,
         threshold_config_repository=threshold_config_repository,
         poa_repository=poa_repository,
+        poa_area_repository=poa_area_repository,
+        area_leadership=area_leadership,
         poa_form_repository=poa_form_repository,
         poa_report_service=poa_report_service,
         poa_period_recipients=PoaPeriodRecipients(
