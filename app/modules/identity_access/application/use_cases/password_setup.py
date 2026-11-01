@@ -12,7 +12,12 @@ from app.modules.institutional_catalogs.domain.ports.repositories import AreaRep
 from app.shared.application.event_bus import EventBus
 from app.shared.application.ports.email_composer import EmailComposer
 from app.shared.application.ports.email_sender import EmailSender
-from app.shared.domain.exceptions import AuthenticationError, ResourceNotFoundError, ValidationError
+from app.shared.domain.exceptions import (
+    AuthenticationError,
+    ConflictError,
+    ResourceNotFoundError,
+    ValidationError,
+)
 
 from ...domain.directory import InstitutionalDirectory
 from ...domain.entities import User
@@ -49,10 +54,6 @@ class InviteUser:
         self.email_composer = email_composer
 
     async def execute(self, command: RegisterUserCommand) -> User:
-        if await self.repository.get_by_email(command.email):
-            from app.shared.domain.exceptions import ConflictError
-
-            raise ConflictError("Ya existe un usuario con ese correo electronico.")
         roles = command.roles
         area_id = command.area_id
         area_name = None
@@ -62,6 +63,8 @@ class InviteUser:
             command.actor_id,
             assigned_roles=set(assignment.roles) if assignment else roles,
         )
+        if await self.repository.get_by_email(command.email):
+            raise ConflictError("Ya existe un usuario con ese correo electronico.")
         if assignment is not None:
             areas = await self.area_repository.list(active_only=False)
             area = next(

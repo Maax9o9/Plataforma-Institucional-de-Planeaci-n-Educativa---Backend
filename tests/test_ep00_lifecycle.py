@@ -94,3 +94,64 @@ async def test_user_creation_edit_deactivation_and_reactivation(client, app):
         },
     )
     assert allowed.status_code == 200
+
+
+async def _cuenta(app, client, correo: str, rol: Role) -> dict[str, str]:
+    await CreateUser(
+        repository=app.state.user_repository,
+        password_hasher=app.state.password_hasher,
+        event_bus=app.state.event_bus,
+    ).execute(
+        RegisterUserCommand(
+            email=correo,
+            full_name=f"Cuenta {rol.value}",
+            password="password-seguro",
+            roles={rol},
+            area_id=None,
+        )
+    )
+    login = await client.post(
+        "/api/v1/auth/login", json={"correo": correo, "contrasena": "password-seguro"}
+    )
+    assert login.status_code == 200, login.text
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+async def _invitar(client, headers, correo: str, roles: list[str]):
+    return await client.post(
+        "/api/v1/usuarios",
+        headers=headers,
+        json={"correo": correo, "nombre": "Invitación", "roles": roles},
+    )
+
+
+@pytest.mark.asyncio
+async def test_el_alta_no_revela_si_un_correo_tiene_cuenta_a_quien_no_puede_preguntarlo(
+    app, client
+):
+    admin = await _cuenta(app, client, "admin-fuga@upchiapas.edu.mx", Role.ADMIN_SISTEMA)
+    planeacion = await _cuenta(app, client, "planeacion-fuga@upchiapas.edu.mx", Role.PLANEACION)
+    ya_tiene_cuenta = "ya-tiene-cuenta@upchiapas.edu.mx"
+    nadie_lo_usa = "nadie-lo-usa@upchiapas.edu.mx"
+    creado = await _invitar(client, admin, ya_tiene_cuenta, ["consulta"])
+    assert creado.status_code == 201, creado.text
+
+    existente = await _invitar(client, planeacion, ya_tiene_cuenta, ["admin_sistema"])
+    inventado = await _invitar(client, planeacion, nadie_lo_usa, ["admin_sistema"])
+
+    assert (existente.status_code, existente.json()["code"]) == (403, "FORBIDDEN"), existente.text
+    assert (inventado.status_code, inventado.json()["code"]) == (403, "FORBIDDEN"), inventado.text
+    assert existente.json() == inventado.json() | {"request_id": existente.json()["request_id"]}
+
+
+@pytest.mark.asyncio
+async def test_quien_si_puede_dar_de_alta_sigue_recibiendo_el_409_del_correo_repetido(app, client):
+    admin = await _cuenta(app, client, "admin-repetido@upchiapas.edu.mx", Role.ADMIN_SISTEMA)
+    correo = "repetido@upchiapas.edu.mx"
+    creado = await _invitar(client, admin, correo, ["consulta"])
+    assert creado.status_code == 201, creado.text
+
+    otra_vez = await _invitar(client, admin, correo, ["consulta"])
+
+    assert otra_vez.status_code == 409, otra_vez.text
+    assert otra_vez.json()["code"] == "CONFLICT"
