@@ -13,7 +13,13 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, async_sessionmaker, create_async_engine
 
+from app.core.app_factory import create_app
+from app.core.config import Settings
+from app.modules.identity_access.application.dto import RegisterUserCommand
+from app.modules.identity_access.application.use_cases.create_user import CreateUser
+from app.modules.identity_access.domain.entities import User
 from app.modules.identity_access.domain.value_objects import Role
+from app.modules.identity_access.infrastructure.repository import InMemoryUserRepository
 from app.modules.institutional_catalogs.domain.ports.strategic_tree_repository import (
     StrategicTreeRepository,
 )
@@ -58,6 +64,7 @@ from app.shared.domain.exceptions import (
     ResourceNotFoundError,
     ValidationError,
 )
+from app.shared.domain.value_objects import Email
 
 INEXISTENTE = 10**9
 
@@ -97,8 +104,8 @@ class Tablero:
     nueva_unidad: Callable[[], Awaitable[int]]
     nueva_version: Callable[[], Awaitable[int]]
     dar_responsable: Callable[[int], Awaitable[None]]
+    nuevo_usuario: Callable[..., Awaitable[int]]
     conexion: AsyncConnection | None = None
-    nuevo_usuario: Callable[..., Awaitable[int]] | None = None
 
     def abrir(self) -> OpenPoaArea:
         return OpenPoaArea(self.repo)
@@ -116,23 +123,36 @@ def _tablero_en_memoria() -> Tablero:
     unidades = count(1)
     versiones = count(1)
 
-    liderazgo = InMemoryAreaLeadership()
+    usuarios = InMemoryUserRepository()
 
     async def siguiente(contador) -> int:
         return next(contador)
 
+    async def nuevo_usuario(area_id: int, rol: str | None, *, activo: bool = True) -> int:
+        usuario = User(
+            email=Email(f"persona-{uuid4().hex}@upchiapas.edu.mx"),
+            full_name="Persona de prueba",
+            password_hash="$argon2id$de$prueba",
+            roles=frozenset() if rol is None else frozenset({Role(rol)}),
+            area_id=area_id,
+            is_active=activo,
+        )
+        await usuarios.add(usuario)
+        return usuario.id
+
     async def dar_responsable(area_id: int) -> None:
-        liderazgo.areas_con_responsable.add(area_id)
+        await nuevo_usuario(area_id, Role.RESPONSABLE_AREA.value)
 
     return Tablero(
         repo=InMemoryPoaAreaRepository(),
         arbol=InMemoryStrategicTreeRepository(),
-        liderazgo=liderazgo,
+        liderazgo=InMemoryAreaLeadership(usuarios),
         nuevo_ejercicio=lambda: siguiente(ejercicios),
         nueva_area=lambda: siguiente(areas),
         nueva_unidad=lambda: siguiente(unidades),
         nueva_version=lambda: siguiente(versiones),
         dar_responsable=dar_responsable,
+        nuevo_usuario=nuevo_usuario,
     )
 
 
@@ -1036,46 +1056,79 @@ async def test_dar_el_responsable_al_area_deja_presentar_lo_que_antes_no_se_podi
     assert enviado.status is PoaAreaStatus.ENVIADO
 
 
-async def test_un_area_con_usuarios_pero_ninguno_con_el_rol_no_tiene_responsable(
-    tablero_postgresql,
-):
-    area = await tablero_postgresql.nueva_area()
-    await tablero_postgresql.nuevo_usuario(area, Role.CAPTURISTA_POA.value)
-    await tablero_postgresql.nuevo_usuario(area, Role.REVISOR_POA.value)
-    await tablero_postgresql.nuevo_usuario(area, None)
+async def test_un_area_con_usuarios_pero_ninguno_con_el_rol_no_tiene_responsable(tablero):
+    area = await tablero.nueva_area()
+    await tablero.nuevo_usuario(area, Role.CAPTURISTA_POA.value)
+    await tablero.nuevo_usuario(area, Role.REVISOR_POA.value)
+    await tablero.nuevo_usuario(area, None)
 
-    assert await tablero_postgresql.liderazgo.has_person_in_charge(area) is False
+    assert await tablero.liderazgo.has_person_in_charge(area) is False
 
 
-async def test_un_area_vacia_tampoco_tiene_responsable(tablero_postgresql):
-    area = await tablero_postgresql.nueva_area()
+async def test_un_area_vacia_tampoco_tiene_responsable(tablero):
+    area = await tablero.nueva_area()
 
-    assert await tablero_postgresql.liderazgo.has_person_in_charge(area) is False
-
-
-async def test_un_area_con_el_rol_de_responsable_lo_tiene(tablero_postgresql):
-    area = await tablero_postgresql.nueva_area()
-    await tablero_postgresql.nuevo_usuario(area, Role.CAPTURISTA_POA.value)
-    await tablero_postgresql.nuevo_usuario(area, Role.RESPONSABLE_AREA.value)
-
-    assert await tablero_postgresql.liderazgo.has_person_in_charge(area) is True
+    assert await tablero.liderazgo.has_person_in_charge(area) is False
 
 
-async def test_un_responsable_desactivado_no_responde_por_el_area(tablero_postgresql):
-    area = await tablero_postgresql.nueva_area()
-    await tablero_postgresql.nuevo_usuario(area, Role.RESPONSABLE_AREA.value, activo=False)
+async def test_un_area_con_el_rol_de_responsable_lo_tiene(tablero):
+    area = await tablero.nueva_area()
+    await tablero.nuevo_usuario(area, Role.CAPTURISTA_POA.value)
+    await tablero.nuevo_usuario(area, Role.RESPONSABLE_AREA.value)
 
-    assert await tablero_postgresql.liderazgo.has_person_in_charge(area) is False
+    assert await tablero.liderazgo.has_person_in_charge(area) is True
 
 
-async def test_el_responsable_de_otra_area_no_responde_por_esta(tablero_postgresql):
-    area = await tablero_postgresql.nueva_area()
-    otra = await tablero_postgresql.nueva_area()
-    await tablero_postgresql.nuevo_usuario(area, Role.CAPTURISTA_POA.value)
-    await tablero_postgresql.nuevo_usuario(otra, Role.RESPONSABLE_AREA.value)
+async def test_un_responsable_desactivado_no_responde_por_el_area(tablero):
+    area = await tablero.nueva_area()
+    await tablero.nuevo_usuario(area, Role.RESPONSABLE_AREA.value, activo=False)
 
-    assert await tablero_postgresql.liderazgo.has_person_in_charge(area) is False
-    assert await tablero_postgresql.liderazgo.has_person_in_charge(otra) is True
+    assert await tablero.liderazgo.has_person_in_charge(area) is False
+
+
+async def test_el_responsable_de_otra_area_no_responde_por_esta(tablero):
+    area = await tablero.nueva_area()
+    otra = await tablero.nueva_area()
+    await tablero.nuevo_usuario(area, Role.CAPTURISTA_POA.value)
+    await tablero.nuevo_usuario(otra, Role.RESPONSABLE_AREA.value)
+
+    assert await tablero.liderazgo.has_person_in_charge(area) is False
+    assert await tablero.liderazgo.has_person_in_charge(otra) is True
+
+
+AREA_CON_RESPONSABLE = 7
+AREA_SIN_NADIE = 8
+
+
+async def test_en_memoria_el_liderazgo_lee_los_usuarios_de_la_aplicacion():
+    aplicacion = create_app(
+        Settings(
+            environment="testing",
+            secret_key="test-secret-key-with-more-than-32-characters",
+            database_url=None,
+            email_provider="console",
+        )
+    )
+    try:
+        await CreateUser(
+            aplicacion.state.user_repository,
+            aplicacion.state.password_hasher,
+            aplicacion.state.event_bus,
+        ).execute(
+            RegisterUserCommand(
+                email=f"responsable-{uuid4().hex}@upchiapas.edu.mx",
+                full_name="Responsable del área",
+                password="password-seguro",
+                roles={Role.RESPONSABLE_AREA},
+                area_id=AREA_CON_RESPONSABLE,
+            )
+        )
+        liderazgo = aplicacion.state.area_leadership
+
+        assert await liderazgo.has_person_in_charge(AREA_CON_RESPONSABLE) is True
+        assert await liderazgo.has_person_in_charge(AREA_SIN_NADIE) is False
+    finally:
+        await aplicacion.state.notification_service.close()
 
 
 async def test_un_poa_de_area_ya_enviado_no_se_vuelve_a_enviar_ni_admite_cambios(tablero):

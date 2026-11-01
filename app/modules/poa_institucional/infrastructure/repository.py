@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from itertools import count
 
+from app.modules.identity_access.domain.ports.user_repository import UserReader
+from app.modules.identity_access.domain.value_objects import Role
 from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError
 
 from ..domain.entities import Activity, PoaArea
@@ -87,8 +89,11 @@ class InMemoryPoaAreaRepository:
 
 
 class InMemoryAreaLeadership:
-    def __init__(self, areas_con_responsable: set[int] | None = None) -> None:
-        self.areas_con_responsable = areas_con_responsable or set()
+    def __init__(self, users: UserReader) -> None:
+        self.users = users
 
     async def has_person_in_charge(self, area_id: int) -> bool:
-        return area_id in self.areas_con_responsable
+        return any(
+            usuario.area_id == area_id and Role.RESPONSABLE_AREA in usuario.roles
+            for usuario in await self.users.list(active_only=True)
+        )

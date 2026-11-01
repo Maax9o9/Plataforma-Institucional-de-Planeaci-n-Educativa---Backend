@@ -176,7 +176,7 @@ def create_resources(settings: Settings) -> Resources:
         threshold_config_repository = InMemoryThresholdConfigRepository()
         poa_repository = InMemoryPoaRepository()
         poa_area_repository = InMemoryPoaAreaRepository()
-        area_leadership = InMemoryAreaLeadership()
+        area_leadership = InMemoryAreaLeadership(user_repository)
         poa_form_repository = InMemoryPoaFormRepository()
         poa_report_service = PoaReportService(
             poa_form_repository, evidence_repository, area_repository
