@@ -22,6 +22,18 @@ META_MAS_ALTA_QUE_CABE = Decimal(10) ** ENTEROS_DE_LA_META - Decimal(1).scaleb(
 
 NIVEL_DE_LA_ACTIVIDAD = NodeKind.ACCION
 
+EL_POA_DEL_AREA_NO_SE_PUEDE_ENVIAR = "El POA del área no se puede enviar. "
+
+EL_EJERCICIO_POA_NO_EXISTE = "El ejercicio POA no existe."
+
+EL_AREA_NO_EXISTE = "El área no existe."
+
+EL_AREA_YA_TIENE_SU_POA = "El área ya tiene su POA en este ejercicio."
+
+LA_ACTIVIDAD_LA_MOVIERON = (
+    "La actividad fue modificada por otra solicitud: vuelva a cargarla antes de guardar."
+)
+
 
 class PoaAreaStatus(StrEnum):
     BORRADOR = "borrador"
@@ -195,7 +207,9 @@ def whats_missing_to_submit(activity: Activity) -> list[str]:
     return faltas
 
 
-def ensure_can_be_submitted(activities: list[Activity], *, area_has_person_in_charge: bool) -> None:
+def reasons_it_cannot_be_submitted(
+    activities: list[Activity], *, area_has_person_in_charge: bool
+) -> list[str]:
     razones: list[str] = []
     if not area_has_person_in_charge:
         razones.append(
@@ -218,9 +232,16 @@ def ensure_can_be_submitted(activities: list[Activity], *, area_has_person_in_ch
             for activity, faltas in incompletas
         )
         razones.append(f"{cuantas}. {detalle}")
+    return razones
+
+
+def ensure_can_be_submitted(activities: list[Activity], *, area_has_person_in_charge: bool) -> None:
+    razones = reasons_it_cannot_be_submitted(
+        activities, area_has_person_in_charge=area_has_person_in_charge
+    )
     if not razones:
         return
-    raise ValidationError("El POA del área no se puede enviar. " + " ".join(razones))
+    raise ValidationError(EL_POA_DEL_AREA_NO_SE_PUEDE_ENVIAR + " ".join(razones))
 
 
 def _enumerado(partes: list[str]) -> str:

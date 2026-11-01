@@ -7,7 +7,12 @@ from app.modules.identity_access.domain.ports.user_repository import UserReader
 from app.modules.identity_access.domain.value_objects import Role
 from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError
 
-from ..domain.entities import Activity, PoaArea
+from ..domain.entities import (
+    EL_AREA_YA_TIENE_SU_POA,
+    LA_ACTIVIDAD_LA_MOVIERON,
+    Activity,
+    PoaArea,
+)
 
 
 def _copia(activity: Activity) -> Activity:
@@ -34,7 +39,7 @@ class InMemoryPoaAreaRepository:
     async def add_poa_area(self, poa_area: PoaArea) -> None:
         poa_area.validate()
         if await self.find_poa_area(poa_area.exercise_id, poa_area.area_id) is not None:
-            raise ConflictError("El área ya tiene su POA en este ejercicio.")
+            raise ConflictError(EL_AREA_YA_TIENE_SU_POA)
         poa_area.id = next(self._next_poa_area_id)
         self._poa_areas[poa_area.id] = replace(poa_area)
 
@@ -80,10 +85,7 @@ class InMemoryPoaAreaRepository:
         if guardada is None:
             raise ResourceNotFoundError("La actividad no existe.")
         if guardada.version != activity.version:
-            raise ConflictError(
-                "La actividad fue modificada por otra solicitud: vuelva a cargarla antes de "
-                "guardar."
-            )
+            raise ConflictError(LA_ACTIVIDAD_LA_MOVIERON)
         activity.version += 1
         self._activities[activity.id] = _copia(activity)
 

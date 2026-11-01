@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import NoReturn
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -13,6 +14,10 @@ from app.shared.infrastructure.db.constraints import viola_la_restriccion
 from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
 
 from ..domain.entities import (
+    EL_AREA_NO_EXISTE,
+    EL_AREA_YA_TIENE_SU_POA,
+    EL_EJERCICIO_POA_NO_EXISTE,
+    LA_ACTIVIDAD_LA_MOVIERON,
     Activity,
     MonthlyTarget,
     PoaArea,
@@ -21,7 +26,6 @@ from ..domain.entities import (
 )
 from .models import MonthlyScheduleModel, PoaActivityModel, PoaAreaModel
 
-_UNICO_POA_DEL_AREA_POR_EJERCICIO = "uq_poa_inst_area_ejercicio_area"
 _FORANEA_DEL_EJERCICIO = "fk_poa_inst_area_ejercicio"
 _FORANEA_DEL_AREA = "fk_poa_inst_area_area"
 _FORANEA_DEL_POA_DEL_AREA = "fk_poa_inst_actividad_poa_area"
@@ -60,12 +64,10 @@ def _actividad_a_dominio(
 
 
 def _error_del_poa_del_area(exc: IntegrityError) -> NoReturn:
-    if viola_la_restriccion(exc, _UNICO_POA_DEL_AREA_POR_EJERCICIO):
-        raise ConflictError("El área ya tiene su POA en este ejercicio.") from exc
     if viola_la_restriccion(exc, _FORANEA_DEL_EJERCICIO):
-        raise ValidationError("El ejercicio POA no existe.") from exc
+        raise ValidationError(EL_EJERCICIO_POA_NO_EXISTE) from exc
     if viola_la_restriccion(exc, _FORANEA_DEL_AREA):
-        raise ValidationError("El área no existe.") from exc
+        raise ValidationError(EL_AREA_NO_EXISTE) from exc
     raise exc
 
 
@@ -111,21 +113,29 @@ class SqlAlchemyPoaAreaRepository:
     async def add_poa_area(self, poa_area: PoaArea) -> None:
         poa_area.validate()
         async with session_scope(self.session_factory) as session:
-            model = PoaAreaModel(
-                ejercicio_id=poa_area.exercise_id,
-                area_id=poa_area.area_id,
-                estado=poa_area.status.value,
-                version=1,
-            )
-            session.add(model)
             try:
-                await session.flush()
+                abierto = (
+                    await session.execute(
+                        insert(PoaAreaModel)
+                        .values(
+                            ejercicio_id=poa_area.exercise_id,
+                            area_id=poa_area.area_id,
+                            estado=poa_area.status.value,
+                            version=1,
+                        )
+                        .on_conflict_do_nothing(
+                            index_elements=[PoaAreaModel.ejercicio_id, PoaAreaModel.area_id]
+                        )
+                        .returning(PoaAreaModel.id, PoaAreaModel.version)
+                    )
+                ).one_or_none()
                 await commit_or_flush(session)
             except IntegrityError as exc:
                 await session.rollback()
                 _error_del_poa_del_area(exc)
-            poa_area.id = model.id
-            poa_area.version = model.version
+            if abierto is None:
+                raise ConflictError(EL_AREA_YA_TIENE_SU_POA)
+            poa_area.id, poa_area.version = abierto
 
     async def save_poa_area_if_version_matches(self, poa_area: PoaArea) -> None:
         poa_area.validate()
@@ -253,8 +263,7 @@ class SqlAlchemyPoaAreaRepository:
                     PoaActivityModel,
                     activity.id,
                     "La actividad no existe.",
-                    "La actividad fue modificada por otra solicitud: vuelva a cargarla antes "
-                    "de guardar.",
+                    LA_ACTIVIDAD_LA_MOVIERON,
                 )
         activity.version += 1
 
