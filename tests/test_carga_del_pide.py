@@ -45,11 +45,15 @@ from app.modules.institutional_catalogs.infrastructure.strategic_tree_sql_reposi
     SqlAlchemyStrategicTreeRepository,
 )
 from app.scripts.cargar_pide import (
+    CARGA_SIN_CONFIRMAR,
     SEMILLA_DEL_PIDE,
+    ResumenCarga,
     asegurar_version,
     cargar_pide,
+    es_la_misma_base,
     leer_semilla,
     main,
+    url_de_la_base_del_entorno,
 )
 from app.shared.domain.captured_text import INVISIBLES_QUE_SOBREVIVEN_AL_RECORTE
 from app.shared.domain.exceptions import ConflictError, ValidationError
@@ -621,6 +625,93 @@ async def test_el_comando_carga_el_pide_en_una_base_recien_migrada(
         "nodos": TOTAL_QUE_IMPRIME_EL_DOCUMENTO,
         "con_formula": NODOS_QUE_IMPRIME_EL_DOCUMENTO[ACCION],
     }
+
+
+LA_DE_LA_APLICACION = "postgresql+asyncpg://planeacion:clave@localhost:5433/planeacion"
+
+OTRAS_URLS = {
+    "la_misma_con_otra_contrasena": (
+        "postgresql+asyncpg://otro:otra@localhost:5433/planeacion",
+        True,
+    ),
+    "otro_nombre_de_base": (
+        "postgresql+asyncpg://planeacion:clave@localhost:5433/planeacion_test",
+        False,
+    ),
+    "otro_servidor": ("postgresql+asyncpg://planeacion:clave@otro-host:5433/planeacion", False),
+    "otro_puerto": ("postgresql+asyncpg://planeacion:clave@localhost:5544/planeacion", False),
+    "sin_url_configurada": (None, False),
+    "una_url_que_no_se_puede_leer": ("esto no es una url", False),
+}
+
+
+def test_la_url_configurada_sale_del_entorno_antes_que_del_archivo(tmp_path):
+    archivo = tmp_path / ".env"
+    archivo.write_text(f'DATABASE_URL="{LA_DE_LA_APLICACION}"\n', encoding="utf-8")
+
+    assert url_de_la_base_del_entorno({}, archivo) == LA_DE_LA_APLICACION
+    assert url_de_la_base_del_entorno({"DATABASE_URL": "la del entorno"}, archivo) == (
+        "la del entorno"
+    )
+    assert url_de_la_base_del_entorno({}, tmp_path / "no-esta") is None
+
+
+@pytest.mark.parametrize("caso", list(OTRAS_URLS))
+def test_la_misma_base_es_el_mismo_servidor_y_el_mismo_nombre(caso):
+    otra, es_la_misma = OTRAS_URLS[caso]
+
+    assert es_la_misma_base(LA_DE_LA_APLICACION, otra) is es_la_misma
+    assert es_la_misma_base(LA_DE_LA_APLICACION, LA_DE_LA_APLICACION) is True
+
+
+def _sin_tocar_la_base(monkeypatch, tmp_path, configurada: str):
+    archivo = tmp_path / ".env"
+    archivo.write_text(f"DATABASE_URL={configurada}\n", encoding="utf-8")
+    monkeypatch.setattr("app.scripts.cargar_pide.ARCHIVO_ENV", archivo)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    tocadas: list[str] = []
+
+    async def _registrar(database_url, ruta_json):
+        tocadas.append(database_url)
+        return ResumenCarga(nodos_creados=0, nodos_omitidos=0)
+
+    monkeypatch.setattr("app.scripts.cargar_pide.cargar_en", _registrar)
+    return tocadas
+
+
+def test_cargar_sobre_la_base_de_la_aplicacion_dice_que_toca_y_exige_confirmar(
+    monkeypatch, capsys, tmp_path
+):
+    tocadas = _sin_tocar_la_base(monkeypatch, tmp_path, LA_DE_LA_APLICACION)
+    monkeypatch.setattr(sys, "argv", ["cargar_pide", "--database-url", LA_DE_LA_APLICACION])
+
+    sin_confirmar = main()
+    dicho = capsys.readouterr().err
+    sin_tocar_nada = list(tocadas)
+    monkeypatch.setattr(
+        sys, "argv", ["cargar_pide", "--database-url", LA_DE_LA_APLICACION, "--confirmar"]
+    )
+    confirmando = main()
+
+    assert sin_confirmar == CARGA_SIN_CONFIRMAR
+    assert sin_tocar_nada == []
+    assert "planeacion en localhost:5433" in dicho
+    assert f"{TOTAL_QUE_IMPRIME_EL_DOCUMENTO} nodos" in dicho
+    assert "--confirmar" in dicho
+    assert confirmando == 0
+    assert tocadas == [LA_DE_LA_APLICACION]
+
+
+def test_cargar_sobre_otra_base_no_exige_confirmar(monkeypatch, capsys, tmp_path):
+    otra = OTRAS_URLS["otro_nombre_de_base"][0]
+    tocadas = _sin_tocar_la_base(monkeypatch, tmp_path, LA_DE_LA_APLICACION)
+    monkeypatch.setattr(sys, "argv", ["cargar_pide", "--database-url", otra])
+
+    salida = main()
+
+    assert salida == 0
+    assert tocadas == [otra]
+    assert capsys.readouterr().err == ""
 
 
 async def test_la_carga_no_escribe_nodos_fuera_de_su_version(carga_postgresql, ruta_del_pide):

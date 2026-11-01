@@ -3,13 +3,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 
 from app.core.config import Settings
 from app.modules.institutional_catalogs.domain.entities import Instrument, InstrumentVersion
@@ -33,6 +36,8 @@ from app.shared.domain.exceptions import AppError, ValidationError
 from app.shared.infrastructure.db.session import create_database
 
 SEMILLA_DEL_PIDE = Path(__file__).resolve().parents[2] / "bd" / "semillas" / "pide-2025-2030.json"
+ARCHIVO_ENV = Path(__file__).resolve().parents[2] / ".env"
+CARGA_SIN_CONFIRMAR = 2
 
 
 @dataclass(frozen=True)
@@ -43,6 +48,33 @@ class ResumenCarga:
 
 def clave_sin_el_punto_final(clave: str) -> str:
     return recortado_sin_invisibles(clave).rstrip(".")
+
+
+def url_de_la_base_del_entorno(entorno: Mapping[str, str], archivo_env: Path) -> str | None:
+    declarada = entorno.get("DATABASE_URL")
+    if declarada:
+        return declarada
+    if not archivo_env.is_file():
+        return None
+    for linea in archivo_env.read_text(encoding="utf-8").splitlines():
+        if linea.startswith("DATABASE_URL="):
+            return linea.split("=", 1)[1].strip().strip("\"'") or None
+    return None
+
+
+def es_la_misma_base(una: str, otra: str | None) -> bool:
+    if not otra:
+        return False
+    try:
+        aqui, alla = make_url(una), make_url(otra)
+    except ArgumentError:
+        return False
+    return (aqui.host, aqui.port, aqui.database) == (alla.host, alla.port, alla.database)
+
+
+def donde_va_a_escribir(database_url: str) -> str:
+    url = make_url(database_url)
+    return f"{url.database} en {url.host}:{url.port}"
 
 
 def leer_semilla(ruta_json: Path | str) -> dict[str, Any]:
@@ -160,7 +192,19 @@ def main() -> int:
     )
     parser.add_argument("--database-url", required=True)
     parser.add_argument("--semilla", default=str(SEMILLA_DEL_PIDE))
+    parser.add_argument("--confirmar", action="store_true")
     args = parser.parse_args()
+    if not args.confirmar and es_la_misma_base(
+        args.database_url, url_de_la_base_del_entorno(os.environ, ARCHIVO_ENV)
+    ):
+        cuantos = len(leer_semilla(Path(args.semilla))["nodos"])
+        print(
+            f"Esa URL es {donde_va_a_escribir(args.database_url)}, la base que usa la "
+            f"aplicacion, y la carga va a tocar {cuantos} nodos del PIDE. "
+            "Repita el comando con --confirmar si es lo que quiere.",
+            file=sys.stderr,
+        )
+        return CARGA_SIN_CONFIRMAR
     try:
         resumen = asyncio.run(cargar_en(args.database_url, Path(args.semilla)))
     except AppError as exc:
