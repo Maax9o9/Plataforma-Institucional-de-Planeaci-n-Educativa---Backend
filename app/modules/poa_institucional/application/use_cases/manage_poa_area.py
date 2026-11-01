@@ -131,7 +131,7 @@ class SubmitPoaArea:
             area_has_person_in_charge=await self.leadership.has_person_in_charge(poa_area.area_id),
         )
         enviado = replace(poa_area, status=PoaAreaStatus.ENVIADO, version=cmd.version)
-        await self.poa_areas.submit_poa_area_if_version_matches(enviado)
+        await self.poa_areas.save_poa_area_if_version_matches(enviado)
         return enviado
 
 

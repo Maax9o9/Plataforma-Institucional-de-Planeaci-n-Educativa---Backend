@@ -38,7 +38,7 @@ class InMemoryPoaAreaRepository:
         poa_area.id = next(self._next_poa_area_id)
         self._poa_areas[poa_area.id] = replace(poa_area)
 
-    async def submit_poa_area_if_version_matches(self, poa_area: PoaArea) -> None:
+    async def save_poa_area_if_version_matches(self, poa_area: PoaArea) -> None:
         poa_area.validate()
         guardado = self._poa_areas.get(poa_area.id)
         if guardado is None:

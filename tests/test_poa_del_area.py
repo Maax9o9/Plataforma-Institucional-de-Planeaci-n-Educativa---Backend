@@ -1174,7 +1174,7 @@ async def test_un_poa_de_area_ya_enviado_no_se_vuelve_a_enviar_ni_admite_cambios
 async def test_presentar_con_una_version_vieja_no_pisa_el_cambio_ajeno(tablero):
     poa_area = await _poa_area(tablero)
     await _actividad_completa(tablero, poa_area)
-    await tablero.repo.submit_poa_area_if_version_matches(
+    await tablero.repo.save_poa_area_if_version_matches(
         replace(poa_area, status=PoaAreaStatus.BORRADOR, version=1)
     )
 
@@ -1208,6 +1208,24 @@ async def test_una_unidad_de_medida_que_no_existe_no_se_guarda(tablero_postgresq
                 poa_area_id=poa_area.id, name="Con unidad inventada", unit_id=INEXISTENTE
             )
         )
+
+
+async def test_una_actividad_escrita_sobre_un_poa_de_area_que_no_existe_no_entra(tablero):
+    with pytest.raises(ResourceNotFoundError, match="POA del área no existe"):
+        await tablero.repo.add_activity(
+            Activity(poa_area_id=INEXISTENTE, name="Sobre un POA inventado")
+        )
+
+
+async def test_una_actividad_escrita_sobre_un_nodo_que_no_existe_no_entra(tablero_postgresql):
+    poa_area = await _poa_area(tablero_postgresql)
+
+    with pytest.raises(ValidationError, match="acción del PIDE a la que responde"):
+        await tablero_postgresql.repo.add_activity(
+            Activity(poa_area_id=poa_area.id, name="Sobre un nodo inventado", node_id=INEXISTENTE)
+        )
+
+    assert await tablero_postgresql.repo.list_activities(poa_area.id) == []
 
 
 @pytest.mark.parametrize(

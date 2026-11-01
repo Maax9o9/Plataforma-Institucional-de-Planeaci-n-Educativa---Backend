@@ -127,26 +127,22 @@ class SqlAlchemyPoaAreaRepository:
             poa_area.id = model.id
             poa_area.version = model.version
 
-    async def submit_poa_area_if_version_matches(self, poa_area: PoaArea) -> None:
+    async def save_poa_area_if_version_matches(self, poa_area: PoaArea) -> None:
         poa_area.validate()
         if not cabe_en_el_entero_de_la_base(poa_area.id):
             raise ResourceNotFoundError("El POA del área no existe.")
         async with session_scope(self.session_factory) as session:
-            try:
-                movidas = (
-                    await session.execute(
-                        update(PoaAreaModel)
-                        .where(
-                            PoaAreaModel.id == poa_area.id,
-                            PoaAreaModel.version == poa_area.version,
-                        )
-                        .values(estado=poa_area.status.value, version=poa_area.version + 1)
+            movidas = (
+                await session.execute(
+                    update(PoaAreaModel)
+                    .where(
+                        PoaAreaModel.id == poa_area.id,
+                        PoaAreaModel.version == poa_area.version,
                     )
-                ).rowcount
-                await commit_or_flush(session)
-            except IntegrityError as exc:
-                await session.rollback()
-                _error_del_poa_del_area(exc)
+                    .values(estado=poa_area.status.value, version=poa_area.version + 1)
+                )
+            ).rowcount
+            await commit_or_flush(session)
             if movidas != 1:
                 await self._decir_si_no_existe_o_si_lo_movieron(
                     session,
