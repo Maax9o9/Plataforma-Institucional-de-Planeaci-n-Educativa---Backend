@@ -159,6 +159,7 @@ async def _nodo(
     padre: StrategicNode | None = None,
     orden: int = 1,
     nombre: str | None = None,
+    formula: str | None = None,
 ) -> StrategicNode:
     nodo = StrategicNode(
         version_id=version,
@@ -167,6 +168,7 @@ async def _nodo(
         key=clave,
         name=nombre if nombre is not None else f"Denominación de {clave}",
         order=orden,
+        indicator_formula=formula,
     )
     await arbol.repo.add(nodo)
     return nodo
@@ -309,6 +311,95 @@ async def test_la_clave_cabe_en_cincuenta_caracteres_y_no_en_cincuenta_y_uno(arb
         await _nodo(arbol, version, "x" * 51, EJE)
 
 
+INVISIBLES_QUE_DEJA_COPIAR_DE_UN_PDF = {
+    "espacio_de_ancho_cero": "\u200b",
+    "marca_de_orden_de_bytes": "\ufeff",
+    "guion_blando": "\u00ad",
+}
+
+POR_INVISIBLE = pytest.mark.parametrize(
+    "invisible",
+    INVISIBLES_QUE_DEJA_COPIAR_DE_UN_PDF.values(),
+    ids=INVISIBLES_QUE_DEJA_COPIAR_DE_UN_PDF.keys(),
+)
+
+
+@pytest.mark.asyncio
+@POR_INVISIBLE
+async def test_el_largo_de_la_clave_se_mide_con_lo_que_se_va_a_guardar(arbol, invisible):
+    version = await arbol.nueva_version()
+
+    con_bordes = await _nodo(arbol, version, f"  {'x' * 50}  ", EJE)
+    con_invisibles = await _nodo(arbol, version, f"{invisible * 5}{'y' * 50}", EJE, orden=2)
+
+    assert (await arbol.repo.get_by_id(con_bordes.id)).key == "x" * 50
+    assert (await arbol.repo.get_by_id(con_invisibles.id)).key == "y" * 50
+    with pytest.raises(ValidationError, match="clave"):
+        await _nodo(arbol, version, f"  {'z' * 51}  ", EJE, orden=3)
+
+
+@pytest.mark.asyncio
+@POR_INVISIBLE
+async def test_un_invisible_no_entra_en_la_clave_ni_en_la_denominacion_ni_en_la_formula(
+    arbol, invisible
+):
+    version = await arbol.nueva_version()
+    eje = await _nodo(arbol, version, "1", EJE)
+    general = await _nodo(arbol, version, "1.1", OBJETIVO_GENERAL, padre=eje)
+
+    especifico = await _nodo(
+        arbol,
+        version,
+        f"{invisible}1.{invisible}1.{invisible}1{invisible}",
+        OBJETIVO_ESPECIFICO,
+        padre=general,
+        nombre=f" {invisible}Formar{invisible} profesionistas{invisible} ",
+        formula=f"{invisible}(a{invisible} / b) * 100{invisible}",
+    )
+
+    guardada = await arbol.repo.get_by_id(especifico.id)
+    assert (guardada.key, guardada.name, guardada.indicator_formula) == (
+        "1.1.1",
+        "Formar profesionistas",
+        "(a / b) * 100",
+    )
+    with pytest.raises(ConflictError, match="clave"):
+        await _nodo(arbol, version, "1.1.1", OBJETIVO_ESPECIFICO, padre=general, orden=2)
+
+
+@pytest.mark.asyncio
+@POR_INVISIBLE
+async def test_lo_que_solo_trae_invisibles_cuenta_como_vacio(arbol, invisible):
+    version = await arbol.nueva_version()
+    eje = await _nodo(arbol, version, "1", EJE)
+
+    with pytest.raises(ValidationError, match="clave"):
+        await _nodo(arbol, version, f" {invisible} ", EJE, orden=2)
+    with pytest.raises(ValidationError, match="denominación"):
+        await _nodo(arbol, version, "2", EJE, orden=2, nombre=f" {invisible} ")
+    sin_formula = await _nodo(
+        arbol, version, "1.1", OBJETIVO_GENERAL, padre=eje, formula=f" {invisible} "
+    )
+
+    assert (await arbol.repo.get_by_id(sin_formula.id)).indicator_formula is None
+
+
+def test_construir_un_nodo_no_aplica_las_reglas_del_guardado():
+    leido_de_una_fila_vieja = StrategicNode(
+        version_id=1, parent_id=None, kind="capitulo", key="  ", name="", order=1
+    )
+
+    sin_tocar = (
+        leido_de_una_fila_vieja.kind,
+        leido_de_una_fila_vieja.key,
+        leido_de_una_fila_vieja.name,
+    )
+
+    assert sin_tocar == ("capitulo", "  ", "")
+    with pytest.raises(ValidationError, match="nivel"):
+        leido_de_una_fila_vieja.validate()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("vacia", ["", "   "])
 async def test_la_clave_y_la_denominacion_no_pueden_estar_vacias(arbol, vacia):
@@ -332,6 +423,7 @@ LO_QUE_LA_BASE_NO_PUEDE_GUARDAR = {
     "padre_mas_grande_que_el_entero": ("parent_id", MAYOR_ENTERO_DE_LA_BASE + 1, "no cabe"),
     "clave_con_el_caracter_nulo": ("key", "E1\0", "carácter nulo"),
     "denominacion_con_el_caracter_nulo": ("name", "Denominación\0", "carácter nulo"),
+    "formula_con_el_caracter_nulo": ("indicator_formula", "a\0b", "carácter nulo"),
 }
 
 

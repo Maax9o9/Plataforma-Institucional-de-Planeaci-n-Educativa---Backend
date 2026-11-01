@@ -21,6 +21,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
+from app.shared.domain.captured_text import recortado_sin_invisibles
 from app.shared.domain.exceptions import ConflictError, InvalidStateError, ValidationError
 
 #: `clave` es `VARCHAR(50)` en la base.
@@ -72,11 +73,6 @@ class StrategicNode:
     indicator_formula: str | None = None
 
     def validate(self) -> None:
-        """Normaliza `kind`: acepta la cadena de un JSON y la deja como `NodeKind`,
-        para que los dos adaptadores devuelvan el mismo tipo. No se llama al
-        construir sino al guardar: leer una fila ya escrita no debe fallar por
-        una regla que la base nunca impuso.
-        """
         try:
             self.kind = NodeKind(self.kind)
         except ValueError:
@@ -85,18 +81,22 @@ class StrategicNode:
                 + ", ".join(kind.value for kind in NodeKind)
                 + "."
             ) from None
-        self.key = self.key.strip()
+        self.key = recortado_sin_invisibles(self.key)
+        self.name = recortado_sin_invisibles(self.name)
+        if self.indicator_formula is not None:
+            self.indicator_formula = recortado_sin_invisibles(self.indicator_formula) or None
         if not self.key:
             raise ValidationError("La clave del nodo es obligatoria.")
         if len(self.key) > KEY_MAX_LENGTH:
             raise ValidationError(
                 f"La clave del nodo no puede superar {KEY_MAX_LENGTH} caracteres."
             )
-        if not self.name.strip():
+        if not self.name:
             raise ValidationError("La denominación del nodo es obligatoria.")
-        if "\0" in self.key or "\0" in self.name:
+        if "\0" in self.key or "\0" in self.name or "\0" in (self.indicator_formula or ""):
             raise ValidationError(
-                "Ni la clave ni la denominación del nodo admiten el carácter nulo."
+                "Ni la clave, ni la denominación, ni la fórmula del nodo admiten "
+                "el carácter nulo."
             )
         for campo, numero in (
             ("orden", self.order),

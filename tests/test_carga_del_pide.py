@@ -51,6 +51,7 @@ from app.scripts.cargar_pide import (
     leer_semilla,
     main,
 )
+from app.shared.domain.captured_text import INVISIBLES_QUE_SOBREVIVEN_AL_RECORTE
 from app.shared.domain.exceptions import ConflictError, ValidationError
 
 EJE = NodeKind.EJE
@@ -163,6 +164,26 @@ SEMILLA_CON_PUNTOS_ALTERNADOS = {
 }
 
 CLAVES_SIN_EL_PUNTO_FINAL = ["9", "9.1", "9.1.1", "9.1.1.1", "9.1.1.1.1"]
+
+SEMILLA_CON_INVISIBLES = {
+    "instrumento": {"codigo": "INVISIBLES", "nombre": "Instrumento de los invisibles"},
+    "version": {"etiqueta": "V1", "vigente_desde": "2025-01-01", "origen": "Una prueba"},
+    "nodos": [
+        {
+            "clave": "8.\u200b",
+            "nivel": "eje",
+            "padre": None,
+            "denominacion": "Eje\ufeff con invisibles",
+        },
+        {
+            "clave": "8.\u00ad1",
+            "nivel": "accion",
+            "padre": "8",
+            "denominacion": "\u200bAccion con invisibles",
+            "formula_indicador": "A\u200b / B\u00ad x 100",
+        },
+    ],
+}
 
 SEMILLA_CON_UN_PADRE_QUE_NO_ESTA = {
     "instrumento": {"codigo": "HUERFANO", "nombre": "Instrumento del huerfano"},
@@ -298,6 +319,22 @@ def test_la_semilla_no_trae_caracteres_invisibles():
     }
 
     assert invisibles == set()
+
+
+def test_el_codigo_tampoco_trae_los_invisibles_que_el_dominio_quita():
+    raiz = SEMILLA_DEL_PIDE.parents[2]
+
+    con_invisibles = [
+        str(ruta.relative_to(raiz))
+        for carpeta in ("app", "tests")
+        for ruta in sorted((raiz / carpeta).rglob("*.py"))
+        if any(
+            invisible in ruta.read_text(encoding="utf-8")
+            for invisible in INVISIBLES_QUE_SOBREVIVEN_AL_RECORTE
+        )
+    ]
+
+    assert con_invisibles == []
 
 
 def test_cada_clave_de_la_semilla_es_unica_sin_su_punto_final():
@@ -441,6 +478,21 @@ async def test_el_punto_final_de_la_clave_se_recorta_y_la_cadena_no_se_parte(car
     assert [nodo.parent_id for nodo in cargados] == [None] + [
         nodo.id for nodo in cargados[:-1]
     ]
+
+
+async def test_un_invisible_de_la_semilla_no_entra_ni_le_tapa_el_punto_final_a_la_clave(
+    carga, tmp_path
+):
+    ruta = _escribir(tmp_path, SEMILLA_CON_INVISIBLES)
+
+    version_id, resumen = await _cargar(carga, ruta)
+
+    cargados = await carga.arbol.list_tree(version_id)
+    assert [(nodo.key, nodo.name, nodo.indicator_formula) for nodo in cargados] == [
+        ("8", "Eje con invisibles", None),
+        ("8.1", "Accion con invisibles", "A / B x 100"),
+    ]
+    assert resumen.nodos_creados == 2
 
 
 async def test_un_padre_que_la_semilla_no_define_antes_se_rechaza_nombrandolo(carga, tmp_path):

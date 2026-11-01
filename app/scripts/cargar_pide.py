@@ -28,6 +28,7 @@ from app.modules.institutional_catalogs.infrastructure.sql_repository import (
 from app.modules.institutional_catalogs.infrastructure.strategic_tree_sql_repository import (
     SqlAlchemyStrategicTreeRepository,
 )
+from app.shared.domain.captured_text import recortado_sin_invisibles
 from app.shared.domain.exceptions import AppError, ValidationError
 from app.shared.infrastructure.db.session import create_database
 
@@ -41,7 +42,7 @@ class ResumenCarga:
 
 
 def clave_sin_el_punto_final(clave: str) -> str:
-    return clave.strip().rstrip(".")
+    return recortado_sin_invisibles(clave).rstrip(".")
 
 
 def leer_semilla(ruta_json: Path | str) -> dict[str, Any]:
