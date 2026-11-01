@@ -177,7 +177,7 @@ def whats_missing_to_submit(activity: Activity) -> list[str]:
         faltas.append("la acción del PIDE a la que responde")
     if activity.unit_id is None:
         faltas.append("la unidad de medida")
-    if not activity.evaluation_method:
+    if not recortado_sin_invisibles(activity.evaluation_method or ""):
         faltas.append("el método de evaluación")
     if activity.annual_target is None:
         faltas.append("la meta anual")

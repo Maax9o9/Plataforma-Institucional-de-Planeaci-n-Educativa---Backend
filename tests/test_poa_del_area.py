@@ -471,6 +471,19 @@ def test_un_metodo_de_evaluacion_vacio_cuenta_como_lo_que_falta():
     assert "el método de evaluación" in whats_missing_to_submit(vacio)
 
 
+@pytest.mark.parametrize(
+    "en_blanco",
+    ["   ", "\t", "\n", *INVISIBLES_QUE_DEJA_COPIAR_DE_UN_PDF.values()],
+    ids=["espacios", "tabulador", "salto", *INVISIBLES_QUE_DEJA_COPIAR_DE_UN_PDF],
+)
+def test_un_metodo_de_evaluacion_de_puros_invisibles_tambien_cuenta_como_lo_que_falta(en_blanco):
+    escrita_por_fuera = Activity(
+        poa_area_id=1, name="Con el método en blanco", evaluation_method=en_blanco
+    )
+
+    assert "el método de evaluación" in whats_missing_to_submit(escrita_por_fuera)
+
+
 async def test_una_actividad_no_se_guarda_en_un_poa_de_area_que_no_existe(tablero):
     with pytest.raises(ResourceNotFoundError):
         await tablero.guardar().execute(
