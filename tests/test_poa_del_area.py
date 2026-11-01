@@ -351,11 +351,59 @@ async def test_un_poa_de_area_nace_en_borrador_y_el_segundo_llamado_devuelve_el_
     assert segundo.id == primero.id
 
 
+INVISIBLES_QUE_DEJA_COPIAR_DE_UN_PDF = {
+    "espacio_de_ancho_cero": "\u200b",
+    "marca_de_orden_de_bytes": "\ufeff",
+    "guion_blando": "\u00ad",
+}
+
+POR_INVISIBLE = pytest.mark.parametrize(
+    "invisible",
+    INVISIBLES_QUE_DEJA_COPIAR_DE_UN_PDF.values(),
+    ids=INVISIBLES_QUE_DEJA_COPIAR_DE_UN_PDF.keys(),
+)
+
+
 async def test_la_denominacion_de_una_actividad_es_obligatoria(tablero):
     poa_area = await _poa_area(tablero)
 
     with pytest.raises(ValidationError, match="denominación"):
         await tablero.guardar().execute(SaveActivityCommand(poa_area_id=poa_area.id, name="   "))
+
+
+@POR_INVISIBLE
+async def test_una_denominacion_de_solo_invisibles_cuenta_como_vacia(tablero, invisible):
+    poa_area = await _poa_area(tablero)
+
+    with pytest.raises(ValidationError, match="denominación"):
+        await tablero.guardar().execute(
+            SaveActivityCommand(poa_area_id=poa_area.id, name=f" {invisible} ")
+        )
+
+    assert await tablero.repo.list_activities(poa_area.id) == []
+
+
+@POR_INVISIBLE
+async def test_un_invisible_no_entra_en_la_denominacion_ni_en_el_metodo(tablero, invisible):
+    poa_area = await _poa_area(tablero)
+
+    actividad = await tablero.guardar().execute(
+        SaveActivityCommand(
+            poa_area_id=poa_area.id,
+            name=f" {invisible}Impartir{invisible} el taller{invisible} ",
+            evaluation_method=f"{invisible}Listas{invisible} de asistencia{invisible}",
+        )
+    )
+
+    guardada = (await tablero.repo.list_activities(poa_area.id))[0]
+    assert (actividad.name, actividad.evaluation_method) == (
+        "Impartir el taller",
+        "Listas de asistencia",
+    )
+    assert (guardada.name, guardada.evaluation_method) == (
+        "Impartir el taller",
+        "Listas de asistencia",
+    )
 
 
 async def test_una_actividad_no_se_guarda_en_un_poa_de_area_que_no_existe(tablero):

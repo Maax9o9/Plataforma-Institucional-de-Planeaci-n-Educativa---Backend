@@ -9,6 +9,7 @@ from app.modules.institutional_catalogs.domain.strategic_tree_entities import (
     StrategicNode,
     cabe_en_el_entero_de_la_base,
 )
+from app.shared.domain.captured_text import recortado_sin_invisibles
 from app.shared.domain.exceptions import InvalidStateError, ValidationError
 
 MESES_DEL_EJERCICIO = tuple(range(1, 13))
@@ -72,13 +73,13 @@ class Activity:
     is_active: bool = True
 
     def validate(self) -> None:
-        self.name = self.name.strip()
+        self.name = recortado_sin_invisibles(self.name)
         if not self.name:
             raise ValidationError("La denominación de la actividad es obligatoria.")
         if "\0" in self.name:
             raise ValidationError("La denominación de la actividad no admite el carácter nulo.")
         if self.evaluation_method is not None:
-            self.evaluation_method = self.evaluation_method.strip() or None
+            self.evaluation_method = recortado_sin_invisibles(self.evaluation_method) or None
         if self.evaluation_method is not None and "\0" in self.evaluation_method:
             raise ValidationError("El método de evaluación no admite el carácter nulo.")
         for campo, numero in (
