@@ -31,6 +31,14 @@ MAYOR_ENTERO_DE_LA_BASE = 2**31 - 1
 MENOR_ENTERO_DE_LA_BASE = -(2**31)
 
 
+class RepeatedKeyError(ConflictError):
+    code = "STRATEGIC_NODE_KEY_REPEATED"
+
+
+class ActiveChildrenError(ConflictError):
+    code = "STRATEGIC_NODE_HAS_ACTIVE_CHILDREN"
+
+
 def cabe_en_el_entero_de_la_base(numero: int) -> bool:
     return MENOR_ENTERO_DE_LA_BASE <= numero <= MAYOR_ENTERO_DE_LA_BASE
 
@@ -215,14 +223,14 @@ def ensure_nothing_active_hangs(node: StrategicNode, children: Iterable[Strategi
         if len(activos) == 1
         else f"{len(activos)} nodos activos cuelgan de él y quedarían ofreciéndose"
     )
-    raise ConflictError(
+    raise ActiveChildrenError(
         f"«{node.key}» no se puede retirar: {cuelgan} bajo algo retirado. "
         "Retire primero lo que cuelga."
     )
 
 
-def repeated_key_error(node: StrategicNode) -> ConflictError:
+def repeated_key_error(node: StrategicNode) -> RepeatedKeyError:
     entre_quienes = (
         "bajo ese padre" if node.parent_id is not None else "entre las raíces de la versión"
     )
-    return ConflictError(f"Ya existe un nodo con la clave «{node.key}» {entre_quienes}.")
+    return RepeatedKeyError(f"Ya existe un nodo con la clave «{node.key}» {entre_quienes}.")

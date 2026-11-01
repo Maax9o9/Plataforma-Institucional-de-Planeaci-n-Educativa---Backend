@@ -377,7 +377,7 @@ async def test_retirar_con_activos_colgando_se_niega_y_dice_cuantos(escenario):
 
     respuesta = await _retirar(escenario, eje)
 
-    assert (respuesta.status_code, respuesta.json()["code"]) == CONFLICTO, respuesta.text
+    assert (respuesta.status_code, respuesta.json()["code"]) == ACTIVOS_COLGANDO, respuesta.text
     assert re.findall(r"\d+", respuesta.json()["message"]) == ["2"]
     assert [
         (n["clave"], n["activo"]) for n in await _listar(escenario, incluir_inactivos=True)
@@ -436,7 +436,7 @@ async def test_el_patch_retira_con_activo_falso_y_se_niega_igual_que_desactivar(
     el_eje = await _corregir(escenario, eje, {"activo": False})
 
     estado = con_un_activo_colgando.status_code, con_un_activo_colgando.json()["code"]
-    assert estado == CONFLICTO, con_un_activo_colgando.text
+    assert estado == ACTIVOS_COLGANDO, con_un_activo_colgando.text
     assert "1 nodo activo cuelga de él" in con_un_activo_colgando.json()["message"]
     assert la_hoja.status_code == 200, la_hoja.text
     assert la_hoja.json()["activo"] is False
@@ -544,6 +544,26 @@ async def test_administrar_el_arbol_deja_bitacora(escenario):
     assert {entrada.actor_name for entrada in mias} == {"Arbol PIDE planeacion"}
 
 
+async def test_los_dos_conflictos_del_arbol_se_distinguen_sin_leer_el_mensaje(escenario):
+    eje = await _crear(escenario, "E1")
+    await _crear(escenario, "E1.O1", "objetivo_general", padre=eje)
+
+    clave_ocupada = await escenario.client.post(
+        f"{PIDE}/versiones/{escenario.version}/nodos",
+        headers=escenario.cabeceras,
+        json={**CUERPO_DE_UN_EJE, "clave": "E1"},
+    )
+    no_se_puede_retirar = await _retirar(escenario, eje)
+
+    codigos = (clave_ocupada.json()["code"], no_se_puede_retirar.json()["code"])
+    assert (clave_ocupada.status_code, codigos[0]) == CLAVE_REPETIDA, clave_ocupada.text
+    assert (
+        no_se_puede_retirar.status_code,
+        codigos[1],
+    ) == ACTIVOS_COLGANDO, no_se_puede_retirar.text
+    assert codigos[0] != codigos[1]
+
+
 async def test_lo_que_el_arbol_rechaza_no_queda_asentado_como_si_hubiera_pasado(escenario):
     clave = f"E-{uuid4().hex[:8]}"
     eje = await _crear(escenario, clave)
@@ -627,7 +647,8 @@ async def test_un_nodo_que_no_existe_contesta_404(escenario, escritura):
     assert respuesta.json()["code"] == "RESOURCE_NOT_FOUND"
 
 
-CONFLICTO = (409, "CONFLICT")
+CLAVE_REPETIDA = (409, "STRATEGIC_NODE_KEY_REPEATED")
+ACTIVOS_COLGANDO = (409, "STRATEGIC_NODE_HAS_ACTIVE_CHILDREN")
 NO_CUMPLE_LAS_REGLAS = (422, "BUSINESS_VALIDATION_ERROR")
 NO_CUMPLE_EL_ESQUEMA = (422, "REQUEST_VALIDATION_ERROR")
 
@@ -638,7 +659,7 @@ ERRORES_DEL_DOMINIO = {
             f"{PIDE}/versiones/{e.version}/nodos",
             {**CUERPO_DE_UN_EJE, "clave": "E1"},
         ),
-        CONFLICTO,
+        CLAVE_REPETIDA,
     ),
     "eje_colgado_de_un_eje": (
         lambda e, n: (
@@ -678,11 +699,11 @@ ERRORES_DEL_DOMINIO = {
             f"{PIDE}/versiones/{e.version}/nodos",
             {**CUERPO_DE_UN_EJE, "clave": " E1 "},
         ),
-        CONFLICTO,
+        CLAVE_REPETIDA,
     ),
     "clave_de_un_hermano": (
         lambda e, n: ("PATCH", f"{PIDE}/nodos/{n['eje']['id']}", {"clave": "E2"}),
-        CONFLICTO,
+        CLAVE_REPETIDA,
     ),
     "nivel_que_no_queda_mas_abajo_que_su_padre": (
         lambda e, n: ("PATCH", f"{PIDE}/nodos/{n['hijo']['id']}", {"tipo": "eje"}),
