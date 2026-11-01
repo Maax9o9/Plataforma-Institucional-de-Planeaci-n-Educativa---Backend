@@ -218,3 +218,38 @@ async def test_un_poa_inexistente_no_se_hace_pasar_por_año_repetido(
         )
 
     assert "fk_poa_ejercicio_catalogo" in str(fallo.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "rol",
+    [Role.RESPONSABLE_AREA, Role.REVISOR_POA, Role.RECTORIA, Role.CAPTURISTA_POA],
+)
+async def test_quien_lee_el_poa_de_un_area_puede_elegir_el_ejercicio(
+    backend_client, planeacion_headers, rol
+):
+    app, client = backend_client
+    anio = await anio_libre(client, planeacion_headers)
+    poa = await crear_poa(client, planeacion_headers, anio)
+    ejercicio = await crear_ejercicio(client, planeacion_headers, poa, anio)
+    _, cabeceras = await _account(app, client, rol, uuid4().hex[:8])
+
+    listado = await client.get(f"{API}/poa/ejercicios", headers=cabeceras)
+
+    assert listado.status_code == 200, listado.text
+    assert ejercicio["id"] in [uno["id"] for uno in listado.json()]
+
+
+@pytest.mark.asyncio
+async def test_el_rol_de_sola_consulta_no_entra_al_listado_de_ejercicios(
+    backend_client, planeacion_headers
+):
+    app, client = backend_client
+    anio = await anio_libre(client, planeacion_headers)
+    poa = await crear_poa(client, planeacion_headers, anio)
+    await crear_ejercicio(client, planeacion_headers, poa, anio)
+    _, cabeceras = await _account(app, client, Role.CONSULTA, uuid4().hex[:8])
+
+    listado = await client.get(f"{API}/poa/ejercicios", headers=cabeceras)
+
+    assert listado.status_code == 403, listado.text

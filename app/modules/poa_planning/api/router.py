@@ -29,6 +29,14 @@ router = APIRouter(prefix="/poa", tags=["Cédulas POA"])
 
 #: Quien arma y administra el ejercicio: Planeación.
 PLANNING_ROLES = ("planeacion", "planeacion_admin", "admin_sistema")
+ROLES_QUE_ELIGEN_UN_EJERCICIO_PARA_LEERLO = (
+    "planeacion",
+    "admin_sistema",
+    "capturista_poa",
+    "rectoria",
+    "responsable_area",
+    "revisor_poa",
+)
 #: Quien lo aprueba o lo devuelve: sólo Rectoría, sin atajos administrativos.
 #: Fuente de verdad en `application/access_control.py` -la comparte con los
 #: casos de uso `ApproveExercise`/`RejectExercise`, que la vuelven a exigir
@@ -83,9 +91,7 @@ async def list_exercises(
     # Rectoría entra a leer: es quien aprueba o devuelve el ejercicio, y sin
     # el listado no tenía forma de llegar hasta él. Sólo lectura: aprobar y
     # devolver siguen gobernados por APPROVAL_ROLES.
-    current_user=Depends(
-        require_roles("planeacion", "admin_sistema", "capturista_poa", "rectoria")
-    ),
+    current_user=Depends(require_roles(*ROLES_QUE_ELIGEN_UN_EJERCICIO_PARA_LEERLO)),
 ):
     items = await request.app.state.poa_repository.list_exercises()
     nombres = await _nombres_de_poa(request)
