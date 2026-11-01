@@ -76,11 +76,6 @@ class SqlAlchemyDashboardService:
                 )
                 .outerjoin(CaptureModel, capture_join)
                 .group_by(IndicatorModel.id, IndicatorModel.clave)
-                # Un `GROUP BY` sin `ORDER BY` lo resuelve PostgreSQL con
-                # `HashAggregate` (orden arbitrario) o `GroupAggregate`
-                # (ordenado) segun las estadisticas, que cambian con el
-                # `autoanalyze`: en cuanto algo se apoye en ese orden, sera
-                # inestable sin que nada haya cambiado.
                 .order_by(IndicatorModel.id)
             )
             if area_id is not None:

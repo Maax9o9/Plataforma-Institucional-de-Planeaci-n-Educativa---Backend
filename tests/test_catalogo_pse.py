@@ -55,15 +55,6 @@ async def _account(app, client, role: Role, suffix: str, area_id: int | None = N
 
 
 async def _nueva_rama(client, headers) -> dict[str, str | int]:
-    """Da de alta un POA propio con un objetivo, su estrategia, indicador y accion.
-
-    El POA es propio y no el sembrado. Antes se le anadia un objetivo al POA
-    sembrado «POA 2026» con `max(numero) + 1`, y eso lo dejaba con 11 objetivos
-    en vez de 6 al terminar **cualquier** corrida: el `assert 6` de
-    `test_catalogo_por_poa.py` sobrevivia solo porque `por` va antes que `pse`
-    en el alfabeto -invirtiendo el orden de los archivos fallaba-. Un POA propio
-    no estorba a nadie en ningun orden.
-    """
     anio = await anio_libre(client, headers)
     catalogo_id = (await crear_poa(client, headers, anio))["id"]
     numero = 1

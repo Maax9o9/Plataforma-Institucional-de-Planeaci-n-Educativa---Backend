@@ -30,8 +30,6 @@ pytest.register_assert_rewrite("helpers")
 _TABLAS_SEMBRADAS_POR_MIGRACION = frozenset({"alembic_version", "unidades_medida"})
 
 
-#: La base que `TEST_DATABASE_URL` nombra al arrancar pytest. Ninguna prueba
-#: escribe en ella: cada sesion saca su copia y trabaja ahi.
 PLANTILLA_DE_LA_BASE_DE_PRUEBAS = os.getenv("TEST_DATABASE_URL")
 
 
@@ -73,9 +71,6 @@ async def _vaciar(url: URL) -> None:
         await connection.close()
 
 
-#: Lo que la migracion siembra en «POA 2026», y lo que tiene que seguir
-#: habiendo cuando la suite termina. Nadie puede formular sobre el POA
-#: sembrado: es el que las demas pruebas dan por conocido.
 OBJETIVOS_Y_ESTRATEGIAS_DEL_POA_SEMBRADO = (6, 24)
 
 
@@ -120,10 +115,6 @@ def _el_poa_sembrado_sigue_siendo_el_sembrado_al_terminar_la_suite():
     )
 
 
-# Las dos mitades van en `pytest_sessionstart` y no en una fixture de sesion
-# porque `tests/test_postgresql_integration.py:37` lee `TEST_DATABASE_URL` al
-# importarse, y la importacion ocurre al recolectar: una fixture, aunque sea de
-# sesion y autouse, llega tarde y ese modulo se queda apuntando a la plantilla.
 def pytest_sessionstart(session) -> None:
     if not PLANTILLA_DE_LA_BASE_DE_PRUEBAS:
         return

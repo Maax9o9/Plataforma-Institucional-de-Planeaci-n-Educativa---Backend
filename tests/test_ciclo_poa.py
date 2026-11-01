@@ -681,18 +681,14 @@ async def test_migracion_0031_conserva_los_criterios_de_la_columna_singular():
             assert sin_criterio not in [fila[0] for fila in migrado]
 
             columnas = (
-                (
-                    await connection.execute(
-                        text(
-                            "SELECT column_name FROM information_schema.columns "
-                            "WHERE table_schema = :schema AND table_name = 'poa_cedula_actividades'"
-                        ),
-                        {"schema": schema},
-                    )
+                await connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_schema = :schema AND table_name = 'poa_cedula_actividades'"
+                    ),
+                    {"schema": schema},
                 )
-                .scalars()
-                .all()
-            )
+            ).scalars().all()
             assert "criterio_seaes_id" not in columnas
             assert "actividad_upe" in columnas
     finally:

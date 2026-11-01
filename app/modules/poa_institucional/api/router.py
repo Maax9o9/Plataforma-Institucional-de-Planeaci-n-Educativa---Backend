@@ -44,10 +44,6 @@ router = APIRouter(prefix="/poa-institucional", tags=["POA del área"])
 ROLES_QUE_FORMULAN = ("planeacion", "planeacion_admin", "admin_sistema", "capturista_poa")
 ROLES_QUE_CONSULTAN = (*ROLES_QUE_FORMULAN, "responsable_area", "rectoria", "revisor_poa")
 
-#: Quien lee el POA de cualquier área sin ser de ninguna: los de
-#: `ROLES_QUE_VEN_TODA_AREA` más el revisor del POA, que dictamina el de las
-#: áreas y en la base no tiene área asignada. Sin esto, `ensure_area_or_planning`
-#: les contesta 403 aunque `require_roles` los haya dejado pasar.
 ROLES_QUE_LEEN_CUALQUIER_AREA = frozenset({*ROLES_QUE_VEN_TODA_AREA, "revisor_poa"})
 
 requiere_formular = require_roles(*ROLES_QUE_FORMULAN)

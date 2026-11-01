@@ -77,17 +77,6 @@ async def anio_libre(client, headers, *, desde: int = 2000) -> int:
 
 
 async def crear_ejercicio_de_un_anio_libre(client, headers, catalogo_id: int) -> dict:
-    """Un ejercicio del primer año libre, colgado de `catalogo_id`.
-
-    Sustituye al sorteo `2000 + (uuid4().int % 200)` con ocho reintentos que
-    había copiado en trece sitios. El sorteo reparte al azar en el mismo espacio
-    único de 200 años que `anio_libre()` va llenando de abajo arriba, así que su
-    probabilidad de fallo crece con lo que la suite crea: medido el 2026-11-01,
-    una corrida completa deja 119 de esos 200 años ocupados, con lo que cada
-    llamada falla el 1.6% de las veces y una corrida con seis sorteos, el 9%.
-    Dejó de ser latente: la primera corrida de esta ronda murió con «No se
-    encontró un año libre».
-    """
     anio = await anio_libre(client, headers)
     creado = await client.post(
         f"{API}/poa/ejercicios",

@@ -10,10 +10,6 @@ def actor_from_user(user) -> ActorContext:
     return ActorContext.from_user(user)
 
 
-#: Quien no se limita a su area porque su trabajo es la universidad entera.
-#: Rectoria aprueba o devuelve el POA, y la unica cuenta `rectoria` de la base
-#: **si tiene** area: si se la comparara, leeria solo esa, que es lo contrario
-#: de lo que hace falta para dictaminar. No incluye escritura.
 ROLES_QUE_VEN_TODA_AREA = frozenset({"planeacion", "planeacion_admin", "admin_sistema", "rectoria"})
 
 

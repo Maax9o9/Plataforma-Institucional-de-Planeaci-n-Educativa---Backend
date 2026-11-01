@@ -213,19 +213,6 @@ def test_la_aplicacion_de_modulo_no_abre_conexion_contra_su_base():
 
 @pytest.mark.asyncio
 async def test_cada_sesion_de_pytest_escribe_en_su_copia_y_no_en_la_plantilla(backend_client):
-    """La cuarta cara: *cuál* base de pruebas, cuando hay más de una sesión.
-
-    Hasta la ronda 5 la suite entera compartía una sola base persistente, con un
-    `TRUNCATE` por sesión y cero reversión por prueba. Funcionaba mientras sólo
-    hubiera una sesión de pytest por base, y nadie lo declaraba ni lo
-    verificaba: dos sesiones escalonadas 120 s sobre la misma base dieron, con
-    el mismo commit, una corrida en verde y otra con fallas -el `TRUNCATE` de la
-    segunda borraba por debajo lo que la primera llevaba acumulado-.
-
-    Ahora cada sesión saca su copia con `CREATE DATABASE ... TEMPLATE` y la tira
-    en un `finally`. Lo que esto sujeta no es el nombre: es que una escritura de
-    la suite **no aparece** en la plantilla.
-    """
     from uuid import uuid4
 
     import asyncpg
