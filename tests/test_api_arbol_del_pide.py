@@ -7,6 +7,7 @@ from itertools import count
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError as ErrorDeEsquema
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.app_factory import create_app
@@ -14,6 +15,10 @@ from app.core.config import Settings
 from app.modules.identity_access.application.dto import RegisterUserCommand
 from app.modules.identity_access.application.use_cases.create_user import CreateUser
 from app.modules.identity_access.domain.value_objects import Role
+from app.modules.institutional_catalogs.api.strategic_tree_router import (
+    ActualizarNodoRequest,
+    CrearNodoRequest,
+)
 from app.modules.institutional_catalogs.infrastructure.models import (
     InstrumentModel,
     InstrumentVersionModel,
@@ -442,6 +447,44 @@ async def test_el_patch_retira_con_activo_falso_y_se_niega_igual_que_desactivar(
         ("E1", False),
         ("E1.O1", False),
     ]
+
+
+@pytest.mark.parametrize("activo", [False, True], ids=["retira", "reactiva"])
+async def test_el_patch_con_activo_no_se_olvida_del_resto_de_los_campos(escenario, activo):
+    eje = await _crear(escenario, "E1")
+    hoja = await _crear(escenario, "E1.O1", "objetivo_general", padre=eje, orden=1)
+    if activo:
+        assert (await _retirar(escenario, hoja)).status_code == 200
+
+    corregido = await _corregir(
+        escenario, hoja, {"activo": activo, "denominacion": "Otra denominación", "orden": 5}
+    )
+
+    assert corregido.status_code == 200, corregido.text
+    assert corregido.json() == {
+        **hoja,
+        "activo": activo,
+        "denominacion": "Otra denominación",
+        "orden": 5,
+    }
+    assert [
+        (n["clave"], n["activo"], n["denominacion"], n["orden"])
+        for n in await _listar(escenario, incluir_inactivos=True)
+    ] == [
+        ("E1", True, "Denominación de E1", 1),
+        ("E1.O1", activo, "Otra denominación", 5),
+    ]
+
+
+@pytest.mark.parametrize(
+    "peticion", [CrearNodoRequest, ActualizarNodoRequest], ids=["alta", "patch"]
+)
+def test_el_padre_mas_chico_que_la_base_da_es_un_padre_valido(peticion):
+    cuerpo = CUERPO_DE_UN_EJE if peticion is CrearNodoRequest else {}
+
+    assert peticion(**cuerpo, padre_id=1).padre_id == 1
+    with pytest.raises(ErrorDeEsquema):
+        peticion(**cuerpo, padre_id=0)
 
 
 async def test_un_nodo_retirado_vuelve_con_patch_activo_pero_no_bajo_un_padre_retirado(escenario):
