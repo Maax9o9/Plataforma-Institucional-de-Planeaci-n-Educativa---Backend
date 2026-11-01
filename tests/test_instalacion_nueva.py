@@ -265,7 +265,7 @@ async def test_una_instalacion_nueva_nace_con_su_catalogo(base_recien_nacida, tm
     aplicacion = create_app(
         Settings(
             environment="testing",
-            indicators_module_enabled=True,
+            monthly_cycle_enabled=True,
             database_url=base_recien_nacida,
             email_provider="console",
             secret_key="test-secret-key-with-more-than-32-characters",

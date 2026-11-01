@@ -960,14 +960,14 @@ def test_el_openapi_declara_los_cinco_niveles_en_vez_de_una_cadena_libre():
         assert _referencias_del_tipo(esquemas, esquema) == ["#/components/schemas/NodeKind"]
 
 
-def test_el_arbol_del_pide_se_publica_aunque_el_modulo_de_indicadores_duerma():
+def test_el_arbol_del_pide_se_publica_aunque_el_ciclo_mensual_duerma():
     rutas = create_app(
         Settings(
             environment="testing",
             secret_key="test-secret-key-with-more-than-32-characters",
             database_url=None,
             email_provider="console",
-            indicators_module_enabled=False,
+            monthly_cycle_enabled=False,
         )
     ).openapi()["paths"]
 

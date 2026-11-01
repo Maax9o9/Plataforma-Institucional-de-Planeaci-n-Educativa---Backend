@@ -83,7 +83,7 @@ async def backend_client(request, tmp_path):
     application = create_app(
         Settings(
             environment="testing",
-            indicators_module_enabled=True,
+            monthly_cycle_enabled=True,
             database_url=database_url,
             email_provider="console",
             secret_key="test-secret-key-with-more-than-32-characters",
@@ -136,7 +136,7 @@ def app():
     return create_app(
         Settings(
             environment="testing",
-            indicators_module_enabled=True,
+            monthly_cycle_enabled=True,
             secret_key="test-secret-key-with-more-than-32-characters",
             database_url=None,
             email_provider="console",

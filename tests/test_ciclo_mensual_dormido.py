@@ -26,9 +26,7 @@ RUTAS_POA = (
     "/api/v1/catalogos/areas",
 )
 
-#: El historial del indicador vive bajo /indicadores pero lo sirve el router de
-#: auditoria, que se queda: es parte de la bitacora, no del modulo del PIDE.
-EXCEPCION_AUDITORIA = "/api/v1/indicadores/{indicator_id}/historial"
+HISTORIAL_QUE_SIRVE_LA_BITACORA = "/api/v1/indicadores/{indicator_id}/historial"
 
 ROUTERS_DEL_CICLO_MENSUAL = {
     "captura": captura_router,
@@ -86,6 +84,18 @@ async def cliente_por_omision():
         yield cliente
 
 
+@pytest.mark.parametrize("variable", ["MONTHLY_CYCLE_ENABLED", "INDICATORS_MODULE_ENABLED"])
+def test_la_bandera_responde_al_nombre_nuevo_y_al_que_pueda_estar_en_un_despliegue(
+    monkeypatch, variable
+):
+    monkeypatch.setenv(variable, "true")
+
+    assert _settings().monthly_cycle_enabled is True
+    assert set().union(
+        *(_operaciones(router) for router in ROUTERS_DEL_CICLO_MENSUAL.values())
+    ) <= _publicadas()
+
+
 def test_el_catalogo_de_indicadores_se_publica_por_omision():
     assert _operaciones(catalogo_router) <= _publicadas()
 
@@ -97,7 +107,7 @@ def test_por_omision_los_routers_del_ciclo_mensual_no_se_publican(router):
 
 def test_la_bandera_enciende_exactamente_el_ciclo_mensual():
     dormido = _publicadas()
-    despierto = _publicadas(indicators_module_enabled=True)
+    despierto = _publicadas(monthly_cycle_enabled=True)
 
     assert dormido <= despierto
     assert despierto - dormido == set().union(
@@ -107,7 +117,7 @@ def test_la_bandera_enciende_exactamente_el_ciclo_mensual():
 
 @pytest.mark.parametrize("encendido", [False, True], ids=["dormido", "despierto"])
 def test_ninguna_operacion_se_declara_dos_veces(encendido):
-    aplicacion = create_app(_settings(indicators_module_enabled=encendido))
+    aplicacion = create_app(_settings(monthly_cycle_enabled=encendido))
 
     with warnings.catch_warnings():
         warnings.filterwarnings("error", message="Duplicate Operation ID")
@@ -128,7 +138,7 @@ async def test_el_ciclo_mensual_sigue_devolviendo_404(cliente_por_omision, route
 
 
 def test_el_historial_del_indicador_sobrevive_porque_es_bitacora():
-    assert EXCEPCION_AUDITORIA in _rutas()
+    assert HISTORIAL_QUE_SIRVE_LA_BITACORA in _rutas()
 
 
 def test_el_poa_y_su_andamio_siguen_publicados():

@@ -43,7 +43,7 @@ CORE_ROUTERS = (
     indicators_catalog_router,
 )
 
-INDICATORS_ROUTERS = (
+CICLO_MENSUAL_ROUTERS = (
     captures_router,
     validation_router,
     scoring_router,
@@ -52,10 +52,12 @@ INDICATORS_ROUTERS = (
 )
 
 #: Se conserva por compatibilidad con lo que ya importaba el registro completo.
-API_ROUTERS = CORE_ROUTERS + INDICATORS_ROUTERS
+API_ROUTERS = CORE_ROUTERS + CICLO_MENSUAL_ROUTERS
 
 
-def include_api_routers(app: FastAPI, prefix: str, *, incluir_indicadores: bool = False) -> None:
-    routers = CORE_ROUTERS + (INDICATORS_ROUTERS if incluir_indicadores else ())
+def include_api_routers(
+    app: FastAPI, prefix: str, *, incluir_el_ciclo_mensual: bool = False
+) -> None:
+    routers = CORE_ROUTERS + (CICLO_MENSUAL_ROUTERS if incluir_el_ciclo_mensual else ())
     for router in routers:
         app.include_router(router, prefix=prefix)

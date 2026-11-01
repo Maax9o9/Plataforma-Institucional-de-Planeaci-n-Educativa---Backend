@@ -22,7 +22,7 @@ from app.modules.periods.infrastructure.sql_repository import SqlAlchemyPeriodRe
 def database_settings() -> Settings:
     return Settings(
         environment="testing",
-            indicators_module_enabled=True,
+            monthly_cycle_enabled=True,
         secret_key="test-secret-key-with-more-than-32-characters",
         # Imposible a propósito -puerto 1, usuario y base que no existen-: lo que
         # esta prueba demuestra es que la URL elige los adaptadores de SQLAlchemy

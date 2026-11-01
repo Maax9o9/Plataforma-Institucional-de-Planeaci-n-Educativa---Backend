@@ -114,7 +114,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     include_api_routers(
         app,
         settings.api_v1_prefix,
-        incluir_indicadores=settings.indicators_module_enabled,
+        incluir_el_ciclo_mensual=settings.monthly_cycle_enabled,
     )
     app.openapi = lambda: custom_openapi(app)
     return app
