@@ -54,8 +54,6 @@ DOCE_METAS_QUE_SUMAN_24 = (
 ENDPOINTS = ("consultar", "abrir", "registrar", "corregir", "presentar")
 ESCRITURAS = ("abrir", "registrar", "corregir", "presentar")
 
-#: Quien dictamina el POA del area sin ser de ninguna. Rectoria aprueba y
-#: `revisor_poa` revisa: los dos leen cualquier area y ninguno escribe.
 ROLES_QUE_LEEN_SIN_SER_DE_UN_AREA = (Role.RECTORIA, Role.REVISOR_POA)
 
 ROLES_QUE_NI_LEEN = (Role.CONSULTA,)
@@ -689,6 +687,7 @@ async def test_las_actividades_retiradas_no_salen_salvo_que_se_pidan(escenario):
 
     sin_pedirlas = await _consultar(escenario)
     pidiendolas = await _consultar(escenario, incluir_inactivas=True)
+    reabierto = await _abrir(escenario)
 
     assert completa["id"] not in [una["id"] for una in sin_pedirlas.json()["actividades"]]
     assert completa["id"] in [una["id"] for una in pidiendolas.json()["actividades"]]
@@ -698,6 +697,8 @@ async def test_las_actividades_retiradas_no_salen_salvo_que_se_pidan(escenario):
         ]
         is False
     )
+    assert reabierto.status_code == 200, reabierto.text
+    assert reabierto.json()["actividades"] == sin_pedirlas.json()["actividades"]
 
 
 async def test_presentar_un_poa_sin_responsable_de_area_lo_dice(escenario):
