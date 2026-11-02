@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from itertools import count
 from uuid import uuid4
@@ -29,6 +29,7 @@ from app.modules.poa_institucional.domain.entities import (
 from app.modules.poa_institucional.infrastructure.sql_repository import (
     SqlAlchemyPoaAreaRepository,
 )
+from app.shared.domain.calendar import institutional_today
 from app.shared.domain.exceptions import ConflictError
 from helpers import API, anio_libre, crear_ejercicio, crear_poa
 
@@ -51,12 +52,31 @@ DOCE_METAS_QUE_SUMAN_24 = (
     Decimal(2),
 )
 
-ENDPOINTS = ("consultar", "abrir", "registrar", "corregir", "presentar")
-ESCRITURAS = ("abrir", "registrar", "corregir", "presentar")
+ENDPOINTS = ("consultar", "abrir", "reabrir", "registrar", "corregir", "presentar")
+
+#: Lo que escribe el area en su propio POA. Abrir y reabrir no estan aqui:
+#: desde el 1 de noviembre de 2026 son de Planeacion y el area no los llama.
+ESCRITURAS_DEL_AREA = ("registrar", "corregir", "presentar")
+SOLO_DE_PLANEACION = ("abrir", "reabrir")
+ESCRITURAS = ESCRITURAS_DEL_AREA + SOLO_DE_PLANEACION
 
 ROLES_QUE_LEEN_SIN_SER_DE_UN_AREA = (Role.RECTORIA, Role.REVISOR_POA)
 
 ROLES_QUE_NI_LEEN = (Role.CONSULTA,)
+
+ROLES_QUE_ABREN = (Role.PLANEACION, Role.PLANEACION_ADMIN, Role.ADMIN_SISTEMA)
+ROLES_QUE_YA_NO_ABREN = (Role.CAPTURISTA_POA, Role.RESPONSABLE_AREA)
+
+
+#: La ventana de captura con la que el escenario abre el POA. `institutional_today`
+#: y no `date.today` porque el servidor puede estar en UTC, donde la tarde del 31
+#: de diciembre en Chiapas ya es el 1 de enero. El dia de antes y el de despues,
+#: para que la corrida no dependa de cruzar la medianoche; los bordes exactos de
+#: la ventana se miden en `test_apertura_del_poa_inst.py` y en
+#: `test_api_apertura_del_poa_inst.py`.
+def _ventana_que_incluye_hoy() -> tuple[str, str]:
+    hoy = institutional_today()
+    return ((hoy - timedelta(days=1)).isoformat(), (hoy + timedelta(days=1)).isoformat())
 
 
 @dataclass
@@ -138,12 +158,52 @@ async def _consultar(escenario: Escenario, cabeceras: dict[str, str] | None = No
     )
 
 
-async def _abrir(escenario: Escenario, cabeceras: dict[str, str] | None = None):
+async def _abrir(
+    escenario: Escenario,
+    cabeceras: dict[str, str] | None = None,
+    *,
+    areas: list[int] | None = ...,
+    desde: str | None = None,
+    hasta: str | None = None,
+):
+    por_omision = _ventana_que_incluye_hoy()
     return await escenario.client.post(
-        f"{POA_INST}/areas/{escenario.area_id}/abrir",
+        f"{POA_INST}/abrir",
         headers=cabeceras or escenario.planeacion,
         params={"ejercicio_id": escenario.ejercicio_id},
+        json={
+            "areas": [escenario.area_id] if areas is ... else areas,
+            "desde": desde or por_omision[0],
+            "hasta": hasta or por_omision[1],
+        },
     )
+
+
+async def _reabrir(
+    escenario: Escenario,
+    cabeceras: dict[str, str] | None = None,
+    *,
+    motivo: str = "El área no entregó en la fecha dispuesta",
+    desde: str | None = None,
+    hasta: str | None = None,
+):
+    por_omision = _ventana_que_incluye_hoy()
+    return await escenario.client.post(
+        f"{POA_INST}/areas/{escenario.area_id}/reabrir",
+        headers=cabeceras or escenario.planeacion,
+        params={"ejercicio_id": escenario.ejercicio_id},
+        json={
+            "desde": desde or por_omision[0],
+            "hasta": hasta or por_omision[1],
+            "motivo": motivo,
+        },
+    )
+
+
+def _el_abierto(respuesta, area_id: int) -> dict:
+    cuerpo = respuesta.json()
+    todos = cuerpo["abiertos"] + cuerpo["ya_estaban_abiertos"]
+    return next(uno for uno in todos if uno["area_id"] == area_id)
 
 
 async def _registrar(
@@ -183,9 +243,21 @@ async def _presentar(escenario: Escenario, version: int, cabeceras: dict[str, st
 def _peticion(nombre: str, escenario: Escenario) -> tuple[str, str, dict, dict | None]:
     area = f"{POA_INST}/areas/{escenario.area_id}"
     consulta = {"ejercicio_id": escenario.ejercicio_id}
+    desde, hasta = _ventana_que_incluye_hoy()
     return {
         "consultar": ("GET", area, consulta, None),
-        "abrir": ("POST", f"{area}/abrir", consulta, None),
+        "abrir": (
+            "POST",
+            f"{POA_INST}/abrir",
+            consulta,
+            {"areas": [escenario.area_id], "desde": desde, "hasta": hasta},
+        ),
+        "reabrir": (
+            "POST",
+            f"{area}/reabrir",
+            consulta,
+            {"desde": desde, "hasta": hasta, "motivo": "Un motivo cualquiera"},
+        ),
         "registrar": (
             "POST",
             f"{area}/actividades",
@@ -233,7 +305,7 @@ async def _actividad_completa(escenario: Escenario, **campos) -> dict:
 async def _ya_abierto_con_una_actividad(armado: Escenario) -> Escenario:
     abierto = await _abrir(armado)
     assert abierto.status_code == 200, abierto.text
-    armado.poa_area_id = abierto.json()["id"]
+    armado.poa_area_id = _el_abierto(abierto, armado.area_id)["id"]
     registrada = await _registrar(armado, {"denominacion": "La actividad que ya estaba"})
     assert registrada.status_code == 201, registrada.text
     armado.actividad_id = registrada.json()["id"]
@@ -301,11 +373,48 @@ async def test_quien_no_tiene_area_tampoco_entra_al_poa_de_una(
     assert respuesta.status_code == 403, respuesta.text
 
 
-@pytest.mark.parametrize("endpoint", ENDPOINTS)
+@pytest.mark.parametrize("endpoint", ("consultar", *ESCRITURAS_DEL_AREA))
 async def test_el_capturista_de_esta_area_si_entra(escenario, endpoint):
     respuesta = await _pedir(escenario, endpoint, escenario.capturista)
 
     assert respuesta.status_code != 403, respuesta.text
+
+
+@pytest.mark.parametrize("endpoint", SOLO_DE_PLANEACION)
+@pytest.mark.parametrize("rol", ROLES_QUE_YA_NO_ABREN, ids=lambda rol: rol.value)
+async def test_el_area_ya_no_abre_ni_reabre_su_propio_poa(escenario, cuenta_con_rol, endpoint, rol):
+    del_area = await cuenta_con_rol(rol, area_id=escenario.area_id)
+
+    respuesta = await _pedir(escenario, endpoint, del_area)
+
+    assert respuesta.status_code == 403, respuesta.text
+    assert respuesta.json()["code"] == "FORBIDDEN"
+
+
+@pytest.mark.parametrize("endpoint", SOLO_DE_PLANEACION)
+@pytest.mark.parametrize("rol", ROLES_QUE_ABREN, ids=lambda rol: rol.value)
+async def test_planeacion_abre_y_reabre_aunque_el_area_no_sea_la_suya(
+    escenario, cuenta_con_rol, endpoint, rol
+):
+    de_planeacion = await cuenta_con_rol(rol, area_id=None)
+
+    respuesta = await _pedir(escenario, endpoint, de_planeacion)
+
+    assert respuesta.status_code == 200, respuesta.text
+
+
+@pytest.mark.parametrize("endpoint", SOLO_DE_PLANEACION)
+@pytest.mark.parametrize(
+    "rol", (*ROLES_QUE_LEEN_SIN_SER_DE_UN_AREA, *ROLES_QUE_NI_LEEN), ids=lambda rol: rol.value
+)
+async def test_quien_ni_formula_ni_es_de_planeacion_no_abre_ni_reabre(
+    escenario, cuenta_con_rol, endpoint, rol
+):
+    ajeno = await cuenta_con_rol(rol, area_id=escenario.area_id)
+
+    respuesta = await _pedir(escenario, endpoint, ajeno)
+
+    assert respuesta.status_code == 403, respuesta.text
 
 
 @pytest.mark.parametrize("endpoint", ENDPOINTS)
@@ -386,12 +495,16 @@ async def test_abrir_el_poa_del_area_lo_deja_en_borrador_y_abrirlo_dos_veces_da_
     segunda = await _abrir(propia)
 
     assert primera.status_code == segunda.status_code == 200, primera.text
-    assert primera.json()["id"] == segunda.json()["id"]
-    assert primera.json()["version"] == segunda.json()["version"] == 1
-    assert primera.json()["estado"] == "borrador"
-    assert primera.json()["ejercicio_id"] == propia.ejercicio_id
-    assert primera.json()["area_id"] == propia.area_id
-    assert primera.json()["actividades"] == []
+    assert [uno["area_id"] for uno in primera.json()["abiertos"]] == [propia.area_id]
+    assert primera.json()["ya_estaban_abiertos"] == []
+    assert segunda.json()["abiertos"] == []
+    assert [uno["area_id"] for uno in segunda.json()["ya_estaban_abiertos"]] == [propia.area_id]
+    abierto = primera.json()["abiertos"][0]
+    assert abierto["id"] == segunda.json()["ya_estaban_abiertos"][0]["id"]
+    assert abierto["version"] == 1
+    assert abierto["estado"] == "borrador"
+    assert abierto["ejercicio_id"] == propia.ejercicio_id
+    assert abierto["periodos_habilitados"] == 1
 
 
 async def test_consultar_un_poa_que_nadie_abrio_no_lo_abre(escenario, nueva_area):
@@ -416,10 +529,9 @@ async def test_el_poa_del_area_es_uno_por_ejercicio_y_no_uno_por_area(escenario)
     abierto = await _abrir(en_el_otro_ejercicio)
 
     assert abierto.status_code == 200, abierto.text
-    assert abierto.json()["id"] != escenario.poa_area_id
-    assert abierto.json()["ejercicio_id"] == otro["id"]
-    assert abierto.json()["area_id"] == escenario.area_id
-    assert abierto.json()["actividades"] == []
+    en_el_otro = _el_abierto(abierto, escenario.area_id)
+    assert en_el_otro["id"] != escenario.poa_area_id
+    assert en_el_otro["ejercicio_id"] == otro["id"]
     assert len((await _consultar(escenario)).json()["actividades"]) == 1
 
 
@@ -434,16 +546,14 @@ async def test_abrir_el_poa_de_un_ejercicio_que_no_existe_se_niega(escenario):
 
 
 async def test_abrir_el_poa_de_un_area_que_no_existe_se_niega(escenario):
-    inventada = Escenario(**{**escenario.__dict__, "area_id": MAYOR_ENTERO_DE_LA_BASE})
-
-    respuesta = await _abrir(inventada)
+    respuesta = await _abrir(escenario, areas=[MAYOR_ENTERO_DE_LA_BASE])
 
     assert respuesta.status_code == 422, respuesta.text
     assert respuesta.json()["code"] == "BUSINESS_VALIDATION_ERROR"
     assert respuesta.json()["message"] == EL_AREA_NO_EXISTE
 
 
-async def test_el_poa_que_otro_abrio_a_la_vez_se_devuelve_en_vez_de_chocar(escenario, nueva_area):
+async def test_el_poa_que_otro_abrio_a_la_vez_se_cuenta_como_ya_abierto(escenario, nueva_area):
     otra_area = await nueva_area()
     repositorio = escenario.app.state.poa_area_repository
     escenario.app.state.poa_area_repository = _ElQueOtroAbrioEnMedio(repositorio)
@@ -452,7 +562,8 @@ async def test_el_poa_que_otro_abrio_a_la_vez_se_devuelve_en_vez_de_chocar(escen
     respuesta = await _abrir(escenario)
 
     assert respuesta.status_code == 200, respuesta.text
-    assert respuesta.json()["area_id"] == otra_area
+    assert respuesta.json()["abiertos"] == []
+    assert [uno["area_id"] for uno in respuesta.json()["ya_estaban_abiertos"]] == [otra_area]
     assert escenario.app.state.poa_area_repository.aperturas == 1
 
 
@@ -464,9 +575,9 @@ class _ElQueOtroAbrioEnMedio:
     def __getattr__(self, nombre):
         return getattr(self.real, nombre)
 
-    async def add_poa_area(self, poa_area):
+    async def add_poa_area(self, poa_area, window):
         self.aperturas += 1
-        await self.real.add_poa_area(poa_area)
+        await self.real.add_poa_area(poa_area, window)
         raise ConflictError("El área ya tiene su POA en este ejercicio.")
 
 
@@ -687,7 +798,7 @@ async def test_las_actividades_retiradas_no_salen_salvo_que_se_pidan(escenario):
 
     sin_pedirlas = await _consultar(escenario)
     pidiendolas = await _consultar(escenario, incluir_inactivas=True)
-    reabierto = await _abrir(escenario)
+    otra_apertura = await _abrir(escenario)
 
     assert completa["id"] not in [una["id"] for una in sin_pedirlas.json()["actividades"]]
     assert completa["id"] in [una["id"] for una in pidiendolas.json()["actividades"]]
@@ -697,8 +808,8 @@ async def test_las_actividades_retiradas_no_salen_salvo_que_se_pidan(escenario):
         ]
         is False
     )
-    assert reabierto.status_code == 200, reabierto.text
-    assert reabierto.json()["actividades"] == sin_pedirlas.json()["actividades"]
+    assert otra_apertura.status_code == 200, otra_apertura.text
+    assert (await _consultar(escenario)).json()["actividades"] == sin_pedirlas.json()["actividades"]
 
 
 async def test_presentar_un_poa_sin_responsable_de_area_lo_dice(escenario):
@@ -764,7 +875,28 @@ async def test_presentar_sobre_una_version_vieja_del_poa_contesta_409(escenario,
     assert (await _consultar(escenario)).json()["estado"] == "borrador"
 
 
-@pytest.mark.parametrize("endpoint", ["consultar", "registrar", "corregir", "presentar"])
+async def test_reabrir_un_poa_enviado_lo_devuelve_a_borrador_con_sus_actividades(
+    escenario, cuenta_con_rol
+):
+    await cuenta_con_rol(Role.RESPONSABLE_AREA, area_id=escenario.area_id)
+    completa = await _actividad_completa(escenario)
+    retirada = await _corregir(escenario, escenario.actividad_id, {"version": 1, "activa": False})
+    assert retirada.status_code == 200, retirada.text
+    presentado = await _presentar(escenario, 1)
+    assert presentado.status_code == 200, presentado.text
+    assert presentado.json()["estado"] == "enviado"
+
+    reabierto = await _reabrir(escenario)
+
+    assert reabierto.status_code == 200, reabierto.text
+    assert reabierto.json()["estado"] == "borrador"
+    assert reabierto.json()["version"] == presentado.json()["version"] + 1
+    assert reabierto.json()["periodos_habilitados"] == 2
+    assert reabierto.json()["esta_abierto"] is True
+    assert [una["id"] for una in reabierto.json()["actividades"]] == [completa["id"]]
+
+
+@pytest.mark.parametrize("endpoint", ["consultar", "reabrir", "registrar", "corregir", "presentar"])
 async def test_sin_el_poa_abierto_las_escrituras_contestan_404(escenario, endpoint, nueva_area):
     sin_abrir = Escenario(**{**escenario.__dict__, "area_id": await nueva_area()})
 
@@ -775,7 +907,7 @@ async def test_sin_el_poa_abierto_las_escrituras_contestan_404(escenario, endpoi
 
 
 @pytest.mark.parametrize("endpoint", ENDPOINTS)
-async def test_el_ejercicio_es_obligatorio_en_los_cinco(escenario, endpoint):
+async def test_el_ejercicio_es_obligatorio_en_los_seis(escenario, endpoint):
     metodo, url, _, cuerpo = _peticion(endpoint, escenario)
 
     respuesta = await escenario.client.request(
@@ -969,11 +1101,13 @@ def test_el_poa_del_area_declara_su_contrato_en_el_openapi(app):
 
     operaciones = {
         "consultar": esquema["paths"][area]["get"],
-        "abrir": esquema["paths"][f"{area}/abrir"]["post"],
+        "abrir": esquema["paths"][f"{POA_INST}/abrir"]["post"],
+        "reabrir": esquema["paths"][f"{area}/reabrir"]["post"],
         "registrar": esquema["paths"][f"{area}/actividades"]["post"],
         "corregir": esquema["paths"][f"{area}/actividades/{{actividad_id}}"]["patch"],
         "presentar": esquema["paths"][f"{area}/presentar"]["post"],
     }
+    assert f"{area}/abrir" not in esquema["paths"]
 
     for nombre, operacion in operaciones.items():
         obligatorios = {

@@ -40,8 +40,8 @@ from app.modules.institutional_catalogs.infrastructure.strategic_tree_sql_reposi
     SqlAlchemyStrategicTreeRepository,
 )
 from app.modules.poa_institucional.application.use_cases.manage_poa_area import (
-    OpenPoaArea,
-    OpenPoaAreaCommand,
+    OpenInstitutionalPoa,
+    OpenInstitutionalPoaCommand,
     SaveActivityCommand,
     SavePoaActivity,
     SubmitPoaArea,
@@ -51,6 +51,7 @@ from app.modules.poa_institucional.domain.entities import (
     MESES_DEL_EJERCICIO,
     META_MAS_ALTA_QUE_CABE,
     Activity,
+    CaptureWindow,
     MonthlyTarget,
     PoaArea,
     PoaAreaStatus,
@@ -79,6 +80,23 @@ from app.shared.domain.exceptions import (
 from app.shared.domain.value_objects import Email
 
 INEXISTENTE = 10**9
+
+#: El dia en que estas pruebas capturan, y la ventana que lo contiene. Desde la
+#: migracion 0041 registrar, corregir y presentar se bloquean fuera de la
+#: ventana que fijo Planeacion, asi que un tablero sin fecha fija dependeria del
+#: dia en que se corre la suite. Los bordes de la ventana se miden en
+#: `test_apertura_del_poa_inst.py`.
+DIA_DE_CAPTURA = date(2026, 6, 15)
+VENTANA_QUE_INCLUYE_EL_DIA_DE_CAPTURA = (date(2026, 1, 1), date(2026, 12, 31))
+
+
+def _primer_periodo() -> CaptureWindow:
+    return CaptureWindow(
+        number=1,
+        opens_on=VENTANA_QUE_INCLUYE_EL_DIA_DE_CAPTURA[0],
+        closes_on=VENTANA_QUE_INCLUYE_EL_DIA_DE_CAPTURA[1],
+    )
+
 
 DOCE_METAS_DESIGUALES_QUE_SUMAN_24 = (
     Decimal(1),
@@ -123,14 +141,26 @@ class Tablero:
     nuevo_usuario: Callable[..., Awaitable[int]]
     conexion: AsyncConnection | None = None
 
-    def abrir(self) -> OpenPoaArea:
-        return OpenPoaArea(self.repo, self.ejercicios, self.areas)
+    def abrir(self) -> OpenInstitutionalPoa:
+        return OpenInstitutionalPoa(self.repo, self.ejercicios, self.areas)
 
     def guardar(self) -> SavePoaActivity:
-        return SavePoaActivity(self.repo, self.arbol)
+        return SavePoaActivity(self.repo, self.arbol, self.areas, today=lambda: DIA_DE_CAPTURA)
 
     def enviar(self) -> SubmitPoaArea:
-        return SubmitPoaArea(self.repo, self.liderazgo)
+        return SubmitPoaArea(self.repo, self.liderazgo, self.areas, today=lambda: DIA_DE_CAPTURA)
+
+    async def abrir_uno(self, ejercicio: int, area: int) -> PoaArea:
+        abierto = await self.abrir().execute(
+            OpenInstitutionalPoaCommand(
+                exercise_id=ejercicio,
+                area_ids=[area],
+                opens_on=VENTANA_QUE_INCLUYE_EL_DIA_DE_CAPTURA[0],
+                closes_on=VENTANA_QUE_INCLUYE_EL_DIA_DE_CAPTURA[1],
+            )
+        )
+        uno = (abierto.opened + abierto.already_open)[0]
+        return uno.poa_area
 
 
 def _tablero_en_memoria() -> Tablero:
@@ -230,7 +260,17 @@ async def _tablero_en_postgresql():
                 return await _insertar(conexion, "poa_ejercicios", anio=anio, catalogo_id=catalogo)
 
             async def nueva_area() -> int:
-                return await _insertar(conexion, "areas", nombre=f"Área de prueba {uuid4().hex}")
+                # Con `codigo`, y no solo con `nombre`: sin el,
+                # `SqlAlchemyAreaRepository.get_by_id` devuelve el nombre como
+                # codigo -es su respaldo- y el `update` de vuelta no cabe en
+                # `areas.codigo`, que admite 30 caracteres. El tablero en
+                # memoria si pone codigo, asi que sin esto los dos divergian.
+                return await _insertar(
+                    conexion,
+                    "areas",
+                    nombre=f"Área de prueba {uuid4().hex}",
+                    codigo=f"PRUEBA-{uuid4().hex[:8]}",
+                )
 
             async def nueva_unidad() -> int:
                 return await _insertar(
@@ -310,9 +350,7 @@ async def _poa_area(tablero: Tablero, *, con_responsable: bool = True) -> PoaAre
     area = await tablero.nueva_area()
     if con_responsable:
         await tablero.dar_responsable(area)
-    return await tablero.abrir().execute(
-        OpenPoaAreaCommand(exercise_id=await tablero.nuevo_ejercicio(), area_id=area)
-    )
+    return await tablero.abrir_uno(await tablero.nuevo_ejercicio(), area)
 
 
 async def _nodo_raiz(
@@ -394,8 +432,8 @@ async def test_un_poa_de_area_nace_en_borrador_y_el_segundo_llamado_devuelve_el_
     ejercicio = await tablero.nuevo_ejercicio()
     area = await tablero.nueva_area()
 
-    primero = await tablero.abrir().execute(OpenPoaAreaCommand(exercise_id=ejercicio, area_id=area))
-    segundo = await tablero.abrir().execute(OpenPoaAreaCommand(exercise_id=ejercicio, area_id=area))
+    primero = await tablero.abrir_uno(ejercicio, area)
+    segundo = await tablero.abrir_uno(ejercicio, area)
 
     assert primero.status is PoaAreaStatus.BORRADOR
     assert primero.version == 1
@@ -1321,9 +1359,7 @@ async def test_abrir_un_poa_de_area_ya_enviado_lo_devuelve_enviado(tablero):
         SubmitPoaAreaCommand(poa_area_id=poa_area.id, version=poa_area.version)
     )
 
-    reabierto = await tablero.abrir().execute(
-        OpenPoaAreaCommand(exercise_id=poa_area.exercise_id, area_id=poa_area.area_id)
-    )
+    reabierto = await tablero.abrir_uno(poa_area.exercise_id, poa_area.area_id)
 
     assert (reabierto.id, reabierto.status, reabierto.version) == (
         poa_area.id,
@@ -1356,7 +1392,8 @@ async def test_un_area_tiene_un_solo_poa_por_ejercicio(tablero):
 
     with pytest.raises(ConflictError, match="ya tiene su POA"):
         await tablero.repo.add_poa_area(
-            PoaArea(exercise_id=poa_area.exercise_id, area_id=poa_area.area_id)
+            PoaArea(exercise_id=poa_area.exercise_id, area_id=poa_area.area_id),
+            _primer_periodo(),
         )
 
 
@@ -1403,7 +1440,7 @@ async def test_un_poa_de_area_de_un_ejercicio_o_un_area_que_no_existen_no_se_gua
     }
 
     with pytest.raises(ValidationError, match=esperado):
-        await tablero_postgresql.repo.add_poa_area(PoaArea(**valores))
+        await tablero_postgresql.repo.add_poa_area(PoaArea(**valores), _primer_periodo())
 
 
 async def test_una_programacion_incompleta_escrita_por_fuera_frena_el_envio(
