@@ -1,9 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Integer, Numeric, SmallInteger, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Integer,
+    Numeric,
+    SmallInteger,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.shared.infrastructure.db.base import Base
@@ -21,6 +31,21 @@ class PoaAreaModel(Base):
     area_id: Mapped[int] = mapped_column(Integer, nullable=False)
     estado: Mapped[str] = mapped_column(String(30), nullable=False, default="borrador")
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PoaAperturaModel(Base):
+    __tablename__ = "poa_inst_aperturas"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    poa_area_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    numero: Mapped[int] = mapped_column(Integer, nullable=False)
+    desde: Mapped[date] = mapped_column(Date, nullable=False)
+    hasta: Mapped[date] = mapped_column(Date, nullable=False)
+    motivo: Mapped[str | None] = mapped_column(Text)
+    abierto_por: Mapped[int | None] = mapped_column(Integer)
     creado_en: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

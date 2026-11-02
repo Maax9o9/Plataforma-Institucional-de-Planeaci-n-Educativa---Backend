@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 
@@ -9,6 +10,7 @@ from app.modules.institutional_catalogs.domain.strategic_tree_entities import (
     StrategicNode,
     cabe_en_el_entero_de_la_base,
 )
+from app.shared.domain.calendar import el_dia_en_letras
 from app.shared.domain.captured_text import recortado_sin_invisibles
 from app.shared.domain.exceptions import InvalidStateError, ValidationError
 
@@ -30,9 +32,37 @@ EL_AREA_NO_EXISTE = "El área no existe."
 
 EL_AREA_YA_TIENE_SU_POA = "El área ya tiene su POA en este ejercicio."
 
+EL_POA_DEL_AREA_SE_REABRIO_A_LA_VEZ = (
+    "Otra solicitud habilitó un nuevo periodo de captura al mismo tiempo. Vuelva a consultar "
+    "el Programa Operativo Anual del área antes de intentarlo de nuevo."
+)
+
+EL_POA_DEL_AREA_NO_EXISTE = "El POA del área no existe."
+
+LO_MOVIERON_AL_ENVIAR = (
+    "El POA del área fue modificado por otra solicitud: vuelva a cargarlo antes de enviarlo."
+)
+
+LO_MOVIERON_AL_REABRIR = (
+    "El Programa Operativo Anual del área fue modificado por otra solicitud. Vuelva a "
+    "consultarlo antes de habilitar un nuevo periodo de captura."
+)
+
 LA_ACTIVIDAD_LA_MOVIERON = (
     "La actividad fue modificada por otra solicitud: vuelva a cargarla antes de guardar."
 )
+
+EL_PRIMER_PERIODO_ES_EL_UNO = (
+    "El primer periodo de captura de un Programa Operativo Anual es el número 1 y los "
+    "siguientes continúan a partir de ahí."
+)
+
+UN_PERIODO_NUEVO_REQUIERE_MOTIVO = (
+    "La habilitación de un nuevo periodo requiere un motivo: queda asentado en el expediente "
+    "del programa junto con la fecha y la persona que lo autoriza."
+)
+
+SOLICITE_UN_PERIODO_NUEVO = "Solicite a la Dirección de Planeación que habilite un nuevo periodo."
 
 
 class PoaAreaStatus(StrEnum):
@@ -69,6 +99,79 @@ class PoaArea:
                 raise ValidationError(
                     f"El «{campo}» del POA del área no cabe en el entero de la base: {numero}."
                 )
+
+
+@dataclass(kw_only=True)
+class CaptureWindow:
+    id: int = 0
+    poa_area_id: int = 0
+    number: int = 1
+    opens_on: date
+    closes_on: date
+    reason: str | None = None
+    opened_by: int | None = None
+
+    def validate(self) -> None:
+        if self.number < 1:
+            raise ValidationError(f"{EL_PRIMER_PERIODO_ES_EL_UNO} Llegó el número {self.number}.")
+        if self.closes_on < self.opens_on:
+            raise ValidationError(
+                f"El periodo de captura concluiría el {el_dia_en_letras(self.closes_on)}, antes "
+                f"del {el_dia_en_letras(self.opens_on)} en que inicia. Revise las dos fechas."
+            )
+        self.reason = recortado_sin_invisibles(self.reason or "") or None
+        if self.number > 1 and self.reason is None:
+            raise ValidationError(UN_PERIODO_NUEVO_REQUIERE_MOTIVO)
+        for campo, numero in (
+            ("Programa Operativo Anual del área", self.poa_area_id),
+            ("persona que lo autoriza", self.opened_by),
+        ):
+            if numero is not None and not cabe_en_el_entero_de_la_base(numero):
+                raise ValidationError(
+                    f"El identificador de la «{campo}» no cabe en el entero de la base: {numero}."
+                )
+
+    def includes(self, day: date) -> bool:
+        return self.opens_on <= day <= self.closes_on
+
+
+def ensure_capture_is_open(
+    window: CaptureWindow | None, *, area_name: str | None, today: date
+) -> None:
+    if window is not None and window.includes(today):
+        return
+    if window is None:
+        raise InvalidStateError(el_registro_no_esta_habilitado(area_name))
+    if today < window.opens_on:
+        raise InvalidStateError(
+            f"{_el_periodo_del_programa(area_name)} inicia el {el_dia_en_letras(window.opens_on)}. "
+            "Podrá registrar sus actividades a partir de esa fecha."
+        )
+    raise InvalidStateError(
+        f"{_el_periodo_del_programa(area_name)} concluyó el "
+        f"{el_dia_en_letras(window.closes_on)}. {SOLICITE_UN_PERIODO_NUEVO}"
+    )
+
+
+def el_registro_no_esta_habilitado(area_name: str | None) -> str:
+    de_quien = "El área" if area_name is None else f"El área de {area_name}"
+    return (
+        f"{de_quien} todavía no tiene habilitado el registro de actividades en este ejercicio. "
+        "La Dirección de Planeación debe habilitarlo antes de que pueda capturarse."
+    )
+
+
+def el_programa_del_area_sin_abrir(area_name: str | None) -> str:
+    de_quien = "El área" if area_name is None else f"El área de {area_name}"
+    return (
+        f"{de_quien} no tiene un Programa Operativo Anual abierto en este ejercicio. Ábralo "
+        "antes de habilitar un nuevo periodo de captura."
+    )
+
+
+def _el_periodo_del_programa(area_name: str | None) -> str:
+    de_quien = "" if area_name is None else f" de {area_name}"
+    return f"El periodo de captura del Programa Operativo Anual{de_quien}"
 
 
 @dataclass(kw_only=True)

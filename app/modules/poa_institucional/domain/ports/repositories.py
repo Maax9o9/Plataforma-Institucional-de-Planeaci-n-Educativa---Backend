@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ..entities import Activity, PoaArea
+from ..entities import Activity, CaptureWindow, PoaArea
 
 
 class PoaAreaRepository(Protocol):
@@ -10,9 +10,15 @@ class PoaAreaRepository(Protocol):
 
     async def find_poa_area(self, exercise_id: int, area_id: int) -> PoaArea | None: ...
 
-    async def add_poa_area(self, poa_area: PoaArea) -> None: ...
+    async def add_poa_area(self, poa_area: PoaArea, window: CaptureWindow) -> None: ...
 
     async def save_poa_area_if_version_matches(self, poa_area: PoaArea) -> None: ...
+
+    async def reopen_poa_area(self, poa_area: PoaArea, window: CaptureWindow) -> None: ...
+
+    async def current_capture_window(self, poa_area_id: int) -> CaptureWindow | None: ...
+
+    async def capture_windows(self, poa_area_id: int) -> list[CaptureWindow]: ...
 
     async def list_activities(
         self, poa_area_id: int, *, include_inactive: bool = False

@@ -17,16 +17,23 @@ from ..domain.entities import (
     EL_AREA_NO_EXISTE,
     EL_AREA_YA_TIENE_SU_POA,
     EL_EJERCICIO_POA_NO_EXISTE,
+    EL_POA_DEL_AREA_NO_EXISTE,
+    EL_POA_DEL_AREA_SE_REABRIO_A_LA_VEZ,
     LA_ACTIVIDAD_LA_MOVIERON,
+    LO_MOVIERON_AL_ENVIAR,
+    LO_MOVIERON_AL_REABRIR,
     Activity,
+    CaptureWindow,
     MonthlyTarget,
     PoaArea,
     PoaAreaStatus,
     cabe_en_el_entero_de_la_base,
 )
-from .models import MonthlyScheduleModel, PoaActivityModel, PoaAreaModel
+from .models import MonthlyScheduleModel, PoaActivityModel, PoaAperturaModel, PoaAreaModel
 
 _FORANEA_DEL_EJERCICIO = "fk_poa_inst_area_ejercicio"
+_FORANEA_DE_QUIEN_ABRE = "fk_poa_inst_apertura_abierto_por"
+_UNICA_DEL_NUMERO_DE_APERTURA = "uq_poa_inst_apertura_poa_area_numero"
 _FORANEA_DEL_AREA = "fk_poa_inst_area_area"
 _FORANEA_DEL_POA_DEL_AREA = "fk_poa_inst_actividad_poa_area"
 _FORANEA_DEL_NODO = "fk_poa_inst_actividad_nodo"
@@ -41,6 +48,26 @@ def _poa_area_a_dominio(model: PoaAreaModel) -> PoaArea:
         status=PoaAreaStatus(model.estado),
         version=model.version,
     )
+
+
+def _apertura_a_dominio(model: PoaAperturaModel) -> CaptureWindow:
+    return CaptureWindow(
+        id=model.id,
+        poa_area_id=model.poa_area_id,
+        number=model.numero,
+        opens_on=model.desde,
+        closes_on=model.hasta,
+        reason=model.motivo,
+        opened_by=model.abierto_por,
+    )
+
+
+def _error_de_la_apertura(exc: IntegrityError) -> NoReturn:
+    if viola_la_restriccion(exc, _UNICA_DEL_NUMERO_DE_APERTURA):
+        raise ConflictError(EL_POA_DEL_AREA_SE_REABRIO_A_LA_VEZ) from exc
+    if viola_la_restriccion(exc, _FORANEA_DE_QUIEN_ABRE):
+        raise ValidationError("La persona que abre el POA del área no existe.") from exc
+    _error_del_poa_del_area(exc)
 
 
 def _actividad_a_dominio(
@@ -110,8 +137,9 @@ class SqlAlchemyPoaAreaRepository:
             ).one_or_none()
             return _poa_area_a_dominio(model) if model is not None else None
 
-    async def add_poa_area(self, poa_area: PoaArea) -> None:
+    async def add_poa_area(self, poa_area: PoaArea, window: CaptureWindow) -> None:
         poa_area.validate()
+        window.validate()
         async with session_scope(self.session_factory) as session:
             try:
                 abierto = (
@@ -129,18 +157,85 @@ class SqlAlchemyPoaAreaRepository:
                         .returning(PoaAreaModel.id, PoaAreaModel.version)
                     )
                 ).one_or_none()
+                if abierto is not None:
+                    await self._sembrar_apertura(session, abierto[0], window)
                 await commit_or_flush(session)
             except IntegrityError as exc:
                 await session.rollback()
-                _error_del_poa_del_area(exc)
+                _error_de_la_apertura(exc)
             if abierto is None:
                 raise ConflictError(EL_AREA_YA_TIENE_SU_POA)
             poa_area.id, poa_area.version = abierto
 
+    async def reopen_poa_area(self, poa_area: PoaArea, window: CaptureWindow) -> None:
+        window.validate()
+        if not cabe_en_el_entero_de_la_base(poa_area.id):
+            raise ResourceNotFoundError(EL_POA_DEL_AREA_NO_EXISTE)
+        async with session_scope(self.session_factory) as session:
+            try:
+                movidas = (
+                    await session.execute(
+                        update(PoaAreaModel)
+                        .where(
+                            PoaAreaModel.id == poa_area.id,
+                            PoaAreaModel.version == poa_area.version,
+                        )
+                        .values(estado=poa_area.status.value, version=poa_area.version + 1)
+                    )
+                ).rowcount
+                if movidas == 1:
+                    await self._sembrar_apertura(session, poa_area.id, window)
+                await commit_or_flush(session)
+            except IntegrityError as exc:
+                await session.rollback()
+                _error_de_la_apertura(exc)
+            if movidas != 1:
+                await self._decir_si_no_existe_o_si_lo_movieron(
+                    session,
+                    PoaAreaModel,
+                    poa_area.id,
+                    EL_POA_DEL_AREA_NO_EXISTE,
+                    LO_MOVIERON_AL_REABRIR,
+                )
+        poa_area.version += 1
+
+    async def current_capture_window(self, poa_area_id: int) -> CaptureWindow | None:
+        historia = await self.capture_windows(poa_area_id)
+        return historia[-1] if historia else None
+
+    async def capture_windows(self, poa_area_id: int) -> list[CaptureWindow]:
+        if not cabe_en_el_entero_de_la_base(poa_area_id):
+            return []
+        async with session_scope(self.session_factory) as session:
+            models = (
+                await session.scalars(
+                    select(PoaAperturaModel)
+                    .where(PoaAperturaModel.poa_area_id == poa_area_id)
+                    .order_by(PoaAperturaModel.numero)
+                )
+            ).all()
+        return [_apertura_a_dominio(model) for model in models]
+
+    async def _sembrar_apertura(
+        self, session: AsyncSession, poa_area_id: int, window: CaptureWindow
+    ) -> None:
+        model = PoaAperturaModel(
+            poa_area_id=poa_area_id,
+            numero=window.number,
+            desde=window.opens_on,
+            hasta=window.closes_on,
+            motivo=window.reason,
+            abierto_por=window.opened_by,
+        )
+        session.add(model)
+        await session.flush()
+        window.id = model.id
+        window.poa_area_id = poa_area_id
+
     async def save_poa_area_if_version_matches(self, poa_area: PoaArea) -> None:
         poa_area.validate()
         if not cabe_en_el_entero_de_la_base(poa_area.id):
-            raise ResourceNotFoundError("El POA del área no existe.")
+            raise ResourceNotFoundError(EL_POA_DEL_AREA_NO_EXISTE)
         async with session_scope(self.session_factory) as session:
             movidas = (
                 await session.execute(
@@ -158,9 +253,8 @@ class SqlAlchemyPoaAreaRepository:
                     session,
                     PoaAreaModel,
                     poa_area.id,
-                    "El POA del área no existe.",
-                    "El POA del área fue modificado por otra solicitud: vuelva a cargarlo "
-                    "antes de enviarlo.",
+                    EL_POA_DEL_AREA_NO_EXISTE,
+                    LO_MOVIERON_AL_ENVIAR,
                 )
         poa_area.version += 1
 
