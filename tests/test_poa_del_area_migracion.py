@@ -22,6 +22,13 @@ pytestmark = pytest.mark.asyncio
 RAIZ = Path(__file__).resolve().parents[1]
 REVISION = "0040_poa_inst_del_area"
 
+# La 0041 cuelga `poa_inst_aperturas` de `poa_inst_areas`, asi que bajar la 0040
+# a solas choca contra esa llave foranea: es lo que prueba
+# `test_la_0040_no_se_baja_llevandose_lo_que_cuelga_de_sus_tablas`. Alembic baja
+# primero la revision de arriba, y las dos pruebas que llegan a bajar la 0040 de
+# verdad hacen lo mismo.
+REVISION_DE_ARRIBA = "0041_apertura_del_poa_inst"
+
 TABLAS = ("poa_inst_areas", "poa_inst_actividades", "poa_inst_programacion_mensual")
 
 COLUMNAS = {
@@ -321,10 +328,24 @@ async def _restricciones(conexion: AsyncConnection) -> dict[str, tuple[str, str]
     return {nombre: (tipo, definicion) for nombre, tipo, definicion in filas}
 
 
-def _la_0040():
+def _modulo(revision: str):
     return (
-        ScriptDirectory.from_config(Config(str(RAIZ / "alembic.ini"))).get_revision(REVISION).module
+        ScriptDirectory.from_config(Config(str(RAIZ / "alembic.ini"))).get_revision(revision).module
     )
+
+
+def _la_0040():
+    return _modulo(REVISION)
+
+
+async def _bajar_la_de_arriba(conexion: AsyncConnection) -> None:
+    modulo = _modulo(REVISION_DE_ARRIBA)
+
+    def correr(sincrona) -> None:
+        with Operations.context(MigrationContext.configure(sincrona)):
+            modulo.downgrade()
+
+    await conexion.run_sync(correr)
 
 
 async def _bajar_la_0040(conexion: AsyncConnection) -> None:
@@ -664,6 +685,8 @@ async def test_la_0040_se_niega_nombrando_cada_tabla_con_su_conteo(conexion, cad
 
 
 async def test_la_0040_se_baja_cuando_las_tablas_estan_vacias(conexion):
+    await _bajar_la_de_arriba(conexion)
+
     await _bajar_la_0040(conexion)
 
     assert [await _existe(conexion, tabla) for tabla in TABLAS] == [False, False, False]
@@ -690,6 +713,7 @@ async def test_la_0040_no_se_baja_llevandose_lo_que_cuelga_de_sus_tablas(conexio
 async def test_la_0040_se_sube_otra_vez_tras_bajarla_y_deja_el_mismo_esquema(conexion):
     columnas = await _esquema(conexion)
     restricciones = await _restricciones(conexion)
+    await _bajar_la_de_arriba(conexion)
     await _bajar_la_0040(conexion)
     assert await _esquema(conexion) == {}
     assert await _restricciones(conexion) == {}
