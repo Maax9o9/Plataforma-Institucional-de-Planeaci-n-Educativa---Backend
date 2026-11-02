@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from typing import Annotated, Any
 
@@ -10,9 +11,11 @@ from app.modules.institutional_catalogs.domain.strategic_tree_entities import (
     MAYOR_ENTERO_DE_LA_BASE,
 )
 
+from ..application.use_cases.manage_poa_area import OpenedPoa, PoaAreaWithWindow
 from ..domain.entities import (
     MESES_DEL_EJERCICIO,
     Activity,
+    CaptureWindow,
     MonthlyTarget,
     PoaArea,
     PoaAreaStatus,
@@ -109,6 +112,62 @@ class PresentarPoaDelAreaRequest(BaseModel):
     version: VersionSobreLaQueSeEdita
 
 
+class AbrirElPoaRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    areas: Annotated[list[IdDeLaBase], Field(min_length=1)] | None
+    desde: date
+    hasta: date
+
+
+class ReabrirElPoaRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    desde: date
+    hasta: date
+    motivo: Annotated[str, Field(min_length=1)]
+
+
+class PoaDelAreaAbiertoRespuesta(BaseModel):
+    id: int
+    ejercicio_id: int
+    area_id: int
+    estado: PoaAreaStatus
+    version: int
+    abierto_desde: date | None
+    abierto_hasta: date | None
+    periodos_habilitados: int
+
+    @classmethod
+    def from_domain(cls, abierto: PoaAreaWithWindow) -> PoaDelAreaAbiertoRespuesta:
+        return cls(
+            id=abierto.poa_area.id,
+            ejercicio_id=abierto.poa_area.exercise_id,
+            area_id=abierto.poa_area.area_id,
+            estado=abierto.poa_area.status,
+            version=abierto.poa_area.version,
+            abierto_desde=None if abierto.window is None else abierto.window.opens_on,
+            abierto_hasta=None if abierto.window is None else abierto.window.closes_on,
+            periodos_habilitados=0 if abierto.window is None else abierto.window.number,
+        )
+
+
+class AperturaDelPoaRespuesta(BaseModel):
+    ejercicio_id: int
+    abiertos: list[PoaDelAreaAbiertoRespuesta]
+    ya_estaban_abiertos: list[PoaDelAreaAbiertoRespuesta]
+
+    @classmethod
+    def from_domain(cls, ejercicio_id: int, reparto: OpenedPoa) -> AperturaDelPoaRespuesta:
+        return cls(
+            ejercicio_id=ejercicio_id,
+            abiertos=[PoaDelAreaAbiertoRespuesta.from_domain(uno) for uno in reparto.opened],
+            ya_estaban_abiertos=[
+                PoaDelAreaAbiertoRespuesta.from_domain(uno) for uno in reparto.already_open
+            ],
+        )
+
+
 class MesProgramadoRespuesta(BaseModel):
     mes: int
     meta: Decimal
@@ -161,6 +220,10 @@ class PoaDelAreaRespuesta(BaseModel):
     area_id: int
     estado: PoaAreaStatus
     version: int
+    abierto_desde: date | None
+    abierto_hasta: date | None
+    periodos_habilitados: int
+    esta_abierto: bool
     actividades: list[ActividadRespuesta]
     falta_para_presentar: list[str]
 
@@ -171,6 +234,8 @@ class PoaDelAreaRespuesta(BaseModel):
         actividades: list[Activity],
         *,
         falta_para_presentar: list[str],
+        ventana: CaptureWindow | None,
+        hoy: date,
     ) -> PoaDelAreaRespuesta:
         return cls(
             id=poa_area.id,
@@ -178,6 +243,10 @@ class PoaDelAreaRespuesta(BaseModel):
             area_id=poa_area.area_id,
             estado=poa_area.status,
             version=poa_area.version,
+            abierto_desde=None if ventana is None else ventana.opens_on,
+            abierto_hasta=None if ventana is None else ventana.closes_on,
+            periodos_habilitados=0 if ventana is None else ventana.number,
+            esta_abierto=ventana is not None and ventana.includes(hoy),
             actividades=[ActividadRespuesta.from_domain(una) for una in actividades],
             falta_para_presentar=falta_para_presentar,
         )
