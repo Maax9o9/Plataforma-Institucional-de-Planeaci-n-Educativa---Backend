@@ -12,6 +12,8 @@ def actor_from_user(user) -> ActorContext:
 
 ROLES_QUE_VEN_TODA_AREA = frozenset({"planeacion", "planeacion_admin", "admin_sistema", "rectoria"})
 
+ROLES_QUE_LEEN_EL_POA_DE_CUALQUIER_AREA = frozenset({*ROLES_QUE_VEN_TODA_AREA, "revisor_poa"})
+
 
 def ensure_owner_or_planning(user, owner_id: int) -> None:
     actor = actor_from_user(user)

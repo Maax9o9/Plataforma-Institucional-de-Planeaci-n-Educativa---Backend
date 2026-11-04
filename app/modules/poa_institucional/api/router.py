@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Query, Request, status
 
 from app.core.authorization import (
-    ROLES_QUE_VEN_TODA_AREA,
+    ROLES_QUE_LEEN_EL_POA_DE_CUALQUIER_AREA,
     ensure_area_or_institutional_reader,
     ensure_area_or_planning,
 )
@@ -59,8 +59,6 @@ router = APIRouter(prefix="/poa-institucional", tags=["POA del área"])
 ROLES_QUE_FORMULAN = ("planeacion", "planeacion_admin", "admin_sistema", "capturista_poa")
 ROLES_QUE_CONSULTAN = (*ROLES_QUE_FORMULAN, "responsable_area", "rectoria", "revisor_poa")
 ROLES_QUE_ABREN = ("planeacion", "planeacion_admin", "admin_sistema")
-
-ROLES_QUE_LEEN_CUALQUIER_AREA = frozenset({*ROLES_QUE_VEN_TODA_AREA, "revisor_poa"})
 
 requiere_formular = require_roles(*ROLES_QUE_FORMULAN)
 requiere_consultar = require_roles(*ROLES_QUE_CONSULTAN)
@@ -117,7 +115,9 @@ async def consultar_el_poa_del_area(
     incluir_inactivas: bool = Query(default=False),
     usuario=Depends(requiere_consultar),
 ) -> PoaDelAreaRespuesta:
-    ensure_area_or_institutional_reader(usuario, area_id, lectores=ROLES_QUE_LEEN_CUALQUIER_AREA)
+    ensure_area_or_institutional_reader(
+        usuario, area_id, lectores=ROLES_QUE_LEEN_EL_POA_DE_CUALQUIER_AREA
+    )
     poa_area = await _el_poa_del_area_ya_abierto(request, ejercicio_id, area_id)
     return await _respuesta(request, poa_area, incluir_inactivas=incluir_inactivas)
 

@@ -8,7 +8,10 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi import Path as PathParam
 
-from app.core.authorization import ROLES_QUE_VEN_TODA_AREA, actor_from_user
+from app.core.authorization import (
+    ROLES_QUE_LEEN_EL_POA_DE_CUALQUIER_AREA,
+    actor_from_user,
+)
 from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user, require_roles
 from app.modules.evidence_management.domain.value_objects import FlowEntity
@@ -146,7 +149,11 @@ PLANNING_ROLES = ("planeacion", "planeacion_admin", "admin_sistema")
 STRUCTURE_ROLES = (*PLANNING_ROLES, "capturista_poa")
 #: Rectoría también consulta el tablero, sólo lectura: no se agrega a FORM_ROLES
 #: porque esa tupla habilita acciones de escritura en toda la cédula.
-FOLLOW_UP_LIST_ROLES = (*FORM_ROLES, "rectoria")
+FOLLOW_UP_LIST_ROLES = (*FORM_ROLES, "rectoria", "revisor_poa")
+
+EL_SEGUIMIENTO_NO_ES_DEL_AREA = (
+    "El seguimiento del Programa Operativo Anual no corresponde al área de la cuenta."
+)
 
 
 def _form_response(
@@ -841,7 +848,7 @@ async def list_follow_ups(
     # reportes del POA). `executing_area_id=None` significa "sin filtro" en el
     # repositorio, así que a un usuario de área sin área asignada no se le
     # puede forzar ese None: se le devuelve la página vacía sin consultar.
-    if not current_user.has_any_role(ROLES_QUE_VEN_TODA_AREA):
+    if not current_user.has_any_role(ROLES_QUE_LEEN_EL_POA_DE_CUALQUIER_AREA):
         if current_user.area_id is None:
             return PaginaSeguimientosRespuesta(items=[], total=0, offset=offset, limit=limit)
         area_id = current_user.area_id
@@ -921,10 +928,10 @@ async def get_follow_up_card(
     activity = await repository.get_form_activity(follow_up.form_activity_id)
     if activity is None:
         raise ResourceNotFoundError("La actividad del seguimiento no existe.")
-    if not current_user.has_any_role(ROLES_QUE_VEN_TODA_AREA) and (
+    if not current_user.has_any_role(ROLES_QUE_LEEN_EL_POA_DE_CUALQUIER_AREA) and (
         current_user.area_id is None or current_user.area_id != activity.executing_area_id
     ):
-        raise ForbiddenError("El seguimiento del POA no es de tu área.")
+        raise ForbiddenError(EL_SEGUIMIENTO_NO_ES_DEL_AREA)
 
     catalogo = await repository.get_activity_catalog(activity.catalog_id, activity.activity_key)
     evidencias = await request.app.state.evidence_repository.count_by_entity(

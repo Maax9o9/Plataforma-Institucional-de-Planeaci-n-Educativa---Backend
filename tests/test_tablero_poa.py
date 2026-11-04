@@ -690,3 +690,152 @@ async def test_el_tablero_dice_cuantas_evidencias_faltan_por_revisar(backend_cli
     )
     assert suelta.status_code == 200, suelta.text
     assert suelta.json()["evidencias_sin_revisar"] == 0
+
+
+@pytest.mark.asyncio
+async def test_revisor_poa_abre_el_seguimiento_de_cualquier_area(backend_client):
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+    seguimiento = await _capturar(client, escenario)
+    otra_area = (await _escenario(app, client))["area_id"]
+    _, revisor_headers = await _account(
+        app, client, Role.REVISOR_POA, uuid4().hex[:8], area_id=otra_area
+    )
+
+    respuesta = await client.get(
+        f"/api/v1/poa/seguimientos/{seguimiento['id']}", headers=revisor_headers
+    )
+
+    assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.json()["id"] == seguimiento["id"]
+
+
+@pytest.mark.asyncio
+async def test_revisor_poa_lista_los_seguimientos_de_cualquier_area(backend_client):
+    app, client = backend_client
+    primero = await _escenario(app, client)
+    uno = await _capturar(client, primero)
+    segundo = await _escenario(app, client)
+    otro = await _capturar(client, segundo)
+    _, revisor_headers = await _account(
+        app, client, Role.REVISOR_POA, uuid4().hex[:8], area_id=segundo["area_id"]
+    )
+
+    ajeno = await client.get(
+        "/api/v1/poa/seguimientos",
+        headers=revisor_headers,
+        params={"area_id": primero["area_id"]},
+    )
+    propio = await client.get(
+        "/api/v1/poa/seguimientos",
+        headers=revisor_headers,
+        params={"area_id": segundo["area_id"]},
+    )
+
+    assert ajeno.status_code == 200, ajeno.text
+    assert any(fila["id"] == uno["id"] for fila in ajeno.json()["items"])
+    assert propio.status_code == 200, propio.text
+    assert any(fila["id"] == otro["id"] for fila in propio.json()["items"])
+
+
+@pytest.mark.asyncio
+async def test_el_revisor_con_area_no_queda_recortado_por_la_guarda_de_area(backend_client):
+    app, client = backend_client
+    primero = await _escenario(app, client)
+    uno = await _capturar(client, primero)
+    segundo = await _escenario(app, client)
+    _, revisor_headers = await _account(
+        app, client, Role.REVISOR_POA, uuid4().hex[:8], area_id=segundo["area_id"]
+    )
+
+    sin_filtro = await client.get("/api/v1/poa/seguimientos", headers=revisor_headers)
+
+    assert sin_filtro.status_code == 200, sin_filtro.text
+    assert any(fila["id"] == uno["id"] for fila in sin_filtro.json()["items"])
+
+
+@pytest.mark.asyncio
+async def test_un_capturista_de_otra_area_sigue_fuera_del_seguimiento_ajeno(backend_client):
+    app, client = backend_client
+    primero = await _escenario(app, client)
+    segundo = await _escenario(app, client)
+    ajeno = await _capturar(client, segundo)
+
+    suelto = await client.get(
+        f"/api/v1/poa/seguimientos/{ajeno['id']}", headers=primero["capturer_headers"]
+    )
+    listado = await client.get(
+        "/api/v1/poa/seguimientos",
+        headers=primero["capturer_headers"],
+        params={"area_id": segundo["area_id"]},
+    )
+
+    assert suelto.status_code == 403, suelto.text
+    assert listado.status_code == 200, listado.text
+    assert all(fila["id"] != ajeno["id"] for fila in listado.json()["items"])
+
+
+@pytest.mark.asyncio
+async def test_el_responsable_de_area_no_entra_al_tablero_de_seguimientos(backend_client):
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+    seguimiento = await _capturar(client, escenario)
+    _, responsable_headers = await _account(
+        app, client, Role.RESPONSABLE_AREA, uuid4().hex[:8], area_id=escenario["area_id"]
+    )
+
+    listado = await client.get("/api/v1/poa/seguimientos", headers=responsable_headers)
+    suelto = await client.get(
+        f"/api/v1/poa/seguimientos/{seguimiento['id']}", headers=responsable_headers
+    )
+
+    assert listado.status_code == 403, listado.text
+    assert suelto.status_code == 403, suelto.text
+
+
+@pytest.mark.asyncio
+async def test_revisor_poa_dictamina_y_lee_el_mismo_seguimiento(backend_client):
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+    seguimiento = await _capturar(client, escenario)
+    await _attach_follow_up_file(
+        client,
+        escenario["capturer_headers"],
+        seguimiento["id"],
+        "dictamen-del-revisor",
+        escenario["cierre_q1"],
+    )
+    enviado = await client.post(
+        f"/api/v1/poa/cedulas/seguimientos/{seguimiento['id']}/enviar",
+        headers=escenario["capturer_headers"],
+    )
+    assert enviado.status_code == 200, enviado.text
+    _, revisor_headers = await _account(app, client, Role.REVISOR_POA, uuid4().hex[:8])
+
+    leido = await client.get(
+        f"/api/v1/poa/seguimientos/{seguimiento['id']}", headers=revisor_headers
+    )
+    validado = await client.post(
+        f"/api/v1/poa/cedulas/seguimientos/{seguimiento['id']}/validar",
+        headers=revisor_headers,
+    )
+
+    assert leido.status_code == 200, leido.text
+    assert validado.status_code == 200, validado.text
+
+
+@pytest.mark.asyncio
+async def test_revisor_poa_no_captura_ni_envia_el_seguimiento_del_area(backend_client):
+    app, client = backend_client
+    escenario = await _escenario(app, client)
+    seguimiento = await _capturar(client, escenario)
+    _, revisor_headers = await _account(
+        app, client, Role.REVISOR_POA, uuid4().hex[:8], area_id=escenario["area_id"]
+    )
+
+    enviado = await client.post(
+        f"/api/v1/poa/cedulas/seguimientos/{seguimiento['id']}/enviar",
+        headers=revisor_headers,
+    )
+
+    assert enviado.status_code == 403, enviado.text
