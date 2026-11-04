@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import zipfile
 from hashlib import sha256
 from io import BytesIO
@@ -17,6 +16,11 @@ from starlette.concurrency import run_in_threadpool
 from app.core.authorization import actor_from_user
 from app.core.security import get_current_user, require_roles
 from app.modules.evidence_management.api.dependencies import get_evidence_access_control
+from app.shared.domain.archivos_cargados import (
+    DOCX_MIME,
+    MIME_POR_EXTENSION,
+    NOMBRE_DE_ARCHIVO_CARGADO,
+)
 from app.shared.domain.exceptions import (
     PayloadTooLargeError,
     ResourceNotFoundError,
@@ -25,10 +29,16 @@ from app.shared.domain.exceptions import (
 
 router = APIRouter(prefix="/archivos", tags=["Evidencias"])
 
+#: La lista de tipos que el sistema admite vive en
+#: `app/shared/domain/archivos_cargados.py` y no aquí: la validación de los
+#: adjuntos de un aviso comprueba el mismo nombre y el mismo tipo, y una
+#: segunda lista se habría quedado atrás en la primera extensión que se
+#: añadiera por un lado y no por el otro. Aquí quedan las firmas, que son lo
+#: propio de la carga: nadie más mira el contenido del archivo.
 SIGNATURES = (
-    (b"%PDF-", "application/pdf", ".pdf"),
-    (b"\x89PNG\r\n\x1a\n", "image/png", ".png"),
-    (b"\xff\xd8\xff", "image/jpeg", ".jpg"),
+    (b"%PDF-", MIME_POR_EXTENSION[".pdf"], ".pdf"),
+    (b"\x89PNG\r\n\x1a\n", MIME_POR_EXTENSION[".png"], ".png"),
+    (b"\xff\xd8\xff", MIME_POR_EXTENSION[".jpg"], ".jpg"),
 )
 
 #: El formato institucional del informe cuatrimestral se entrega en Word, así
@@ -40,11 +50,10 @@ SIGNATURES = (
 #: no basta la firma: se abre el contenedor y se comprueba que trae de verdad un
 #: documento de Word dentro.
 DOCX_SIGNATURE = b"PK\x03\x04"
-DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 DOCX_PART = "word/document.xml"
 DOCX_CONTENT_TYPE = b"wordprocessingml.document"
 
-SAFE_FILE_NAME = re.compile(r"^[0-9a-f]{32}\.(?:pdf|png|jpg|docx)$")
+SAFE_FILE_NAME = NOMBRE_DE_ARCHIVO_CARGADO
 
 
 class ArchivoRespuesta(BaseModel):
@@ -142,10 +151,4 @@ async def download_file(
     source = (storage / file_name).resolve()
     if not source.is_relative_to(storage) or not source.is_file():
         raise ResourceNotFoundError("El archivo no existe.")
-    media_type = {
-        ".pdf": "application/pdf",
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".docx": DOCX_MIME,
-    }[source.suffix]
-    return FileResponse(source, media_type=media_type, filename=file_name)
+    return FileResponse(source, media_type=MIME_POR_EXTENSION[source.suffix], filename=file_name)
