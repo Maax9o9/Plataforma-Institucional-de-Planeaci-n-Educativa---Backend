@@ -51,9 +51,10 @@ class NotificationService:
                         user_id=user_id,
                         notification_type="poa_actividad_asignada",
                         message=(
-                            f"Se asignó a tu área la actividad {event.data.get('activity_key')} "
-                            f"de la cédula {event.data.get('form_id')}. "
-                            "Revisa sus fechas y captura el seguimiento con evidencia."
+                            "La Dirección de Planeación asignó al área la actividad "
+                            f"{event.data.get('activity_key')} de la cédula "
+                            f"{event.data.get('form_id')}. Revise sus fechas y registre el "
+                            "seguimiento con su evidencia."
                         ),
                         entity="poa_form_activity",
                         entity_id=event.aggregate_id,
@@ -190,9 +191,9 @@ class NotificationService:
     def _message(event: DomainEvent) -> str:
         if event.action == "rejected":
             return (
-                "Tu registro fue rechazado. Revisa el comentario y realiza "
-                "las correcciones necesarias."
+                "El registro fue devuelto. Consulte el comentario de la revisión y "
+                "atienda las correcciones señaladas."
             )
         if event.action == "opened":
             return "Se abrio un nuevo periodo de captura."
-        return "Tu registro cambio de estado y requiere tu atencion."
+        return "El registro cambió de estado y requiere la atención del área."

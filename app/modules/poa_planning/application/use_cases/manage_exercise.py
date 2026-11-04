@@ -21,7 +21,7 @@ from app.shared.application.event_bus import EventBus
 from app.shared.domain.domain_event import DomainEvent
 from app.shared.domain.exceptions import ForbiddenError, ResourceNotFoundError
 
-from ...domain.entities import PoaExercise
+from ...domain.entities import EL_EJERCICIO_POA_NO_EXISTE, PoaExercise
 from ...domain.ports.cedula_repository import PoaFormRepository
 from ...domain.ports.repositories import PoaRepository
 from ...domain.value_objects import PoaExerciseStatus
@@ -54,7 +54,7 @@ class _BaseExerciseAction:
     async def _load(self, exercise_id: int) -> PoaExercise:
         item = await self.repository.get_exercise(exercise_id)
         if item is None:
-            raise ResourceNotFoundError("El ejercicio POA no existe.")
+            raise ResourceNotFoundError(EL_EJERCICIO_POA_NO_EXISTE)
         return item
 
     async def _record(
@@ -105,7 +105,9 @@ class ApproveExercise(_BaseExerciseAction):
 
     async def execute(self, command: ExerciseActionCommand) -> PoaExercise:
         if not can_approve_exercise(command.actor):
-            raise ForbiddenError("Tu rol no permite aprobar el ejercicio POA.")
+            raise ForbiddenError(
+                "Su perfil no permite aprobar el ejercicio del Programa Operativo Anual."
+            )
         item = await self._load(command.exercise_id)
 
         previous = item.status
@@ -119,7 +121,9 @@ class RejectExercise(_BaseExerciseAction):
 
     async def execute(self, command: ExerciseActionCommand) -> PoaExercise:
         if not can_approve_exercise(command.actor):
-            raise ForbiddenError("Tu rol no permite devolver el ejercicio POA.")
+            raise ForbiddenError(
+                "Su perfil no permite devolver el ejercicio del Programa Operativo Anual."
+            )
         item = await self._load(command.exercise_id)
 
         previous = item.status

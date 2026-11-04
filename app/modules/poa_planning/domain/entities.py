@@ -10,6 +10,8 @@ from app.shared.domain.exceptions import InvalidStateError, ValidationError
 
 from .value_objects import PoaExerciseStatus
 
+EL_EJERCICIO_POA_NO_EXISTE = "El ejercicio del Programa Operativo Anual no existe."
+
 
 @dataclass(kw_only=True)
 class PoaExercise(BaseEntity):

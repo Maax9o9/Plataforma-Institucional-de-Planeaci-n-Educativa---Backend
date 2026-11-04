@@ -23,12 +23,13 @@ from app.modules.institutional_catalogs.infrastructure.strategic_tree_sql_reposi
 from app.modules.poa_institucional.api.schemas import EL_NULO_NO_ES_LEGAL_AQUI
 from app.modules.poa_institucional.domain.entities import (
     EL_AREA_NO_EXISTE,
-    EL_EJERCICIO_POA_NO_EXISTE,
+    EL_AREA_YA_TIENE_SU_POA,
     EL_POA_DEL_AREA_NO_SE_PUEDE_ENVIAR,
 )
 from app.modules.poa_institucional.infrastructure.sql_repository import (
     SqlAlchemyPoaAreaRepository,
 )
+from app.modules.poa_planning.domain.entities import EL_EJERCICIO_POA_NO_EXISTE
 from app.shared.domain.calendar import institutional_today
 from app.shared.domain.exceptions import ConflictError
 from helpers import API, anio_libre, crear_ejercicio, crear_poa
@@ -578,7 +579,7 @@ class _ElQueOtroAbrioEnMedio:
     async def add_poa_area(self, poa_area, window):
         self.aperturas += 1
         await self.real.add_poa_area(poa_area, window)
-        raise ConflictError("El área ya tiene su POA en este ejercicio.")
+        raise ConflictError(EL_AREA_YA_TIENE_SU_POA)
 
 
 async def test_registrar_una_actividad_la_deja_en_el_listado_con_su_version(escenario):

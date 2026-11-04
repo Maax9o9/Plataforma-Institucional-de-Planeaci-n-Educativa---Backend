@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.modules.identity_access.domain.value_objects import Role
 from app.modules.identity_access.infrastructure.models import UserModel, UserRoleModel
+from app.modules.poa_planning.domain.entities import EL_EJERCICIO_POA_NO_EXISTE
 from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError, ValidationError
 from app.shared.infrastructure.db.constraints import viola_la_restriccion
 from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
@@ -16,7 +17,6 @@ from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_s
 from ..domain.entities import (
     EL_AREA_NO_EXISTE,
     EL_AREA_YA_TIENE_SU_POA,
-    EL_EJERCICIO_POA_NO_EXISTE,
     EL_POA_DEL_AREA_NO_EXISTE,
     EL_POA_DEL_AREA_SE_REABRIO_A_LA_VEZ,
     LA_ACTIVIDAD_LA_MOVIERON,
@@ -100,7 +100,7 @@ def _error_del_poa_del_area(exc: IntegrityError) -> NoReturn:
 
 def _error_de_la_actividad(exc: IntegrityError) -> NoReturn:
     if viola_la_restriccion(exc, _FORANEA_DEL_POA_DEL_AREA):
-        raise ResourceNotFoundError("El POA del área no existe.") from exc
+        raise ResourceNotFoundError(EL_POA_DEL_AREA_NO_EXISTE) from exc
     if viola_la_restriccion(exc, _FORANEA_DEL_NODO):
         raise ValidationError(
             "La acción del PIDE a la que responde la actividad no existe."

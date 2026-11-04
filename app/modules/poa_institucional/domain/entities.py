@@ -26,21 +26,20 @@ NIVEL_DE_LA_ACTIVIDAD = NodeKind.ACCION
 
 EL_POA_DEL_AREA_NO_SE_PUEDE_ENVIAR = "El POA del área no se puede enviar. "
 
-EL_EJERCICIO_POA_NO_EXISTE = "El ejercicio POA no existe."
+EL_AREA_NO_EXISTE = "El área no existe. Revise el catálogo de áreas antes de continuar."
 
-EL_AREA_NO_EXISTE = "El área no existe."
-
-EL_AREA_YA_TIENE_SU_POA = "El área ya tiene su POA en este ejercicio."
+EL_AREA_YA_TIENE_SU_POA = "El área ya tiene su Programa Operativo Anual en este ejercicio."
 
 EL_POA_DEL_AREA_SE_REABRIO_A_LA_VEZ = (
     "Otra solicitud habilitó un nuevo periodo de captura al mismo tiempo. Vuelva a consultar "
     "el Programa Operativo Anual del área antes de intentarlo de nuevo."
 )
 
-EL_POA_DEL_AREA_NO_EXISTE = "El POA del área no existe."
+EL_POA_DEL_AREA_NO_EXISTE = "El Programa Operativo Anual del área no existe."
 
 LO_MOVIERON_AL_ENVIAR = (
-    "El POA del área fue modificado por otra solicitud: vuelva a cargarlo antes de enviarlo."
+    "El Programa Operativo Anual del área fue modificado por otra solicitud. Vuelva a "
+    "consultarlo antes de presentarlo."
 )
 
 LO_MOVIERON_AL_REABRIR = (
@@ -49,7 +48,7 @@ LO_MOVIERON_AL_REABRIR = (
 )
 
 LA_ACTIVIDAD_LA_MOVIERON = (
-    "La actividad fue modificada por otra solicitud: vuelva a cargarla antes de guardar."
+    "La actividad fue modificada por otra solicitud. Vuelva a consultarla antes de guardar."
 )
 
 EL_PRIMER_PERIODO_ES_EL_UNO = (
@@ -63,6 +62,13 @@ UN_PERIODO_NUEVO_REQUIERE_MOTIVO = (
 )
 
 SOLICITE_UN_PERIODO_NUEVO = "Solicite a la Dirección de Planeación que habilite un nuevo periodo."
+
+
+class EstadoDelRegistro(StrEnum):
+    SIN_HABILITAR = "sin_habilitar"
+    POR_INICIAR = "por_iniciar"
+    ABIERTO = "abierto"
+    CONCLUIDO = "concluido"
 
 
 class PoaAreaStatus(StrEnum):
@@ -133,6 +139,22 @@ class CaptureWindow:
 
     def includes(self, day: date) -> bool:
         return self.opens_on <= day <= self.closes_on
+
+
+def estado_del_registro(window: CaptureWindow | None, *, today: date) -> EstadoDelRegistro:
+    if window is None:
+        return EstadoDelRegistro.SIN_HABILITAR
+    if today < window.opens_on:
+        return EstadoDelRegistro.POR_INICIAR
+    if today > window.closes_on:
+        return EstadoDelRegistro.CONCLUIDO
+    return EstadoDelRegistro.ABIERTO
+
+
+def dias_naturales_restantes(window: CaptureWindow | None, *, today: date) -> int | None:
+    if window is None or estado_del_registro(window, today=today) is not EstadoDelRegistro.ABIERTO:
+        return None
+    return (window.closes_on - today).days
 
 
 def ensure_capture_is_open(

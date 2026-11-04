@@ -186,7 +186,7 @@ async def ensure_catalog_exists(repository: PoaFormRepository, catalog_id: int) 
 
 def _texto(cual: str, valor: str) -> None:
     if not valor.strip():
-        raise ValidationError(f"Captura {cual}.")
+        raise ValidationError(f"Capture {cual}.")
 
 
 def _verificar_existencia(que: str, existente: object | None, creating: bool) -> None:

@@ -11,13 +11,14 @@ from app.modules.institutional_catalogs.domain.ports.repositories import AreaRep
 from app.modules.institutional_catalogs.domain.ports.strategic_tree_repository import (
     StrategicTreeRepository,
 )
+from app.modules.poa_planning.domain.entities import EL_EJERCICIO_POA_NO_EXISTE
 from app.modules.poa_planning.domain.ports.repositories import PoaRepository
 from app.shared.domain.calendar import institutional_today
 from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError, ValidationError
 
 from ...domain.entities import (
     EL_AREA_NO_EXISTE,
-    EL_EJERCICIO_POA_NO_EXISTE,
+    EL_POA_DEL_AREA_NO_EXISTE,
     LA_ACTIVIDAD_LA_MOVIERON,
     Activity,
     CaptureWindow,
@@ -86,6 +87,7 @@ class ReopenPoaAreaCommand:
 class PoaAreaWithWindow:
     poa_area: PoaArea
     window: CaptureWindow | None = None
+    avisados: int | None = None
 
 
 @dataclass(kw_only=True)
@@ -104,7 +106,7 @@ async def avisar_sin_tumbar_la_apertura(avisos, abierto: PoaAreaWithWindow) -> N
     if avisos is None or abierto.window is None:
         return
     try:
-        await avisos.el_poa_del_area_se_abrio(
+        entregado = await avisos.el_poa_del_area_se_abrio(
             poa_area_id=abierto.poa_area.id,
             area_id=abierto.poa_area.area_id,
             desde=abierto.window.opens_on,
@@ -113,6 +115,9 @@ async def avisar_sin_tumbar_la_apertura(avisos, abierto: PoaAreaWithWindow) -> N
         )
     except Exception:
         logger.exception(NO_SE_PUDO_AVISAR_DE_LA_APERTURA)
+        return
+    if entregado is not None:
+        abierto.avisados = entregado.personas
 
 
 @dataclass(kw_only=True)
@@ -273,7 +278,7 @@ class SavePoaActivity:
     async def execute(self, cmd: SaveActivityCommand) -> Activity:
         poa_area = await self.poa_areas.get_poa_area(cmd.poa_area_id)
         if poa_area is None:
-            raise ResourceNotFoundError("El POA del área no existe.")
+            raise ResourceNotFoundError(EL_POA_DEL_AREA_NO_EXISTE)
         await _exigir_que_el_poa_siga_abierto(self.poa_areas, self.areas, poa_area, self.today())
         ensure_is_still_a_draft(poa_area)
 
@@ -324,7 +329,7 @@ class SubmitPoaArea:
     async def execute(self, cmd: SubmitPoaAreaCommand) -> PoaArea:
         poa_area = await self.poa_areas.get_poa_area(cmd.poa_area_id)
         if poa_area is None:
-            raise ResourceNotFoundError("El POA del área no existe.")
+            raise ResourceNotFoundError(EL_POA_DEL_AREA_NO_EXISTE)
         await _exigir_que_el_poa_siga_abierto(self.poa_areas, self.areas, poa_area, self.today())
         ensure_is_still_a_draft(poa_area)
         ensure_can_be_submitted(

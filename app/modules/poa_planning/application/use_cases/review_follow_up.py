@@ -143,17 +143,23 @@ class ValidatePoaFollowUp(_BaseReview):
 
     async def execute(self, command: ReviewFollowUpCommand) -> PoaActivityFollowUp:
         if not _can_review(command.actor):
-            raise ForbiddenError("Tu rol no permite validar seguimientos del POA.")
+            raise ForbiddenError(
+                "Su perfil no permite dictaminar el seguimiento del Programa Operativo Anual."
+            )
         item = await self._load(command.follow_up_id)
         if item.captured_by == command.actor.id and not command.actor.is_planning:
-            raise ForbiddenError("No puedes validar tu propio seguimiento.")
+            raise ForbiddenError(
+                "El seguimiento que registró esta misma cuenta lo dictamina otra persona: nadie "
+                "aprueba su propio informe."
+            )
 
         previous = item.status
         item.validate()
         await self._record(item, previous, command.actor, None)
         await self._notify(
             item,
-            f"Tu seguimiento del cuatrimestre {item.quarter} fue validado.",
+            f"La Dirección de Planeación validó el seguimiento del cuatrimestre {item.quarter} "
+            "del área.",
         )
         return item
 
@@ -163,7 +169,9 @@ class RejectPoaFollowUp(_BaseReview):
 
     async def execute(self, command: ReviewFollowUpCommand) -> PoaActivityFollowUp:
         if not _can_review(command.actor):
-            raise ForbiddenError("Tu rol no permite rechazar seguimientos del POA.")
+            raise ForbiddenError(
+                "Su perfil no permite devolver el seguimiento del Programa Operativo Anual."
+            )
         item = await self._load(command.follow_up_id)
 
         previous = item.status
@@ -171,6 +179,7 @@ class RejectPoaFollowUp(_BaseReview):
         await self._record(item, previous, command.actor, item.review_comment)
         await self._notify(
             item,
-            f"Tu seguimiento del cuatrimestre {item.quarter} fue devuelto: {item.review_comment}",
+            f"La Dirección de Planeación devolvió el seguimiento del cuatrimestre {item.quarter} "
+            f"del área: {item.review_comment}",
         )
         return item

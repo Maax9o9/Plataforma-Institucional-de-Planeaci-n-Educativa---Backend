@@ -57,7 +57,7 @@ router = APIRouter()
 @router.post(
     "/auth/cambiar-contrasena",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Cambiar la contraseña de mi cuenta administrativa",
+    summary="Cambiar la contraseña de la cuenta administrativa en uso",
     tags=[TAG],
 )
 async def change_admin_password(

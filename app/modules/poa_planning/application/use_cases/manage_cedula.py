@@ -38,6 +38,7 @@ from ...domain.cedula_entities import (
     build_issue_name,
     four_month_period_name,
 )
+from ...domain.entities import EL_EJERCICIO_POA_NO_EXISTE
 from ...domain.events import PoaStructureChanged
 from ...domain.ports.cedula_repository import PoaFormRepository
 from ...domain.ports.repositories import PoaRepository
@@ -253,7 +254,7 @@ class CreatePoaForm:
         ensure_planning(command.actor)
         exercise = await self.exercises.get_exercise(command.exercise_id)
         if exercise is None:
-            raise ResourceNotFoundError("El ejercicio POA no existe.")
+            raise ResourceNotFoundError(EL_EJERCICIO_POA_NO_EXISTE)
         quarters = sorted(command.quarters, key=lambda item: item.quarter)
         if {item.quarter for item in quarters} != {1, 2, 3} or len(quarters) != 3:
             raise ValidationError(
@@ -1145,7 +1146,7 @@ class IssuePoaForm:
             )
         exercise = await self.exercises.get_exercise(form.exercise_id)
         if exercise is None:
-            raise ResourceNotFoundError("El ejercicio POA no existe.")
+            raise ResourceNotFoundError(EL_EJERCICIO_POA_NO_EXISTE)
         issue = PoaFormIssue(
             form_id=form.id,
             quarter=command.quarter,

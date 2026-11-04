@@ -109,7 +109,7 @@ class InMemoryPoaAreaRepository:
     async def add_activity(self, activity: Activity) -> None:
         activity.validate()
         if activity.poa_area_id not in self._poa_areas:
-            raise ResourceNotFoundError("El POA del área no existe.")
+            raise ResourceNotFoundError(EL_POA_DEL_AREA_NO_EXISTE)
         activity.id = next(self._next_activity_id)
         activity.version = 1
         self._activities[activity.id] = _copia(activity)

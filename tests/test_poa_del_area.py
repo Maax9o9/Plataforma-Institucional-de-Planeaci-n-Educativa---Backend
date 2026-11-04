@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
@@ -48,6 +49,9 @@ from app.modules.poa_institucional.application.use_cases.manage_poa_area import 
     SubmitPoaAreaCommand,
 )
 from app.modules.poa_institucional.domain.entities import (
+    EL_AREA_NO_EXISTE,
+    EL_AREA_YA_TIENE_SU_POA,
+    EL_POA_DEL_AREA_NO_EXISTE,
     MESES_DEL_EJERCICIO,
     META_MAS_ALTA_QUE_CABE,
     Activity,
@@ -67,7 +71,10 @@ from app.modules.poa_institucional.infrastructure.sql_repository import (
     SqlAlchemyAreaLeadership,
     SqlAlchemyPoaAreaRepository,
 )
-from app.modules.poa_planning.domain.entities import PoaExercise
+from app.modules.poa_planning.domain.entities import (
+    EL_EJERCICIO_POA_NO_EXISTE,
+    PoaExercise,
+)
 from app.modules.poa_planning.domain.ports.repositories import PoaRepository
 from app.modules.poa_planning.infrastructure.repository import InMemoryPoaRepository
 from app.modules.poa_planning.infrastructure.sql_repository import SqlAlchemyPoaRepository
@@ -1390,7 +1397,7 @@ async def test_un_poa_de_area_que_no_existe_no_se_presenta(tablero):
 async def test_un_area_tiene_un_solo_poa_por_ejercicio(tablero):
     poa_area = await _poa_area(tablero)
 
-    with pytest.raises(ConflictError, match="ya tiene su POA"):
+    with pytest.raises(ConflictError, match=re.escape(EL_AREA_YA_TIENE_SU_POA)):
         await tablero.repo.add_poa_area(
             PoaArea(exercise_id=poa_area.exercise_id, area_id=poa_area.area_id),
             _primer_periodo(),
@@ -1409,7 +1416,7 @@ async def test_una_unidad_de_medida_que_no_existe_no_se_guarda(tablero_postgresq
 
 
 async def test_una_actividad_escrita_sobre_un_poa_de_area_que_no_existe_no_entra(tablero):
-    with pytest.raises(ResourceNotFoundError, match="POA del área no existe"):
+    with pytest.raises(ResourceNotFoundError, match=re.escape(EL_POA_DEL_AREA_NO_EXISTE)):
         await tablero.repo.add_activity(
             Activity(poa_area_id=INEXISTENTE, name="Sobre un POA inventado")
         )
@@ -1428,7 +1435,7 @@ async def test_una_actividad_escrita_sobre_un_nodo_que_no_existe_no_entra(tabler
 
 @pytest.mark.parametrize(
     ("campo", "esperado"),
-    [("exercise_id", "ejercicio POA no existe"), ("area_id", "área no existe")],
+    [("exercise_id", EL_EJERCICIO_POA_NO_EXISTE), ("area_id", EL_AREA_NO_EXISTE)],
 )
 async def test_un_poa_de_area_de_un_ejercicio_o_un_area_que_no_existen_no_se_guarda(
     tablero_postgresql, campo, esperado
@@ -1439,7 +1446,7 @@ async def test_un_poa_de_area_de_un_ejercicio_o_un_area_que_no_existen_no_se_gua
         campo: INEXISTENTE,
     }
 
-    with pytest.raises(ValidationError, match=esperado):
+    with pytest.raises(ValidationError, match=re.escape(esperado)):
         await tablero_postgresql.repo.add_poa_area(PoaArea(**valores), _primer_periodo())
 
 

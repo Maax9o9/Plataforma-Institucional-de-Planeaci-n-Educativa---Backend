@@ -37,7 +37,8 @@ class AuthenticateUser:
         user = await self.repository.get_by_email(email)
         if user is not None and user.password_setup_required:
             raise AuthenticationError(
-                "Debes configurar tu contrasena usando el enlace enviado por correo."
+                "La contraseña de la cuenta todavía no se ha establecido. Utilice el enlace que se "
+                "envió por correo electrónico para establecerla."
             )
         if (
             user is None

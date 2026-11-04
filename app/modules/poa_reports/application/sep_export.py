@@ -7,6 +7,7 @@ from importlib import resources
 
 from app.modules.institutional_catalogs.domain.ports.repositories import AreaRepository
 from app.modules.poa_planning.application.access_control import can_edit_structure
+from app.modules.poa_planning.domain.entities import EL_EJERCICIO_POA_NO_EXISTE
 from app.modules.poa_planning.domain.ports.cedula_repository import PoaFormRepository
 from app.modules.poa_planning.domain.ports.repositories import PoaRepository
 from app.shared.application.actor import ActorContext
@@ -70,7 +71,7 @@ class ExportarFormatoSep:
             )
         exercise = await self.exercises.get_exercise(exercise_id)
         if exercise is None:
-            raise ResourceNotFoundError("El ejercicio POA no existe.")
+            raise ResourceNotFoundError(EL_EJERCICIO_POA_NO_EXISTE)
 
         # Las cuatro consultas al catálogo salen del POA del que cuelga el
         # ejercicio que se exporta: el formato de un año tiene que decir lo que

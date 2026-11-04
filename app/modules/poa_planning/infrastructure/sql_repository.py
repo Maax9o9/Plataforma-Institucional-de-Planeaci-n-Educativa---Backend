@@ -7,7 +7,7 @@ from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError
 from app.shared.infrastructure.db.constraints import viola_la_restriccion
 from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
 
-from ..domain.entities import PoaExercise
+from ..domain.entities import EL_EJERCICIO_POA_NO_EXISTE, PoaExercise
 from ..domain.value_objects import PoaExerciseStatus
 from .models import PoaExerciseModel
 
@@ -72,7 +72,7 @@ class SqlAlchemyPoaRepository:
         async with session_scope(self.session_factory) as session:
             model = await session.get(PoaExerciseModel, item.id)
             if model is None:
-                raise ResourceNotFoundError("El ejercicio POA no existe.")
+                raise ResourceNotFoundError(EL_EJERCICIO_POA_NO_EXISTE)
             model.estado = item.status.value
             model.fecha_limite_formulacion = item.formulation_deadline
             model.comentario_revision = item.review_comment

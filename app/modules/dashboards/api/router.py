@@ -37,7 +37,7 @@ async def planning_dashboard(
     )
 
 
-@router.get("/mi-area", summary="Consultar dashboard de mi area")
+@router.get("/mi-area", summary="Consultar el tablero del area de la cuenta")
 async def area_dashboard(
     request: Request,
     current_user=Depends(require_roles("responsable_area", "capturista_poa")),
