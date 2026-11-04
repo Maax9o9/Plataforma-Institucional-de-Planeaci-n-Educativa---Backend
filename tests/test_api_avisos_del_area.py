@@ -230,6 +230,54 @@ async def test_abrir_para_todas_las_areas_avisa_en_cada_area_abierta(
     assert len(await _avisos_de(client, de_otra, AVISO_DE_LA_APERTURA)) == 1
 
 
+async def test_la_apertura_dice_a_cuantas_personas_se_aviso_y_de_que_areas(
+    backend_client, planeacion_headers, ejercicio, nueva_area, cuenta_con_rol
+):
+    _, client = backend_client
+    una = await nueva_area()
+    otra = await nueva_area()
+    await cuenta_con_rol(Role.CAPTURISTA_POA, area_id=una)
+    await cuenta_con_rol(Role.RESPONSABLE_AREA, area_id=una)
+    await cuenta_con_rol(Role.CAPTURISTA_POA, area_id=otra)
+
+    abierto = await _abrir(client, planeacion_headers, ejercicio, areas=[una, otra])
+
+    assert abierto.status_code == 200, abierto.text
+    cuerpo = abierto.json()
+    assert cuerpo["avisados"] == 3
+    assert {uno["area_id"]: uno["avisados"] for uno in cuerpo["abiertos"]} == {una: 2, otra: 1}
+    assert cuerpo["areas_sin_a_quien_avisar"] == []
+
+    # Lo que ya estaba abierto no se vuelve a avisar, y lo dice con un nulo y
+    # no con un cero: un cero lo confundiria con un area sin nadie que capture.
+    otra_vez = await _abrir(client, planeacion_headers, ejercicio, areas=[una, otra])
+
+    assert otra_vez.json()["avisados"] == 0
+    assert otra_vez.json()["areas_sin_a_quien_avisar"] == []
+    assert [uno["avisados"] for uno in otra_vez.json()["ya_estaban_abiertos"]] == [None, None]
+
+
+async def test_un_area_sin_quien_capture_se_reporta_y_no_se_silencia_al_abrir(
+    backend_client, planeacion_headers, ejercicio, nueva_area, cuenta_con_rol
+):
+    _, client = backend_client
+    con_gente = await nueva_area()
+    vacia = await nueva_area()
+    await cuenta_con_rol(Role.CAPTURISTA_POA, area_id=con_gente)
+    await cuenta_con_rol(Role.CONSULTA, area_id=vacia)
+
+    abierto = await _abrir(client, planeacion_headers, ejercicio, areas=[con_gente, vacia])
+
+    assert abierto.status_code == 200, abierto.text
+    cuerpo = abierto.json()
+    assert cuerpo["avisados"] == 1
+    assert cuerpo["areas_sin_a_quien_avisar"] == [vacia]
+    assert {uno["area_id"]: uno["avisados"] for uno in cuerpo["abiertos"]} == {
+        con_gente: 1,
+        vacia: 0,
+    }
+
+
 # ── El aviso que la Dirección de Planeación redacta ──────────────────────────
 
 

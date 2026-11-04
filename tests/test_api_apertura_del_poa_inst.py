@@ -6,6 +6,8 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.modules.identity_access.domain.value_objects import Role
+from app.modules.poa_institucional.api.schemas import PoaDelAreaRespuesta
+from app.modules.poa_institucional.domain.entities import PoaArea
 from app.modules.poa_institucional.infrastructure.sql_repository import (
     SqlAlchemyPoaAreaRepository,
 )
@@ -377,6 +379,59 @@ async def test_reabrir_lo_que_nadie_abrio_contesta_404_diciendo_que_lo_abra(
     )
 
 
+#: Los cinco dias de un periodo de tres, de fuera a fuera. Un `<` donde va
+#: `<=` se cae en el primero y un `>` donde va `>=` en el ultimo, y los tres
+#: dias de en medio no los salvan. Van en una sola prueba, con un solo
+#: ejercicio, porque `poa_ejercicios.anio` es unico en todo el sistema y la
+#: suite esta a pocos anios libres de su techo: cada prueba de este archivo
+#: que pida la fixture `ejercicio` gasta uno.
+LOS_CINCO_DIAS_DEL_PERIODO = (
+    (-1, "por_iniciar", None),
+    (0, "abierto", 2),
+    (1, "abierto", 1),
+    (2, "abierto", 0),
+    (3, "concluido", None),
+)
+
+
+async def test_el_registro_dice_su_motivo_y_sus_dias_en_los_dos_bordes_y_fuera(
+    backend_client, planeacion_headers, ejercicio, nueva_area, monkeypatch
+):
+    _, client = backend_client
+    area = await nueva_area()
+    primero = HOY
+    ultimo = HOY + timedelta(days=2)
+    await _abrir(client, planeacion_headers, ejercicio, areas=[area], desde=primero, hasta=ultimo)
+
+    medido = []
+    for desplazamiento, _, _ in LOS_CINCO_DIAS_DEL_PERIODO:
+        monkeypatch.setattr(
+            "app.modules.poa_institucional.api.router.institutional_today",
+            lambda dia=primero + timedelta(days=desplazamiento): dia,
+        )
+        leido = await _consultar(client, planeacion_headers, ejercicio, area)
+        assert leido.status_code == 200, leido.text
+        cuerpo = leido.json()
+        medido.append((desplazamiento, cuerpo["estado_del_registro"], cuerpo["dias_restantes"]))
+        assert cuerpo["esta_abierto"] is (cuerpo["estado_del_registro"] == "abierto")
+
+    assert medido == list(LOS_CINCO_DIAS_DEL_PERIODO)
+
+
+def test_un_poa_sin_ningun_periodo_dice_que_nunca_se_habilito():
+    sin_periodo = PoaDelAreaRespuesta.from_domain(
+        PoaArea(id=1, exercise_id=7, area_id=11),
+        [],
+        falta_para_presentar=[],
+        ventana=None,
+        hoy=HOY,
+    )
+
+    assert sin_periodo.esta_abierto is False
+    assert sin_periodo.estado_del_registro.value == "sin_habilitar"
+    assert sin_periodo.dias_restantes is None
+
+
 async def test_la_apertura_declara_su_contrato_en_el_openapi(app):
     esquema = app.openapi()
 
@@ -389,11 +444,27 @@ async def test_la_apertura_declara_su_contrato_en_el_openapi(app):
     assert sorted(cuerpo_de_reabrir["required"]) == ["desde", "hasta", "motivo"]
 
     respuesta = esquema["components"]["schemas"]["AperturaDelPoaRespuesta"]
-    assert sorted(respuesta["required"]) == ["abiertos", "ejercicio_id", "ya_estaban_abiertos"]
+    assert sorted(respuesta["required"]) == [
+        "abiertos",
+        "areas_sin_a_quien_avisar",
+        "avisados",
+        "ejercicio_id",
+        "ya_estaban_abiertos",
+    ]
+    por_area = esquema["components"]["schemas"]["PoaDelAreaAbiertoRespuesta"]
+    assert "avisados" in por_area["required"]
     del_area = esquema["components"]["schemas"]["PoaDelAreaRespuesta"]
-    assert {"abierto_desde", "abierto_hasta", "esta_abierto", "periodos_habilitados"} <= set(
-        del_area["properties"]
-    )
+    assert {
+        "abierto_desde",
+        "abierto_hasta",
+        "dias_restantes",
+        "esta_abierto",
+        "estado_del_registro",
+        "periodos_habilitados",
+    } <= set(del_area["properties"])
+    assert {"dias_restantes", "estado_del_registro"} <= set(del_area["required"])
+    motivos = esquema["components"]["schemas"]["EstadoDelRegistro"]
+    assert sorted(motivos["enum"]) == ["abierto", "concluido", "por_iniciar", "sin_habilitar"]
 
     for nombre, operacion in (("abrir", abrir), ("reabrir", reabrir)):
         obligatorios = {

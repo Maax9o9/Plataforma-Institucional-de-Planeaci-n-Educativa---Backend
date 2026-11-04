@@ -5,9 +5,12 @@ from datetime import date, timedelta
 
 import pytest
 
+from app.modules.poa_institucional.api.schemas import AperturaDelPoaRespuesta
 from app.modules.poa_institucional.application.use_cases.manage_poa_area import (
+    OpenedPoa,
     OpenInstitutionalPoa,
     OpenInstitutionalPoaCommand,
+    PoaAreaWithWindow,
     ReopenPoaArea,
     ReopenPoaAreaCommand,
     SaveActivityCommand,
@@ -15,12 +18,16 @@ from app.modules.poa_institucional.application.use_cases.manage_poa_area import 
 )
 from app.modules.poa_institucional.domain.entities import (
     EL_AREA_NO_EXISTE,
-    EL_EJERCICIO_POA_NO_EXISTE,
     LO_MOVIERON_AL_REABRIR,
     CaptureWindow,
+    EstadoDelRegistro,
+    PoaArea,
     PoaAreaStatus,
+    dias_naturales_restantes,
     ensure_capture_is_open,
+    estado_del_registro,
 )
+from app.modules.poa_planning.domain.entities import EL_EJERCICIO_POA_NO_EXISTE
 from app.shared.domain.calendar import el_dia_en_letras
 from app.shared.domain.exceptions import (
     ConflictError,
@@ -187,6 +194,92 @@ def test_una_ventana_de_un_solo_dia_incluye_ese_dia():
         de_un_dia.includes(date(2026, 11, 30)),
         de_un_dia.includes(date(2026, 12, 1)),
     ] == [False, True, False]
+
+
+@pytest.mark.parametrize(
+    ("dia", "esperado"),
+    [
+        (date(2026, 10, 31), EstadoDelRegistro.POR_INICIAR),
+        (date(2026, 11, 1), EstadoDelRegistro.ABIERTO),
+        (date(2026, 11, 15), EstadoDelRegistro.ABIERTO),
+        (date(2026, 11, 30), EstadoDelRegistro.ABIERTO),
+        (date(2026, 12, 1), EstadoDelRegistro.CONCLUIDO),
+    ],
+)
+def test_el_motivo_distingue_el_periodo_por_iniciar_del_ya_concluido(dia, esperado):
+    assert estado_del_registro(_ventana(), today=dia) is esperado
+
+
+def test_sin_ningun_periodo_el_motivo_es_que_nunca_se_habilito():
+    assert estado_del_registro(None, today=HOY) is EstadoDelRegistro.SIN_HABILITAR
+
+
+def test_el_motivo_de_una_ventana_de_un_solo_dia_cambia_en_sus_dos_bordes():
+    de_un_dia = _ventana(date(2026, 11, 30), date(2026, 11, 30))
+
+    assert [
+        estado_del_registro(de_un_dia, today=date(2026, 11, 29)),
+        estado_del_registro(de_un_dia, today=date(2026, 11, 30)),
+        estado_del_registro(de_un_dia, today=date(2026, 12, 1)),
+    ] == [
+        EstadoDelRegistro.POR_INICIAR,
+        EstadoDelRegistro.ABIERTO,
+        EstadoDelRegistro.CONCLUIDO,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("dia", "esperado"),
+    [
+        (date(2026, 11, 1), 29),
+        (date(2026, 11, 15), 15),
+        (date(2026, 11, 29), 1),
+        (date(2026, 11, 30), 0),
+    ],
+)
+def test_los_dias_restantes_se_cuentan_desde_el_dia_institucional(dia, esperado):
+    assert dias_naturales_restantes(_ventana(), today=dia) == esperado
+
+
+@pytest.mark.parametrize("dia", [date(2026, 10, 31), date(2026, 12, 1)])
+def test_fuera_del_periodo_no_hay_dias_restantes_que_mostrar(dia):
+    assert dias_naturales_restantes(_ventana(), today=dia) is None
+
+
+def test_sin_ningun_periodo_no_hay_dias_restantes_que_mostrar():
+    assert dias_naturales_restantes(None, today=HOY) is None
+
+
+def test_el_total_de_avisados_cuenta_solo_lo_que_la_apertura_abrio():
+    ventana = _ventana()
+    recien = PoaAreaWithWindow(
+        poa_area=PoaArea(id=1, exercise_id=7, area_id=11), window=ventana, avisados=2
+    )
+    de_antes = PoaAreaWithWindow(
+        poa_area=PoaArea(id=2, exercise_id=7, area_id=12), window=ventana, avisados=5
+    )
+
+    respuesta = AperturaDelPoaRespuesta.from_domain(
+        7, OpenedPoa(opened=[recien], already_open=[de_antes])
+    )
+
+    assert respuesta.avisados == 2
+    assert respuesta.areas_sin_a_quien_avisar == []
+
+
+def test_el_area_sin_a_quien_avisar_sale_en_la_lista_y_la_que_no_se_pudo_medir_no():
+    ventana = _ventana()
+    sin_nadie = PoaAreaWithWindow(
+        poa_area=PoaArea(id=1, exercise_id=7, area_id=11), window=ventana, avisados=0
+    )
+    sin_medir = PoaAreaWithWindow(
+        poa_area=PoaArea(id=2, exercise_id=7, area_id=12), window=ventana, avisados=None
+    )
+
+    respuesta = AperturaDelPoaRespuesta.from_domain(7, OpenedPoa(opened=[sin_nadie, sin_medir]))
+
+    assert respuesta.avisados == 0
+    assert respuesta.areas_sin_a_quien_avisar == [11]
 
 
 def test_una_ventana_que_cierra_antes_de_abrir_se_rechaza_diciendo_las_dos_fechas():

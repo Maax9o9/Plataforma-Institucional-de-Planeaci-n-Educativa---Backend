@@ -16,9 +16,12 @@ from ..domain.entities import (
     MESES_DEL_EJERCICIO,
     Activity,
     CaptureWindow,
+    EstadoDelRegistro,
     MonthlyTarget,
     PoaArea,
     PoaAreaStatus,
+    dias_naturales_restantes,
+    estado_del_registro,
     sin_la_escala_de_la_base,
     whats_missing_to_submit,
 )
@@ -137,6 +140,7 @@ class PoaDelAreaAbiertoRespuesta(BaseModel):
     abierto_desde: date | None
     abierto_hasta: date | None
     periodos_habilitados: int
+    avisados: int | None
 
     @classmethod
     def from_domain(cls, abierto: PoaAreaWithWindow) -> PoaDelAreaAbiertoRespuesta:
@@ -149,6 +153,7 @@ class PoaDelAreaAbiertoRespuesta(BaseModel):
             abierto_desde=None if abierto.window is None else abierto.window.opens_on,
             abierto_hasta=None if abierto.window is None else abierto.window.closes_on,
             periodos_habilitados=0 if abierto.window is None else abierto.window.number,
+            avisados=abierto.avisados,
         )
 
 
@@ -156,6 +161,8 @@ class AperturaDelPoaRespuesta(BaseModel):
     ejercicio_id: int
     abiertos: list[PoaDelAreaAbiertoRespuesta]
     ya_estaban_abiertos: list[PoaDelAreaAbiertoRespuesta]
+    avisados: int
+    areas_sin_a_quien_avisar: list[int]
 
     @classmethod
     def from_domain(cls, ejercicio_id: int, reparto: OpenedPoa) -> AperturaDelPoaRespuesta:
@@ -165,6 +172,10 @@ class AperturaDelPoaRespuesta(BaseModel):
             ya_estaban_abiertos=[
                 PoaDelAreaAbiertoRespuesta.from_domain(uno) for uno in reparto.already_open
             ],
+            avisados=sum(uno.avisados or 0 for uno in reparto.opened),
+            areas_sin_a_quien_avisar=sorted(
+                uno.poa_area.area_id for uno in reparto.opened if uno.avisados == 0
+            ),
         )
 
 
@@ -224,6 +235,8 @@ class PoaDelAreaRespuesta(BaseModel):
     abierto_hasta: date | None
     periodos_habilitados: int
     esta_abierto: bool
+    estado_del_registro: EstadoDelRegistro
+    dias_restantes: int | None
     actividades: list[ActividadRespuesta]
     falta_para_presentar: list[str]
 
@@ -247,6 +260,8 @@ class PoaDelAreaRespuesta(BaseModel):
             abierto_hasta=None if ventana is None else ventana.closes_on,
             periodos_habilitados=0 if ventana is None else ventana.number,
             esta_abierto=ventana is not None and ventana.includes(hoy),
+            estado_del_registro=estado_del_registro(ventana, today=hoy),
+            dias_restantes=dias_naturales_restantes(ventana, today=hoy),
             actividades=[ActividadRespuesta.from_domain(una) for una in actividades],
             falta_para_presentar=falta_para_presentar,
         )
