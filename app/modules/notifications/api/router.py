@@ -20,11 +20,10 @@ async def list_notifications(
     no_leidas: bool = False,
     current_user=Depends(get_current_user),
 ) -> list[NotificacionRespuesta]:
-    items = await request.app.state.notification_repository.list_for_user(
-        current_user.id,
-        unread_only=no_leidas,
+    entregas = await request.app.state.el_buzon.de_la_persona(
+        current_user.id, solo_pendientes=no_leidas
     )
-    return [NotificacionRespuesta.from_domain(item) for item in items]
+    return [NotificacionRespuesta.from_domain(una) for una in entregas]
 
 
 @router.post("/{notification_id}/leer", status_code=204, summary="Marcar notificacion como leida")

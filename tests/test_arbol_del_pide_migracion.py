@@ -523,12 +523,19 @@ async def _bajar_la_0038(conexion: AsyncConnection) -> None:
 
 @pytest.fixture
 async def sin_lo_que_cuelga_del_arbol(conexion):
-    # Bajar desde head pasa por cada guarda de downgrade del camino, y la de la
-    # 0042 se niega si hay titulos de aviso cargados. Las pruebas de la API de
-    # avisos dejan los suyos confirmados en la copia de la sesion, asi que sin
-    # esto esta bajada pasa o falla segun el orden alfabetico de los archivos.
-    # Los titulos se anulan dentro de la transaccion que la prueba revierte.
+    # Bajar desde head pasa por cada guarda de downgrade del camino, y hay dos
+    # que se niegan con datos de avisos cargados: la de la 0042 con los titulos
+    # y la de la 0043 con los comunicados y las entregas que apuntan a ellos.
+    # Las pruebas de la API de avisos dejan los suyos confirmados en la copia de
+    # la sesion, asi que sin esto esta bajada pasa o falla segun el orden
+    # alfabetico de los archivos. Todo se vacia dentro de la transaccion que la
+    # prueba revierte, asi que la copia de la sesion no pierde nada.
     await conexion.execute(text("UPDATE notificaciones SET titulo = NULL WHERE titulo IS NOT NULL"))
+    await conexion.execute(
+        text("UPDATE notificaciones SET aviso_id = NULL WHERE aviso_id IS NOT NULL")
+    )
+    await conexion.execute(text("DELETE FROM aviso_adjuntos"))
+    await conexion.execute(text("DELETE FROM avisos"))
     guion = ScriptDirectory.from_config(Config(str(RAIZ / "alembic.ini")))
     for revision in guion.iterate_revisions("head", "0038_arbol_del_pide"):
 

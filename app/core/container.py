@@ -90,8 +90,14 @@ from app.modules.institutional_catalogs.infrastructure.unit_of_measure_repositor
 from app.modules.institutional_catalogs.infrastructure.unit_of_measure_sql_repository import (
     SqlAlchemyUnitOfMeasureRepository,
 )
-from app.modules.notifications.infrastructure.repository import InMemoryNotificationRepository
-from app.modules.notifications.infrastructure.sql_repository import SqlAlchemyNotificationRepository
+from app.modules.notifications.infrastructure.repository import (
+    InMemoryAvisoRepository,
+    InMemoryNotificationRepository,
+)
+from app.modules.notifications.infrastructure.sql_repository import (
+    SqlAlchemyAvisoRepository,
+    SqlAlchemyNotificationRepository,
+)
 from app.modules.periods.infrastructure.repository import InMemoryPeriodRepository
 from app.modules.periods.infrastructure.sql_repository import SqlAlchemyPeriodRepository
 from app.modules.poa_institucional.infrastructure.repository import (
@@ -117,6 +123,7 @@ from app.shared.infrastructure.db.unit_of_work import (
     NoOpUnitOfWorkFactory,
     SqlAlchemyUnitOfWorkFactory,
 )
+from app.shared.infrastructure.files.uploaded_files import StoredUploadedFiles
 
 
 @dataclass
@@ -151,6 +158,8 @@ class Resources:
     indicator_report_service: object
     report_log: object
     notification_repository: object
+    aviso_repository: object
+    uploaded_files: object
     password_setup_token_store: object
     institutional_directory: object
     email_template_repository: object
@@ -198,6 +207,7 @@ def create_resources(settings: Settings) -> Resources:
         )
         report_log = InMemoryReportLog()
         notification_repository = InMemoryNotificationRepository()
+        aviso_repository = InMemoryAvisoRepository()
         password_setup_token_store = InMemoryPasswordSetupTokenStore()
     else:
         email_template_repository = SqlAlchemyTemplateRepository(db_session_factory)
@@ -233,6 +243,7 @@ def create_resources(settings: Settings) -> Resources:
         indicator_report_service = SqlAlchemyIndicatorReportService(db_session_factory)
         report_log = SqlAlchemyReportLog(db_session_factory)
         notification_repository = SqlAlchemyNotificationRepository(db_session_factory)
+        aviso_repository = SqlAlchemyAvisoRepository(db_session_factory)
         password_setup_token_store = SqlAlchemyPasswordSetupTokenStore(db_session_factory)
 
     return Resources(
@@ -269,6 +280,8 @@ def create_resources(settings: Settings) -> Resources:
         indicator_report_service=indicator_report_service,
         report_log=report_log,
         notification_repository=notification_repository,
+        aviso_repository=aviso_repository,
+        uploaded_files=StoredUploadedFiles(settings),
         password_setup_token_store=password_setup_token_store,
         institutional_directory=INSTITUTIONAL_DIRECTORY,
     )

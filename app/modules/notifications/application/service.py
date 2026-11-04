@@ -84,6 +84,7 @@ class NotificationService:
         entity_id: int | None,
         source_event_id,
         title: str | None = None,
+        aviso_id: int | None = None,
     ) -> Notification:
         """Persiste y entrega una notificacion sin duplicar correos idempotentes."""
 
@@ -96,6 +97,7 @@ class NotificationService:
                 entity=entity,
                 entity_id=entity_id,
                 source_event_id=source_event_id,
+                aviso_id=aviso_id,
             )
         )
         user = await self.user_repository.get_by_id(user_id)

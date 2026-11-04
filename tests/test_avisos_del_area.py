@@ -26,6 +26,7 @@ from app.modules.notifications.application.area_notices import (
     AvisoEntregado,
     el_aviso_de_la_apertura,
 )
+from app.modules.notifications.infrastructure.repository import InMemoryAvisoRepository
 from app.modules.poa_institucional.application.use_cases.manage_poa_area import (
     OpenInstitutionalPoa,
     OpenInstitutionalPoaCommand,
@@ -38,6 +39,7 @@ from app.modules.poa_planning.application.access_control import (
 )
 from app.modules.poa_planning.application.period_recipients import PoaPeriodRecipients
 from app.shared.application.actor import ActorContext
+from app.shared.domain.calendar import institutional_today
 from app.shared.domain.exceptions import ValidationError
 from app.shared.domain.value_objects import Email
 from test_poa_del_area import _tablero_en_memoria
@@ -48,6 +50,8 @@ DEL_3_AL_30_DE_NOVIEMBRE = (date(2026, 11, 3), date(2026, 11, 30))
 
 EL_AREA = 7
 OTRA_AREA = 8
+
+QUIEN_REDACTA = 1
 
 
 def _actor(rol: str | None, area_id: int | None = EL_AREA, *roles: str) -> ActorContext:
@@ -120,8 +124,27 @@ def _destinatarios(usuarios: InMemoryUserRepository) -> PoaPeriodRecipients:
     return PoaPeriodRecipients(forms=None, users=usuarios)
 
 
+@dataclass
+class ArchivosQueNoTienenNada:
+    async def describe(self, ruta: str):
+        return None
+
+
+def _redactor(
+    usuarios: InMemoryUserRepository, servicio, areas, *, archivos=None, hoy=None
+) -> AreaNotices:
+    return AreaNotices(
+        _destinatarios(usuarios),
+        servicio,
+        areas,
+        InMemoryAvisoRepository(),
+        archivos or ArchivosQueNoTienenNada(),
+        today=(lambda: hoy) if hoy is not None else institutional_today,
+    )
+
+
 async def _avisos(usuarios: InMemoryUserRepository, servicio, *areas: int) -> AreaNotices:
-    return AreaNotices(_destinatarios(usuarios), servicio, await _las_areas(*areas))
+    return _redactor(usuarios, servicio, await _las_areas(*areas))
 
 
 # ── El veredicto sobre `can_capture_activity` ────────────────────────────────
@@ -365,13 +388,17 @@ async def test_el_aviso_de_planeacion_llega_a_cada_persona_de_cada_area_elegida(
     )
     servicio = ServicioQueAnota()
 
-    entregados = await (await _avisos(usuarios, servicio, EL_AREA, OTRA_AREA)).planeacion_redacto(
+    redactado = await (await _avisos(usuarios, servicio, EL_AREA, OTRA_AREA)).planeacion_redacto(
         [EL_AREA, OTRA_AREA],
         titulo="Entrega del Programa Operativo Anual",
         mensaje="Las áreas entregan su Programa Operativo Anual antes del cierre del periodo.",
+        creado_por=QUIEN_REDACTA,
     )
 
-    assert [(uno.area_id, uno.personas) for uno in entregados] == [(EL_AREA, 2), (OTRA_AREA, 1)]
+    assert [(uno.area_id, uno.personas) for uno in redactado.entregados] == [
+        (EL_AREA, 2),
+        (OTRA_AREA, 1),
+    ]
     assert [uno["user_id"] for uno in servicio.avisados] == [1, 2, 3]
     for uno in servicio.avisados:
         assert uno["notification_type"] == AVISO_DE_PLANEACION
@@ -387,11 +414,14 @@ async def test_el_aviso_de_planeacion_reporta_el_area_que_no_tiene_a_quien_avisa
     )
     servicio = ServicioQueAnota()
 
-    entregados = await (await _avisos(usuarios, servicio, EL_AREA, OTRA_AREA)).planeacion_redacto(
-        [EL_AREA, OTRA_AREA], titulo="Un aviso", mensaje="El cuerpo del aviso."
+    redactado = await (await _avisos(usuarios, servicio, EL_AREA, OTRA_AREA)).planeacion_redacto(
+        [EL_AREA, OTRA_AREA],
+        titulo="Un aviso",
+        mensaje="El cuerpo del aviso.",
+        creado_por=QUIEN_REDACTA,
     )
 
-    assert [(uno.area_id, uno.area, uno.personas) for uno in entregados] == [
+    assert [(uno.area_id, uno.area, uno.personas) for uno in redactado.entregados] == [
         (EL_AREA, f"Área número {EL_AREA}", 1),
         (OTRA_AREA, f"Área número {OTRA_AREA}", 0),
     ]
@@ -405,6 +435,7 @@ async def test_el_titulo_y_el_mensaje_del_aviso_se_recortan_sin_invisibles():
         [EL_AREA],
         titulo=f"  Un aviso con holgura {ESPACIO_DE_ANCHO_CERO} ",
         mensaje=f" {ESPACIO_DE_ANCHO_CERO}El cuerpo del aviso.  ",
+        creado_por=QUIEN_REDACTA,
     )
 
     assert servicio.avisados[0]["title"] == "Un aviso con holgura"
@@ -418,7 +449,7 @@ async def test_un_aviso_sin_titulo_que_leer_se_rechaza(titulo):
 
     with pytest.raises(ValidationError) as caido:
         await (await _avisos(usuarios, servicio, EL_AREA)).planeacion_redacto(
-            [EL_AREA], titulo=titulo, mensaje="El cuerpo del aviso."
+            [EL_AREA], titulo=titulo, mensaje="El cuerpo del aviso.", creado_por=QUIEN_REDACTA
         )
 
     assert caido.value.message == ESCRIBA_EL_TITULO_DEL_AVISO
@@ -432,7 +463,7 @@ async def test_un_aviso_sin_mensaje_que_leer_se_rechaza(mensaje):
 
     with pytest.raises(ValidationError) as caido:
         await (await _avisos(usuarios, servicio, EL_AREA)).planeacion_redacto(
-            [EL_AREA], titulo="Un aviso", mensaje=mensaje
+            [EL_AREA], titulo="Un aviso", mensaje=mensaje, creado_por=QUIEN_REDACTA
         )
 
     assert caido.value.message == ESCRIBA_EL_MENSAJE_DEL_AVISO
@@ -445,7 +476,7 @@ async def test_un_aviso_sin_ninguna_area_elegida_no_se_convierte_en_uno_para_tod
 
     with pytest.raises(ValidationError) as caido:
         await (await _avisos(usuarios, servicio, EL_AREA)).planeacion_redacto(
-            [], titulo="Un aviso", mensaje="El cuerpo del aviso."
+            [], titulo="Un aviso", mensaje="El cuerpo del aviso.", creado_por=QUIEN_REDACTA
         )
 
     assert caido.value.message == ELIJA_AL_MENOS_UN_AREA_PARA_EL_AVISO
@@ -459,11 +490,11 @@ async def test_un_aviso_para_todas_las_areas_se_dirige_a_cada_area_en_servicio()
     )
     servicio = ServicioQueAnota()
 
-    entregados = await (await _avisos(usuarios, servicio, EL_AREA, OTRA_AREA)).planeacion_redacto(
-        None, titulo="Un aviso", mensaje="El cuerpo del aviso."
+    redactado = await (await _avisos(usuarios, servicio, EL_AREA, OTRA_AREA)).planeacion_redacto(
+        None, titulo="Un aviso", mensaje="El cuerpo del aviso.", creado_por=QUIEN_REDACTA
     )
 
-    assert [uno.area_id for uno in entregados] == [EL_AREA, OTRA_AREA]
+    assert [uno.area_id for uno in redactado.entregados] == [EL_AREA, OTRA_AREA]
     assert [uno["user_id"] for uno in servicio.avisados] == [1, 2]
 
 
@@ -478,11 +509,11 @@ async def test_un_aviso_para_todas_las_areas_deja_fuera_a_las_retiradas_del_serv
     retirada.is_active = False
     await areas.update(retirada)
 
-    entregados = await AreaNotices(_destinatarios(usuarios), servicio, areas).planeacion_redacto(
-        None, titulo="Un aviso", mensaje="El cuerpo del aviso."
+    redactado = await _redactor(usuarios, servicio, areas).planeacion_redacto(
+        None, titulo="Un aviso", mensaje="El cuerpo del aviso.", creado_por=QUIEN_REDACTA
     )
 
-    assert [uno.area_id for uno in entregados] == [EL_AREA]
+    assert [uno.area_id for uno in redactado.entregados] == [EL_AREA]
     assert [uno["user_id"] for uno in servicio.avisados] == [1]
 
 
@@ -495,8 +526,8 @@ async def test_un_aviso_dirigido_a_un_area_retirada_del_servicio_se_rechaza():
     await areas.update(retirada)
 
     with pytest.raises(ValidationError) as caido:
-        await AreaNotices(_destinatarios(usuarios), servicio, areas).planeacion_redacto(
-            [OTRA_AREA], titulo="Un aviso", mensaje="El cuerpo del aviso."
+        await _redactor(usuarios, servicio, areas).planeacion_redacto(
+            [OTRA_AREA], titulo="Un aviso", mensaje="El cuerpo del aviso.", creado_por=QUIEN_REDACTA
         )
 
     assert retirada.name in caido.value.message
@@ -509,7 +540,7 @@ async def test_un_aviso_dirigido_a_un_area_que_no_existe_se_rechaza():
 
     with pytest.raises(ValidationError) as caido:
         await (await _avisos(usuarios, servicio, EL_AREA)).planeacion_redacto(
-            [10**8], titulo="Un aviso", mensaje="El cuerpo del aviso."
+            [10**8], titulo="Un aviso", mensaje="El cuerpo del aviso.", creado_por=QUIEN_REDACTA
         )
 
     assert caido.value.message == EL_AREA_DEL_AVISO_NO_EXISTE
@@ -521,9 +552,9 @@ async def test_un_aviso_para_todas_las_areas_sin_ninguna_area_en_servicio_se_rec
     servicio = ServicioQueAnota()
 
     with pytest.raises(ValidationError) as caido:
-        await AreaNotices(
-            _destinatarios(usuarios), servicio, await _las_areas()
-        ).planeacion_redacto(None, titulo="Un aviso", mensaje="El cuerpo del aviso.")
+        await _redactor(usuarios, servicio, await _las_areas()).planeacion_redacto(
+            None, titulo="Un aviso", mensaje="El cuerpo del aviso.", creado_por=QUIEN_REDACTA
+        )
 
     assert caido.value.message == NO_HAY_NINGUNA_AREA_EN_SERVICIO_QUE_AVISAR
     assert servicio.avisados == []
@@ -535,8 +566,8 @@ async def test_dos_redacciones_iguales_son_dos_avisos_distintos():
     avisos = await _avisos(usuarios, servicio, EL_AREA)
     argumentos = dict(titulo="Un aviso", mensaje="El cuerpo del aviso.")
 
-    await avisos.planeacion_redacto([EL_AREA], **argumentos)
-    await avisos.planeacion_redacto([EL_AREA], **argumentos)
+    await avisos.planeacion_redacto([EL_AREA], **argumentos, creado_por=QUIEN_REDACTA)
+    await avisos.planeacion_redacto([EL_AREA], **argumentos, creado_por=QUIEN_REDACTA)
 
     assert servicio.avisados[0]["source_event_id"] != servicio.avisados[1]["source_event_id"]
 
@@ -724,7 +755,7 @@ async def test_el_riel_caido_si_hace_fallar_el_aviso_que_planeacion_redacta():
 
     with pytest.raises(RuntimeError):
         await (await _avisos(usuarios, servicio, EL_AREA)).planeacion_redacto(
-            [EL_AREA], titulo="Un aviso", mensaje="El cuerpo del aviso."
+            [EL_AREA], titulo="Un aviso", mensaje="El cuerpo del aviso.", creado_por=QUIEN_REDACTA
         )
 
     assert servicio.intentos == 1

@@ -39,6 +39,14 @@ LOS_CAMPOS_QUE_EL_FRONTEND_YA_LEE = {
     "fecha",
 }
 
+LOS_CAMPOS_QUE_EL_COMUNICADO_ANADIO = {
+    "titulo",
+    "aviso_id",
+    "destino_ruta",
+    "vigente_hasta",
+    "adjuntos",
+}
+
 ROLES_QUE_REDACTAN_AVISOS = [
     Role.PLANEACION,
     Role.PLANEACION_ADMIN,
@@ -300,9 +308,11 @@ async def test_planeacion_redacta_un_aviso_y_llega_a_cada_persona_del_area(
 
     assert redactado.status_code == 200, redactado.text
     assert redactado.json() == {
+        "aviso_id": redactado.json()["aviso_id"],
         "entregados": 2,
         "areas": [{"area_id": area, "area": nombre, "personas": 2}],
     }
+    assert redactado.json()["aviso_id"] >= 1
     for cabeceras in (quien_captura, quien_encabeza):
         avisos = await _avisos_de(client, cabeceras, AVISO_DE_PLANEACION)
         assert len(avisos) == 1
@@ -534,7 +544,7 @@ async def test_las_notificaciones_siguen_trayendo_lo_que_el_frontend_ya_leia(
 
     assert len(avisos) == 1
     assert LOS_CAMPOS_QUE_EL_FRONTEND_YA_LEE < set(avisos[0])
-    assert set(avisos[0]) == LOS_CAMPOS_QUE_EL_FRONTEND_YA_LEE | {"titulo"}
+    assert set(avisos[0]) == LOS_CAMPOS_QUE_EL_FRONTEND_YA_LEE | LOS_CAMPOS_QUE_EL_COMUNICADO_ANADIO
 
 
 async def test_una_notificacion_sin_titulo_lo_devuelve_nulo_y_no_uno_inventado(
@@ -588,7 +598,7 @@ async def test_el_aviso_declara_su_contrato_en_el_openapi(app):
     assert cuerpo["properties"]["mensaje"]["maxLength"] == LARGO_DEL_MENSAJE
 
     respuesta = esquema["components"]["schemas"]["AvisoEntregadoRespuesta"]
-    assert sorted(respuesta["required"]) == ["areas", "entregados"]
+    assert sorted(respuesta["required"]) == ["areas", "aviso_id", "entregados"]
     por_area = esquema["components"]["schemas"]["AvisoPorAreaRespuesta"]
     assert sorted(por_area["required"]) == ["area", "area_id", "personas"]
 
@@ -597,7 +607,7 @@ async def test_el_aviso_declara_su_contrato_en_el_openapi(app):
 
     notificacion = esquema["components"]["schemas"]["NotificacionRespuesta"]
     assert sorted(notificacion["required"]) == sorted(
-        LOS_CAMPOS_QUE_EL_FRONTEND_YA_LEE | {"titulo"}
+        LOS_CAMPOS_QUE_EL_FRONTEND_YA_LEE | LOS_CAMPOS_QUE_EL_COMUNICADO_ANADIO
     )
     assert notificacion["properties"]["titulo"]["anyOf"] == [
         {"maxLength": LARGO_DEL_TITULO, "type": "string"},

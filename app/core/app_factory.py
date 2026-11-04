@@ -33,6 +33,10 @@ from app.modules.identity_access.infrastructure.security import (
     JwtTokenService,
 )
 from app.modules.notifications.application.area_notices import AreaNotices
+from app.modules.notifications.application.avisos_consultados import (
+    ElBuzon,
+    LasCifrasDeLectura,
+)
 from app.shared.infrastructure.email.factory import create_email_sender
 from app.shared.infrastructure.events.in_memory_event_bus import InMemoryEventBus
 
@@ -110,6 +114,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.area_notices = AreaNotices(
         resources.poa_period_recipients,
         app.state.notification_service,
+        resources.area_repository,
+        resources.aviso_repository,
+        resources.uploaded_files,
+    )
+    app.state.el_buzon = ElBuzon(resources.notification_repository, resources.aviso_repository)
+    app.state.las_cifras_de_lectura = LasCifrasDeLectura(
+        resources.aviso_repository,
+        resources.notification_repository,
+        resources.user_repository,
         resources.area_repository,
     )
     app.add_middleware(RequestIdMiddleware)

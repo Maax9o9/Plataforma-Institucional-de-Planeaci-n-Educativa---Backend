@@ -38,6 +38,7 @@ COLUMNAS = {
     "origen_evento_id": ("uuid", True, None),
     "correo_reservado_hasta": ("timestamp with time zone", True, None),
     "titulo": ("character varying(200)", True, None),
+    "aviso_id": ("integer", True, None),
 }
 
 LOS_SIETE_VALORES_DEL_ENUM = [

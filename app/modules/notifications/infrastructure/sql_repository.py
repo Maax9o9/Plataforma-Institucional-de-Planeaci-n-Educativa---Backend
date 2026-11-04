@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import or_, select, update
@@ -10,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
 
-from ..domain.entities import Notification
-from .models import NotificationModel
+from ..domain.entities import Aviso, AvisoAdjunto, EntregaDelAviso, Notification
+from .models import AvisoAdjuntoModel, AvisoModel, NotificationModel
 
 
 class SqlAlchemyNotificationRepository:
@@ -31,6 +32,7 @@ class SqlAlchemyNotificationRepository:
             read=model.leida,
             sent_by_email=model.enviada_por_correo,
             source_event_id=model.origen_evento_id,
+            aviso_id=model.aviso_id,
             created_at=model.fecha,
         )
 
@@ -44,6 +46,7 @@ class SqlAlchemyNotificationRepository:
                 titulo=notification.title,
                 mensaje=notification.message,
                 origen_evento_id=notification.source_event_id,
+                aviso_id=notification.aviso_id,
                 fecha=notification.created_at or datetime.now(UTC),
             )
             try:
@@ -129,3 +132,84 @@ class SqlAlchemyNotificationRepository:
                 .values(correo_reservado_hasta=None)
             )
             await commit_or_flush(session)
+
+    async def deliveries_of(self, aviso_ids: Collection[int]) -> list[EntregaDelAviso]:
+        pedidos = sorted(set(aviso_ids))
+        if not pedidos:
+            return []
+        async with session_scope(self.session_factory) as session:
+            filas = await session.execute(
+                select(
+                    NotificationModel.aviso_id,
+                    NotificationModel.usuario_id,
+                    NotificationModel.leida,
+                ).where(NotificationModel.aviso_id.in_(pedidos))
+            )
+            return [
+                EntregaDelAviso(aviso_id=aviso_id, usuario_id=usuario_id, leida=leida)
+                for aviso_id, usuario_id, leida in filas
+            ]
+
+
+class SqlAlchemyAvisoRepository:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self.session_factory = session_factory
+
+    @staticmethod
+    def _to_domain(model: AvisoModel) -> Aviso:
+        return Aviso(
+            id=model.id,
+            titulo=model.titulo,
+            mensaje=model.mensaje,
+            creado_por=model.creado_por,
+            destino_ruta=model.destino_ruta,
+            vigente_hasta=model.vigente_hasta,
+            creado_en=model.creado_en,
+            adjuntos=tuple(
+                AvisoAdjunto(
+                    id=adjunto.id,
+                    nombre=adjunto.nombre,
+                    ruta_o_url=adjunto.ruta_o_url,
+                    mime_type=adjunto.mime_type,
+                    tamanio_bytes=adjunto.tamanio_bytes,
+                )
+                for adjunto in model.adjuntos
+            ),
+        )
+
+    async def add(self, aviso: Aviso) -> Aviso:
+        async with session_scope(self.session_factory) as session:
+            model = AvisoModel(
+                titulo=aviso.titulo,
+                mensaje=aviso.mensaje,
+                destino_ruta=aviso.destino_ruta,
+                vigente_hasta=aviso.vigente_hasta,
+                creado_por=aviso.creado_por,
+                creado_en=aviso.creado_en or datetime.now(UTC),
+                adjuntos=[
+                    AvisoAdjuntoModel(
+                        nombre=adjunto.nombre,
+                        ruta_o_url=adjunto.ruta_o_url,
+                        mime_type=adjunto.mime_type,
+                        tamanio_bytes=adjunto.tamanio_bytes,
+                    )
+                    for adjunto in aviso.adjuntos
+                ],
+            )
+            session.add(model)
+            await session.flush()
+            await commit_or_flush(session)
+            return self._to_domain(model)
+
+    async def list(self) -> list[Aviso]:
+        async with session_scope(self.session_factory) as session:
+            models = await session.scalars(select(AvisoModel).order_by(AvisoModel.id.desc()))
+            return [self._to_domain(model) for model in models]
+
+    async def get_many(self, aviso_ids: Collection[int]) -> dict[int, Aviso]:
+        pedidos = sorted(set(aviso_ids))
+        if not pedidos:
+            return {}
+        async with session_scope(self.session_factory) as session:
+            models = await session.scalars(select(AvisoModel).where(AvisoModel.id.in_(pedidos)))
+            return {model.id: self._to_domain(model) for model in models}

@@ -1,18 +1,24 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
-from app.shared.domain.calendar import el_dia_en_letras
+from app.shared.domain.calendar import el_dia_en_letras, institutional_today
 from app.shared.domain.captured_text import recortado_sin_invisibles
 from app.shared.domain.exceptions import ValidationError
+
+from ..domain.entities import Aviso, AvisoAdjunto
 
 AVISO_DE_LA_APERTURA = "poa_apertura_del_area"
 AVISO_DE_PLANEACION = "aviso_de_planeacion"
 
 LARGO_DEL_TITULO = 200
 LARGO_DEL_MENSAJE = 2000
+LARGO_DEL_DESTINO = 200
+LARGO_DEL_NOMBRE_DEL_ADJUNTO = 300
+CUANTOS_ADJUNTOS_CABEN = 10
 
 TITULO_DE_LA_APERTURA = "Habilitación del periodo de captura"
 
@@ -35,6 +41,32 @@ NO_HAY_NINGUNA_AREA_EN_SERVICIO_QUE_AVISAR = (
     "No hay ninguna área en servicio a la que dirigir el aviso. Revise el catálogo de áreas antes "
     "de continuar."
 )
+
+EL_DESTINO_DEL_AVISO_ES_UNA_PANTALLA_DEL_SISTEMA = (
+    "El destino del aviso es una pantalla de esta plataforma y se escribe como una ruta que "
+    "empieza con una sola barra, por ejemplo «/poa-institucional». Un sitio de fuera no se "
+    "admite: el aviso lleva el sello de la Dirección de Planeación."
+)
+
+LA_VIGENCIA_DEL_AVISO_YA_PASO = (
+    "La vigencia del aviso ya pasó. Escriba el último día en que el aviso sigue siendo "
+    "pendiente para las áreas, o déjela en blanco si el aviso no vence."
+)
+
+ESCRIBA_EL_NOMBRE_DEL_ADJUNTO = (
+    "Escriba el nombre con el que cada documento adjunto se le muestra a las áreas."
+)
+
+EL_MISMO_ADJUNTO_DOS_VECES = (
+    "El mismo documento está adjunto dos veces al aviso. Quite la repetición antes de continuar."
+)
+
+
+def el_adjunto_del_aviso_no_esta_cargado(ruta: str) -> str:
+    return (
+        f"El documento «{ruta}» no está cargado en el sistema o no es de los tipos que el "
+        "sistema admite. Cárguelo de nuevo y vuelva a adjuntarlo."
+    )
 
 
 def el_area_del_aviso_esta_retirada(area_name: str) -> str:
@@ -65,11 +97,34 @@ class AvisoEntregado:
     personas: int
 
 
+@dataclass(frozen=True)
+class AdjuntoPedido:
+    nombre: str
+    ruta: str
+
+
+@dataclass(frozen=True)
+class AvisoRedactado:
+    aviso_id: int
+    entregados: list[AvisoEntregado]
+
+
 class AreaNotices:
-    def __init__(self, recipients, notification_service, areas) -> None:
+    def __init__(
+        self,
+        recipients,
+        notification_service,
+        areas,
+        avisos,
+        archivos,
+        today: Callable[[], date] = institutional_today,
+    ) -> None:
         self.recipients = recipients
         self.notification_service = notification_service
         self.areas = areas
+        self.avisos = avisos
+        self.archivos = archivos
+        self.today = today
 
     async def el_poa_del_area_se_abrio(
         self, *, poa_area_id: int, area_id: int, desde: date, hasta: date, numero: int
@@ -89,17 +144,40 @@ class AreaNotices:
         )
 
     async def planeacion_redacto(
-        self, area_ids: list[int] | None, *, titulo: str, mensaje: str
-    ) -> list[AvisoEntregado]:
+        self,
+        area_ids: list[int] | None,
+        *,
+        titulo: str,
+        mensaje: str,
+        creado_por: int,
+        destino_ruta: str | None = None,
+        vigente_hasta: date | None = None,
+        adjuntos: list[AdjuntoPedido] | None = None,
+    ) -> AvisoRedactado:
         escrito = recortado_sin_invisibles(titulo)
         dicho = recortado_sin_invisibles(mensaje)
         if not escrito:
             raise ValidationError(ESCRIBA_EL_TITULO_DEL_AVISO)
         if not dicho:
             raise ValidationError(ESCRIBA_EL_MENSAJE_DEL_AVISO)
+        destino = self._el_destino_comprobado(destino_ruta)
+        if vigente_hasta is not None and vigente_hasta < self.today():
+            raise ValidationError(LA_VIGENCIA_DEL_AVISO_YA_PASO)
+        descritos = await self._los_adjuntos_comprobados(adjuntos or [])
+        elegidas = await self._las_areas_elegidas(area_ids)
+        aviso = await self.avisos.add(
+            Aviso(
+                titulo=escrito,
+                mensaje=dicho,
+                creado_por=creado_por,
+                destino_ruta=destino,
+                vigente_hasta=vigente_hasta,
+                adjuntos=descritos,
+            )
+        )
         redaccion = uuid4()
         entregados = []
-        for area in await self._las_areas_elegidas(area_ids):
+        for area in elegidas:
             entregados.append(
                 await self._repartir(
                     area.id,
@@ -110,9 +188,47 @@ class AreaNotices:
                     entidad=LA_ENTIDAD_DEL_AREA,
                     entidad_id=area.id,
                     clave_del_evento=f"{AVISO_DE_PLANEACION}:{redaccion}:{area.id}",
+                    aviso_id=aviso.id,
                 )
             )
-        return entregados
+        return AvisoRedactado(aviso_id=aviso.id, entregados=entregados)
+
+    @staticmethod
+    def _el_destino_comprobado(destino_ruta: str | None) -> str | None:
+        if destino_ruta is None:
+            return None
+        destino = recortado_sin_invisibles(destino_ruta)
+        if not destino:
+            return None
+        if not destino.startswith("/") or destino.startswith("//"):
+            raise ValidationError(EL_DESTINO_DEL_AVISO_ES_UNA_PANTALLA_DEL_SISTEMA)
+        return destino
+
+    async def _los_adjuntos_comprobados(
+        self, adjuntos: list[AdjuntoPedido]
+    ) -> tuple[AvisoAdjunto, ...]:
+        descritos = []
+        vistas: set[str] = set()
+        for pedido in adjuntos:
+            nombre = recortado_sin_invisibles(pedido.nombre)
+            if not nombre:
+                raise ValidationError(ESCRIBA_EL_NOMBRE_DEL_ADJUNTO)
+            ruta = recortado_sin_invisibles(pedido.ruta)
+            if ruta in vistas:
+                raise ValidationError(EL_MISMO_ADJUNTO_DOS_VECES)
+            cargado = await self.archivos.describe(ruta)
+            if cargado is None:
+                raise ValidationError(el_adjunto_del_aviso_no_esta_cargado(ruta))
+            vistas.add(ruta)
+            descritos.append(
+                AvisoAdjunto(
+                    nombre=nombre,
+                    ruta_o_url=cargado.ruta,
+                    mime_type=cargado.mime_type,
+                    tamanio_bytes=cargado.tamanio_bytes,
+                )
+            )
+        return tuple(descritos)
 
     async def _las_areas_elegidas(self, area_ids: list[int] | None) -> list:
         if area_ids is None:
@@ -144,6 +260,7 @@ class AreaNotices:
         entidad: str,
         entidad_id: int,
         clave_del_evento: str,
+        aviso_id: int | None = None,
     ) -> AvisoEntregado:
         personas = sorted(await self.recipients.for_area_notice(area_id))
         for persona in personas:
@@ -155,5 +272,6 @@ class AreaNotices:
                 entity=entidad,
                 entity_id=entidad_id,
                 source_event_id=uuid5(NAMESPACE_URL, f"{clave_del_evento}:{persona}"),
+                aviso_id=aviso_id,
             )
         return AvisoEntregado(area_id=area_id, area=area_name, personas=len(personas))
