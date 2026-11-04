@@ -50,6 +50,16 @@ def can_capture_activity(actor: ActorContext, executing_area_id: int | None) -> 
     )
 
 
+ROLES_QUE_ENCABEZAN_EL_AREA_SIN_CAPTURARLA = ("responsable_area",)
+
+
+def can_be_told_the_area_poa_opened(actor: ActorContext, area_id: int) -> bool:
+    return actor.area_id == area_id and (
+        can_capture_activity(actor, area_id)
+        or actor.has_any_role(*ROLES_QUE_ENCABEZAN_EL_AREA_SIN_CAPTURARLA)
+    )
+
+
 def can_report_progress(actor: ActorContext, executing_area_id: int | None) -> bool:
     """Quién puede escribir el informe: lo alcanzado, el progreso, el alcance y
     la justificación de la desviación.

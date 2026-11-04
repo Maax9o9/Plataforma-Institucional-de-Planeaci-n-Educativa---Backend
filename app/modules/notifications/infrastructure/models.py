@@ -20,6 +20,7 @@ class NotificationModel(Base):
     correo_reservado_hasta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     entidad: Mapped[str | None] = mapped_column(String(60))
     entidad_id: Mapped[int | None] = mapped_column(Integer)
+    titulo: Mapped[str | None] = mapped_column(String(200))
     mensaje: Mapped[str] = mapped_column(Text, nullable=False)
     leida: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     enviada_por_correo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

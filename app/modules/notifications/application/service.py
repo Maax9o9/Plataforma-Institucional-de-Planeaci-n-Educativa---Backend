@@ -82,6 +82,7 @@ class NotificationService:
         entity: str | None,
         entity_id: int | None,
         source_event_id,
+        title: str | None = None,
     ) -> Notification:
         """Persiste y entrega una notificacion sin duplicar correos idempotentes."""
 
@@ -89,6 +90,7 @@ class NotificationService:
             Notification(
                 user_id=user_id,
                 notification_type=notification_type,
+                title=title,
                 message=message,
                 entity=entity,
                 entity_id=entity_id,

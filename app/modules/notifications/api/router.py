@@ -5,34 +5,26 @@ from fastapi import APIRouter, Depends, Request
 from app.core.security import get_current_user, require_roles
 
 from ..application.reminders import GenerateReminders
+from .schemas import NotificacionRespuesta
 
 router = APIRouter(prefix="/notificaciones", tags=["Notificaciones"])
 
 
-def _response(item):
-    return {
-        "id": item.id,
-        "tipo": item.notification_type,
-        "mensaje": item.message,
-        "entidad": item.entity,
-        "entidad_id": item.entity_id,
-        "leida": item.read,
-        "enviada_por_correo": item.sent_by_email,
-        "fecha": item.created_at,
-    }
-
-
-@router.get("", summary="Consultar notificaciones del usuario")
+@router.get(
+    "",
+    response_model=list[NotificacionRespuesta],
+    summary="Consultar notificaciones del usuario",
+)
 async def list_notifications(
     request: Request,
     no_leidas: bool = False,
     current_user=Depends(get_current_user),
-):
+) -> list[NotificacionRespuesta]:
     items = await request.app.state.notification_repository.list_for_user(
         current_user.id,
         unread_only=no_leidas,
     )
-    return [_response(item) for item in items]
+    return [NotificacionRespuesta.from_domain(item) for item in items]
 
 
 @router.post("/{notification_id}/leer", status_code=204, summary="Marcar notificacion como leida")

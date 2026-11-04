@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date
@@ -31,6 +32,8 @@ from ...domain.entities import (
 )
 from ...domain.ports.area_leadership import AreaLeadership
 from ...domain.ports.repositories import PoaAreaRepository
+
+logger = logging.getLogger(__name__)
 
 
 class LoQueNoSeMando(Enum):
@@ -91,6 +94,27 @@ class OpenedPoa:
     already_open: list[PoaAreaWithWindow] = field(default_factory=list)
 
 
+NO_SE_PUDO_AVISAR_DE_LA_APERTURA = (
+    "El Programa Operativo Anual del area quedo abierto, pero no se pudo entregar el aviso a las "
+    "personas del area."
+)
+
+
+async def avisar_sin_tumbar_la_apertura(avisos, abierto: PoaAreaWithWindow) -> None:
+    if avisos is None or abierto.window is None:
+        return
+    try:
+        await avisos.el_poa_del_area_se_abrio(
+            poa_area_id=abierto.poa_area.id,
+            area_id=abierto.poa_area.area_id,
+            desde=abierto.window.opens_on,
+            hasta=abierto.window.closes_on,
+            numero=abierto.window.number,
+        )
+    except Exception:
+        logger.exception(NO_SE_PUDO_AVISAR_DE_LA_APERTURA)
+
+
 @dataclass(kw_only=True)
 class SaveActivityCommand:
     poa_area_id: int
@@ -117,10 +141,12 @@ class OpenInstitutionalPoa:
         poa_areas: PoaAreaRepository,
         exercises: PoaRepository,
         areas: AreaRepository,
+        avisos=None,
     ) -> None:
         self.poa_areas = poa_areas
         self.exercises = exercises
         self.areas = areas
+        self.avisos = avisos
 
     async def execute(self, cmd: OpenInstitutionalPoaCommand) -> OpenedPoa:
         self._ventana_de(cmd, 1).validate()
@@ -132,6 +158,8 @@ class OpenInstitutionalPoa:
             if abierto is None:
                 continue
             (reparto.opened if abierto[1] else reparto.already_open).append(abierto[0])
+        for abierto_ahora in reparto.opened:
+            await avisar_sin_tumbar_la_apertura(self.avisos, abierto_ahora)
         return reparto
 
     async def _abrir_una(
@@ -189,9 +217,10 @@ class OpenInstitutionalPoa:
 
 
 class ReopenPoaArea:
-    def __init__(self, poa_areas: PoaAreaRepository, areas: AreaRepository) -> None:
+    def __init__(self, poa_areas: PoaAreaRepository, areas: AreaRepository, avisos=None) -> None:
         self.poa_areas = poa_areas
         self.areas = areas
+        self.avisos = avisos
 
     async def execute(self, cmd: ReopenPoaAreaCommand) -> PoaAreaWithWindow:
         poa_area = await self.poa_areas.find_poa_area(cmd.exercise_id, cmd.area_id)
@@ -212,7 +241,9 @@ class ReopenPoaArea:
         ventana.validate()
         reabierto = replace(poa_area, status=PoaAreaStatus.BORRADOR)
         await self.poa_areas.reopen_poa_area(reabierto, ventana)
-        return PoaAreaWithWindow(poa_area=reabierto, window=ventana)
+        con_su_periodo = PoaAreaWithWindow(poa_area=reabierto, window=ventana)
+        await avisar_sin_tumbar_la_apertura(self.avisos, con_su_periodo)
+        return con_su_periodo
 
 
 async def _exigir_que_el_poa_siga_abierto(

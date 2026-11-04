@@ -14,6 +14,7 @@ class Notification(BaseEntity):
     user_id: int
     notification_type: str
     message: str
+    title: str | None = None
     entity: str | None = None
     entity_id: int | None = None
     read: bool = False

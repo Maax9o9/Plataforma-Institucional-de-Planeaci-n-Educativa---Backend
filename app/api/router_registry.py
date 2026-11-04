@@ -20,6 +20,7 @@ from app.modules.institutional_catalogs.api.router import router as catalogs_rou
 from app.modules.institutional_catalogs.api.strategic_tree_router import (
     router as strategic_tree_router,
 )
+from app.modules.notifications.api.avisos_router import router as avisos_router
 from app.modules.notifications.api.router import router as notifications_router
 from app.modules.periods.api.router import router as periods_router
 from app.modules.poa_institucional.api.router import router as poa_del_area_router
@@ -40,6 +41,7 @@ CORE_ROUTERS = (
     poa_reports_router,
     poa_del_area_router,
     notifications_router,
+    avisos_router,
     email_templates_router,
     audit_router,
     indicators_catalog_router,

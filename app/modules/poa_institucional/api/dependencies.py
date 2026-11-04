@@ -15,11 +15,16 @@ def get_open_institutional_poa(request: Request) -> OpenInstitutionalPoa:
         request.app.state.poa_area_repository,
         request.app.state.poa_repository,
         request.app.state.area_repository,
+        request.app.state.area_notices,
     )
 
 
 def get_reopen_poa_area(request: Request) -> ReopenPoaArea:
-    return ReopenPoaArea(request.app.state.poa_area_repository, request.app.state.area_repository)
+    return ReopenPoaArea(
+        request.app.state.poa_area_repository,
+        request.app.state.area_repository,
+        request.app.state.area_notices,
+    )
 
 
 def get_save_poa_activity(request: Request) -> SavePoaActivity:
