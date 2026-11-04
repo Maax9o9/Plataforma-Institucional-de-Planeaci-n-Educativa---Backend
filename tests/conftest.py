@@ -7,6 +7,7 @@ from uuid import uuid4
 import asyncpg
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 from sqlalchemy.engine import URL, make_url
 
 from app.core.config import Settings
@@ -74,6 +75,78 @@ async def _vaciar(url: URL) -> None:
 OBJETIVOS_Y_ESTRATEGIAS_DEL_POA_SEMBRADO = (6, 24)
 
 
+# El pozo de años de ejercicio. `poa_ejercicios.anio` es unico en todo el
+# sistema y el dominio solo admite 2000..2200, o sea **201 anios para toda una
+# sesion de pytest**. Medido en 4a1aa20 con la suite completa: 196 tomados y 5
+# libres (2195, 2196, 2197, 2198 y 2200). Es decir, a seis pruebas de la pared;
+# y el fallo no se lee como «se acabaron los anios» sino como una prueba de
+# reportes que nadie toco.
+#
+# Lo que lo arregla es devolver lo prestado. De los 196, 160 terminaban la
+# sesion **sin nada colgando**: ejercicios que su prueba creo, uso y no volvio a
+# mirar. Los otros 36 sostienen cedulas. Asi que al terminar cada prueba de la
+# variante de PostgreSQL se borran los ejercicios prestados que no sostienen
+# nada, y los que si sostienen algo se quedan donde estan: borrarlos seria el
+# arnes reimplementando el borrado en cascada de una cedula, y de paso el
+# defecto de tocar datos de los que otra prueba afirma algo.
+#
+# Las tablas hijas **no van escritas aqui**: se preguntan al catalogo de
+# PostgreSQL en cada vuelta. Una llave foranea nueva hacia `poa_ejercicios`
+# -hoy son `poa_procesos`, `poa_cedulas` y `poa_inst_areas`- entra sola en la
+# guarda; escrita a mano, la siguiente migracion la dejaria fuera y el DELETE
+# reventaria con una violacion de llave foranea en el desmontaje de una prueba
+# cualquiera.
+_LAS_HIJAS_DE_LOS_EJERCICIOS = """
+SELECT c.conname,
+       hija.attname  AS columna_hija,
+       padre.attname AS columna_del_ejercicio,
+       c.conrelid::regclass::text AS tabla_hija
+FROM pg_constraint c
+JOIN LATERAL unnest(c.conkey, c.confkey) AS par(hijo, padre) ON true
+JOIN pg_attribute hija  ON hija.attrelid  = c.conrelid  AND hija.attnum  = par.hijo
+JOIN pg_attribute padre ON padre.attrelid = c.confrelid AND padre.attnum = par.padre
+WHERE c.contype = 'f' AND c.confrelid = 'poa_ejercicios'::regclass
+"""
+
+
+async def _guarda_de_lo_que_sostiene_algo(conexion) -> str:
+    por_restriccion: dict[str, list[tuple[str, str, str]]] = {}
+    for fila in await conexion.execute(text(_LAS_HIJAS_DE_LOS_EJERCICIOS)):
+        por_restriccion.setdefault(fila.conname, []).append(
+            (fila.tabla_hija, fila.columna_hija, fila.columna_del_ejercicio)
+        )
+    guardas = []
+    for columnas in por_restriccion.values():
+        tabla = columnas[0][0]
+        iguales = " AND ".join(
+            f"hija.{hija} = e.{del_ejercicio}" for _, hija, del_ejercicio in columnas
+        )
+        guardas.append(f"NOT EXISTS (SELECT 1 FROM {tabla} hija WHERE {iguales})")
+    return " AND ".join(guardas) if guardas else "true"
+
+
+async def devolver_los_anios_al_pozo(motor, anios: set[int]) -> set[int]:
+    """Borra los ejercicios de `anios` que no sostienen nada, y devuelve los
+    años que quedaron libres.
+
+    Se le pasa el motor de la aplicación de la prueba y no una conexión propia
+    porque ese motor ya está abierto: una conexión nueva por prueba son mil
+    conexiones más en una corrida.
+    """
+    if not anios:
+        return set()
+    async with motor.begin() as conexion:
+        guarda = await _guarda_de_lo_que_sostiene_algo(conexion)
+        devueltos = await conexion.execute(
+            text(
+                "DELETE FROM poa_ejercicios e WHERE e.anio = ANY(:anios) "
+                f"AND {guarda} RETURNING e.anio"
+            ),
+            {"anios": sorted(anios)},
+        )
+        return {fila.anio for fila in devueltos}
+
+
 def _la_copia_de_esta_sesion() -> URL:
     plantilla = make_url(PLANTILLA_DE_LA_BASE_DE_PRUEBAS)
     return plantilla.set(database=f"{plantilla.database}_{os.getpid()}")
@@ -115,6 +188,55 @@ def _el_poa_sembrado_sigue_siendo_el_sembrado_al_terminar_la_suite():
     )
 
 
+#: Cuántos años del pozo tienen que quedar libres al terminar la suite completa.
+#: Medido el 4 de noviembre de 2026: sin devolver nada quedaban **5** de 201, y
+#: devolviendo lo que no sostiene nada quedan **157** -44 tomados: 36 ejercicios
+#: con cédula, siete años fijos y el 2200 de la prueba del mensaje-.
+#:
+#: El umbral está en 75 y no más arriba porque la condición que esto defiende es
+#: que la suite pueda crecer en cincuenta pruebas con ejercicio: medido, esas
+#: cincuenta -la mitad con cédula- dejan 132 libres, así que avisa mucho antes de
+#: la pared y no le estorba al crecimiento previsto.
+#:
+#: Si salta, lo que creció no es el techo: es lo que la suite deja **colgando**
+#: de un ejercicio, porque lo que no sostiene nada se devuelve solo.
+ANIOS_DE_EJERCICIO_QUE_TIENEN_QUE_QUEDAR_LIBRES = 75
+
+
+async def _anios_de_ejercicio_tomados(url: URL) -> int:
+    connection = await asyncpg.connect(_dsn(url))
+    try:
+        return await connection.fetchval("SELECT count(*) FROM poa_ejercicios")
+    finally:
+        await connection.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _al_pozo_de_anios_de_ejercicio_le_sobra_sitio_al_terminar_la_suite():
+    """La canaria del pozo: avisa mientras todavía hay salida.
+
+    `anio_libre` dice la verdad cuando el pozo ya está seco, y eso es tarde:
+    rompe la prueba que pidió el año -medido, tres de `test_reportes_poa.py`- y
+    no la que gastó el pozo. Esto mira el saldo al terminar la sesión, que es el
+    único sitio donde se ve: por archivo nunca se agota.
+    """
+    yield
+    if not PLANTILLA_DE_LA_BASE_DE_PRUEBAS:
+        return
+    import helpers
+
+    del_contrato = helpers.ULTIMO_ANIO_DEL_CONTRATO - helpers.PRIMER_ANIO_DEL_CONTRATO + 1
+    tomados = asyncio.run(_anios_de_ejercicio_tomados(_la_copia_de_esta_sesion()))
+    libres = del_contrato - tomados
+    assert libres >= ANIOS_DE_EJERCICIO_QUE_TIENEN_QUE_QUEDAR_LIBRES, (
+        f"Al pozo de años de ejercicio le quedan {libres} libres de {del_contrato}, y el "
+        f"mínimo es {ANIOS_DE_EJERCICIO_QUE_TIENEN_QUE_QUEDAR_LIBRES}. Cuando lleguen a "
+        "cero no fallará la prueba que gastó el pozo sino la siguiente que pida un año. "
+        "Lo que se queda tomado es lo que sostiene algo -una cédula- o lo que pide un "
+        f"año fijo; el {helpers.ULTIMO_ANIO_DEL_CONTRATO} es del dominio y no se ensancha."
+    )
+
+
 def pytest_sessionstart(session) -> None:
     if not PLANTILLA_DE_LA_BASE_DE_PRUEBAS:
         return
@@ -139,8 +261,30 @@ def pytest_sessionfinish(session, exitstatus) -> None:
     asyncio.run(_en_el_servidor(copia, f'DROP DATABASE IF EXISTS "{copia.database}" WITH (FORCE)'))
 
 
+@pytest.fixture(autouse=True)
+def _el_pozo_de_anios_empieza_sin_prestamos():
+    """Ninguna prueba hereda los préstamos de la anterior.
+
+    Importa `helpers` aquí dentro y no arriba porque `pytest_register_assert_rewrite`
+    sólo reescribe un módulo que todavía no se ha importado: importarlo en la
+    cabecera de este archivo deja a `helpers` sin reescritura de aserciones.
+
+    El vaciado va antes **y** después porque la variante de memoria también pide
+    años -y los pide a su propio almacén, que nace vacío en cada prueba, así que
+    siempre le toca el 2000-. Si esos préstamos sobrevivieran a la prueba, la
+    siguiente de PostgreSQL intentaría devolver al pozo un 2000 que no es suyo.
+    """
+    import helpers
+
+    helpers.ANIOS_PRESTADOS.clear()
+    yield
+    helpers.ANIOS_PRESTADOS.clear()
+
+
 @pytest.fixture(params=["memory", "postgresql"])
 async def backend_client(request, tmp_path):
+    import helpers
+
     database_url = None
     if request.param == "postgresql":
         database_url = os.getenv("TEST_DATABASE_URL")
@@ -165,6 +309,9 @@ async def backend_client(request, tmp_path):
     finally:
         await application.state.notification_service.close()
         if application.state.db_engine is not None:
+            await devolver_los_anios_al_pozo(
+                application.state.db_engine, set(helpers.ANIOS_PRESTADOS)
+            )
             await application.state.db_engine.dispose()
 
 

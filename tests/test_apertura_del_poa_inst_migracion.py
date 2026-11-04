@@ -15,6 +15,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 from app.shared.infrastructure.db.constraints import viola_la_restriccion
+from helpers import (
+    PRIMER_ANIO_DEL_CONTRATO,
+    SE_ACABARON_LOS_ANIOS,
+    ULTIMO_ANIO_DEL_CONTRATO,
+)
 
 RAIZ = Path(__file__).resolve().parents[1]
 REVISION = "0041_apertura_del_poa_inst"
@@ -106,16 +111,23 @@ def _columna_sin_valor(error: IntegrityError) -> str | None:
     return getattr(causa, "column_name", None)
 
 
-async def _anio_libre(conexion: AsyncConnection, desde: int = 2000) -> int:
-    return (
+async def _anio_libre(conexion: AsyncConnection, desde: int = PRIMER_ANIO_DEL_CONTRATO) -> int:
+    libre = (
         await conexion.execute(
             text(
-                "SELECT min(anio) FROM generate_series(:desde, 2200) AS anio "
-                "WHERE anio NOT IN (SELECT anio FROM poa_ejercicios)"
+                f"SELECT min(anio) FROM generate_series(:desde, {ULTIMO_ANIO_DEL_CONTRATO}) "
+                "AS anio WHERE anio NOT IN (SELECT anio FROM poa_ejercicios)"
             ),
             {"desde": desde},
         )
     ).scalar_one()
+    if libre is None:
+        pytest.fail(
+            f"{SE_ACABARON_LOS_ANIOS}: no queda ninguno libre entre {desde} y "
+            f"{ULTIMO_ANIO_DEL_CONTRATO}. Estas pruebas revierten su transacción, así que "
+            "el pozo lo gastó otro archivo."
+        )
+    return libre
 
 
 async def _ejercicio(conexion: AsyncConnection, anio: int | None = None) -> tuple[int, int]:

@@ -12,6 +12,8 @@ from uuid import uuid4
 
 import pytest
 
+from app.shared.domain.calendar import institutional_today
+
 API = "/api/v1"
 
 #: Lo que no puede ser el id de un POA, y la validación que lo dice. Las razones
@@ -23,6 +25,23 @@ IDS_QUE_NO_PUEDEN_SER_DE_UN_POA = [
     pytest.param(-(2**31) - 1, "greater_than_equal", id="menor_que_el_entero_de_la_base"),
     pytest.param(0, "greater_than_equal", id="cero"),
 ]
+
+#: El suelo del pozo de años de ejercicio, el mismo del contrato del dominio.
+PRIMER_ANIO_DEL_CONTRATO = 2000
+
+#: El techo del pozo de años de ejercicio, que es **del dominio y no del arnés**:
+#: `app/modules/periods/domain/entities.py` y cuatro esquemas de tres módulos
+#: validan `2000..2200` para rechazar un año escrito con un dedo de más.
+#: Ensancharlo para que quepan más pruebas sería resolver por el lado
+#: equivocado: lo que se ensancha es el reciclaje, no el techo.
+ULTIMO_ANIO_DEL_CONTRATO = 2200
+
+#: Los años que `anio_libre` prestó durante la prueba en curso. `backend_client`
+#: lo vacía al empezar cada prueba y, en la variante de PostgreSQL, al terminar
+#: devuelve al pozo los que no sostienen nada. Sin esto el pozo se agotaba
+#: *dentro* de una sola corrida: medido el 4 de noviembre de 2026, la suite
+#: completa dejaba 196 de los 201 años tomados y quedaban cinco libres.
+ANIOS_PRESTADOS: set[int] = set()
 
 #: Un id que ningún POA tiene. La base de pruebas es persistente y el id es
 #: serial: con uno chico, tarde o temprano habría un POA que lo use. Vive aquí
@@ -51,28 +70,72 @@ async def poa_inicial_id(client, headers) -> int:
     return inicial
 
 
-async def anio_libre(client, headers, *, desde: int = 2000) -> int:
+#: Lo que hay que leer cuando el pozo se agota. Va en el mensaje y no sólo aquí
+#: porque quien lo lea estará mirando la salida de pytest, no este archivo. Y
+#: dice la verdad -«se acabaron los años de ejercicio»- en vez de dejar que el
+#: fallo aparezca como un reporte roto: medido, agotar el pozo rompe tres
+#: pruebas de `test_reportes_poa.py` que nadie tocó.
+SE_ACABARON_LOS_ANIOS = "Se acabaron los años de ejercicio"
+
+_QUE_HACER_CUANDO_SE_ACABAN = (
+    "El pozo se devuelve al terminar cada prueba -`backend_client`, en "
+    "tests/conftest.py, borra los ejercicios que no sostienen nada-, así que lo que "
+    "sigue tomado es lo que tiene algo colgando (una cédula) o lo que pide un año "
+    f"fijo. Mira eso, no el techo: el {ULTIMO_ANIO_DEL_CONTRATO} es del dominio."
+)
+
+
+def primer_anio_por_venir() -> int:
+    """El primer año de ejercicio que todavía no ha empezado.
+
+    Es el suelo por omisión de `anio_libre`, y no el 2000, por una razón medida:
+    la estructura de una cédula se cierra al terminar su primer cuatrimestre
+    (`_ensure_structure_editable`), así que **una cédula sólo se puede formular
+    contra un ejercicio por venir**. Mientras el pozo se gastaba de abajo
+    arriba, las pruebas que formulan cédulas recibían años ya pasados al
+    principio de la corrida y años futuros al final: funcionaban porque el pozo
+    estaba casi lleno, o sea por la posición del archivo en el alfabeto. Al
+    devolver los años al pozo, `anio_libre` volvía al 2000 y esas pruebas
+    contestaban «No se puede crear una cédula después del primer cuatrimestre».
+
+    Quien necesite de verdad un año ya empezado lo pide con
+    `desde=PRIMER_ANIO_DEL_CONTRATO`, y así queda escrito que lo necesita.
+    """
+    return institutional_today().year + 1
+
+
+async def anio_libre(client, headers, *, desde: int | None = None) -> int:
     """El primer año, a partir de `desde`, que ningún ejercicio ocupa.
+
+    Sin `desde` empieza en `primer_anio_por_venir()`, que es lo que casi toda
+    prueba necesita y lo que hace que el año no dependa de cuántas pruebas
+    corrieron antes.
 
     `poa_ejercicios.anio` es único en todo el sistema y la base de PostgreSQL
     persiste durante la corrida. Se busca desde abajo y no con `max + 1` porque
-    otras pruebas piden años fijos (2036, 2160 a 2165, 2197 y 2198) y los
-    generadores al azar reparten por todo el rango: subir desde el máximo toparía con ellas, o se
-    saldría del 2200 que el contrato admite.
+    otras pruebas piden años fijos (2160 a 2165 en `test_borrado_cedula_poa.py`
+    y 2199 en `test_ep08_revision_poa.py`) y subir desde el máximo toparía con
+    ellas, o se saldría del 2200 que el contrato admite.
 
-    `desde` es para quien además necesita que el año no haya empezado: la
-    estructura de una cédula se cierra al terminar su primer cuatrimestre, así
-    que sólo se puede formular en un ejercicio por venir.
+    Lo que entrega queda anotado en `ANIOS_PRESTADOS`: es un préstamo, no un
+    gasto. Quien lo devuelve es `backend_client`.
     """
+    if desde is None:
+        desde = primer_anio_por_venir()
     listado = await client.get(f"{API}/poa/ejercicios", headers=headers)
     assert listado.status_code == 200, listado.text
     ocupados = {ejercicio["anio"] for ejercicio in listado.json()}
-    libre = next((anio for anio in range(desde, 2201) if anio not in ocupados), None)
+    libre = next(
+        (anio for anio in range(desde, ULTIMO_ANIO_DEL_CONTRATO + 1) if anio not in ocupados),
+        None,
+    )
     if libre is None:
         pytest.fail(
-            f"No queda ningún año libre entre {desde} y 2200: la suite creó {len(ocupados)} "
-            "ejercicios y `poa_ejercicios.anio` es único en todo el sistema."
+            f"{SE_ACABARON_LOS_ANIOS}: no queda ninguno libre entre {desde} y "
+            f"{ULTIMO_ANIO_DEL_CONTRATO}, y hay {len(ocupados)} ejercicios en la base. "
+            f"{_QUE_HACER_CUANDO_SE_ACABAN}"
         )
+    ANIOS_PRESTADOS.add(libre)
     return libre
 
 
