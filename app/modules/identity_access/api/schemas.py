@@ -128,6 +128,24 @@ class UsuarioResponse(BaseModel):
         )
 
 
+class UsuarioInvitadoResponse(UsuarioResponse):
+    """La cuenta creada y si su enlace llego por correo.
+
+    El enlace se emite siempre; el correo puede no salir —el servicio de
+    correo caido, por ejemplo—, y entonces la cuenta existe pero nadie
+    recibio como entrar.
+    """
+
+    correo_enviado: bool
+
+    @classmethod
+    def from_domain(cls, user: User) -> UsuarioInvitadoResponse:
+        return cls(
+            **UsuarioResponse.from_domain(user).model_dump(),
+            correo_enviado=user.invitation_email_sent,
+        )
+
+
 class PaginaUsuariosResponse(BaseModel):
     items: list[UsuarioResponse]
     total: int

@@ -45,6 +45,7 @@ from .schemas import (
     LoginResponse,
     PaginaUsuariosResponse,
     UsuarioCreateRequest,
+    UsuarioInvitadoResponse,
     UsuarioResponse,
     ValidarEnlaceContrasenaRequest,
 )
@@ -193,7 +194,7 @@ async def current_user(user=Depends(get_current_user)) -> UsuarioResponse:
 
 @router.post(
     "/usuarios",
-    response_model=UsuarioResponse,
+    response_model=UsuarioInvitadoResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Registrar usuario y asignar roles",
     description="Solo Planeacion o Administracion del sistema puede crear usuarios.",
@@ -207,7 +208,7 @@ async def create_user(
     body: UsuarioCreateRequest,
     current_user=Depends(require_roles(Role.PLANEACION.value, Role.ADMIN_SISTEMA.value)),
     use_case: InviteUser = Depends(get_invite_user_use_case),
-) -> UsuarioResponse:
+) -> UsuarioInvitadoResponse:
     user = await use_case.execute(
         RegisterUserCommand(
             email=str(body.correo),
@@ -218,7 +219,7 @@ async def create_user(
             actor_id=current_user.id,
         )
     )
-    return UsuarioResponse.from_domain(user)
+    return UsuarioInvitadoResponse.from_domain(user)
 
 
 @router.post(

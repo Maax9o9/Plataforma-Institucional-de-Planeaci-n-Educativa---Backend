@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -11,7 +12,7 @@ from app.modules.institutional_catalogs.domain.entities import Area
 from app.modules.institutional_catalogs.domain.ports.repositories import AreaRepository
 from app.shared.application.event_bus import EventBus
 from app.shared.application.ports.email_composer import EmailComposer
-from app.shared.application.ports.email_sender import EmailSender
+from app.shared.application.ports.email_sender import EmailSender, EmailSendError
 from app.shared.domain.exceptions import (
     AuthenticationError,
     ConflictError,
@@ -28,6 +29,8 @@ from ...domain.ports.refresh_token_repository import RefreshTokenStore
 from ...domain.ports.user_repository import UserRepository
 from ..access_control import ensure_can_manage_user
 from ..dto import RegisterUserCommand
+
+logger = logging.getLogger(__name__)
 
 
 class InviteUser:
@@ -112,7 +115,20 @@ class InviteUser:
             token_hash=token_hash,
             expires_at=expires_at,
         )
-        await self.email_sender.send(user.email.value, email.subject, email.html, email.text)
+        # La invitacion es la cuenta mas su enlace; el correo es la entrega. Si
+        # la entrega falla, la invitacion ya esta hecha: contestar que fallo
+        # deja a quien la creo creyendo que no existe, y al reintentar recibe
+        # que el correo ya esta registrado.
+        try:
+            await self.email_sender.send(
+                user.email.value, email.subject, email.html, email.text
+            )
+        except EmailSendError:
+            logger.warning(
+                "No se pudo entregar la invitacion por correo user_id=%s", user.id
+            )
+            user.invitation_email_sent = False
+
         await self.event_bus.publish(
             UserRegistered(
                 actor_id=command.actor_id,
@@ -124,6 +140,7 @@ class InviteUser:
                     "directory_assignment": assignment is not None,
                     "area_id": user.area_id,
                     "roles": sorted(role.value for role in user.roles),
+                    "correo_enviado": user.invitation_email_sent,
                 },
             )
         )
