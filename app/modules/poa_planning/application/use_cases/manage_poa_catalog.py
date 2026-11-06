@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from app.shared.application.actor import ActorContext
-from app.shared.domain.exceptions import ConflictError
+from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError
 
 from ...domain.cedula_entities import PoaCatalogo
 from ...domain.ports.cedula_repository import PoaFormRepository
@@ -42,3 +44,30 @@ class CrearCatalogoPoa:
         return await self.repository.save_catalog(
             PoaCatalogo.create(name=name, year=year, origin=origin, created_by=actor.id)
         )
+
+
+class DuplicarCatalogoPoa:
+    def __init__(self, repository: PoaFormRepository) -> None:
+        self.repository = repository
+
+    async def execute(
+        self, *, origen_id: int, name: str, year: int, actor: ActorContext
+    ) -> PoaCatalogo:
+        ensure_planning(actor)
+        origen = await self.repository.get_catalog(origen_id)
+        if origen is None:
+            raise ResourceNotFoundError("El POA que se quiere duplicar no existe.")
+        copia = await self.repository.save_catalog(
+            PoaCatalogo.create(name=name, year=year, origin=origen.origin, created_by=actor.id)
+        )
+
+        for objetivo in await self.repository.list_objectives(catalog_id=origen_id):
+            await self.repository.save_objective(replace(objetivo, catalog_id=copia.id))
+        for estrategia in await self.repository.list_strategies(catalog_id=origen_id):
+            await self.repository.save_strategy(replace(estrategia, catalog_id=copia.id))
+        for indicador in await self.repository.list_indicators(catalog_id=origen_id):
+            await self.repository.save_indicator(replace(indicador, catalog_id=copia.id))
+        for actividad in await self.repository.list_activity_catalog(catalog_id=origen_id):
+            await self.repository.save_activity_catalog(replace(actividad, catalog_id=copia.id))
+
+        return copia

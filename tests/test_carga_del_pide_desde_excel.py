@@ -314,11 +314,10 @@ def test_un_libro_sin_la_hoja_acordada_dice_cual_falta():
 
 
 def test_un_archivo_que_no_es_un_libro_no_se_lee():
-    from app.shared.domain.exceptions import UnsupportedMediaTypeError
-
     from app.modules.institutional_catalogs.infrastructure.pide_workbook_reader import (
         filas_del_libro,
     )
+    from app.shared.domain.exceptions import UnsupportedMediaTypeError
 
     with pytest.raises(UnsupportedMediaTypeError):
         filas_del_libro(b"PK esto no es un xlsx")

@@ -525,3 +525,165 @@ async def test_una_clave_que_no_es_de_digitos_no_tira_el_listado_del_catalogo(ba
         listados[parte] = [item["clave"] for item in listado.json()]
 
     assert listados == CLAVES_ORDENADAS
+
+
+async def _llenar(client, headers, catalogo_id: int) -> None:
+    altas = {
+        "objetivos/7": {"clave": "OBJ-7", "denominacion": "Objetivo que se copia"},
+        "estrategias/7.1": {"objetivo_numero": 7, "denominacion": "Estrategia que se copia"},
+        "indicadores/7.1.1": {
+            "objetivo_numero": 7,
+            "nombre": "Indicador que se copia",
+            "formula": "(a / b) * 100",
+            "unidad_medida": "Porcentaje",
+        },
+        "actividades/7.1.1.1": {
+            "estrategia_clave": "7.1",
+            "descripcion": "Actividad que se copia",
+        },
+    }
+    for donde, cuerpo in altas.items():
+        alta = await client.post(
+            f"{CATALOGO}/{donde}",
+            headers=headers,
+            params={"catalogo_id": catalogo_id},
+            json=cuerpo,
+        )
+        assert alta.status_code in (200, 201), alta.text
+
+
+async def _contenido(client, headers, catalogo_id: int) -> dict[str, list]:
+    salida = {}
+    for que in LECTURAS:
+        respuesta = await client.get(
+            f"{CATALOGO}/{que}",
+            headers=headers,
+            params={"catalogo_id": catalogo_id, "solo_activos": "false"},
+        )
+        assert respuesta.status_code == 200, respuesta.text
+        salida[que] = respuesta.json()
+    return salida
+
+
+@pytest.mark.asyncio
+async def test_duplicar_un_poa_se_lleva_los_cuatro_catalogos(backend_client):
+    app, client = backend_client
+    headers = await _planeacion(app, client, uuid4().hex[:8])
+    origen = await crear_poa(client, headers, 2026)
+    await _llenar(client, headers, origen["id"])
+
+    copia = await client.post(
+        f"{API}/poa/catalogos-poa/{origen['id']}/duplicar",
+        headers=headers,
+        json={"nombre": f"POA 2027 {uuid4().hex[:6]}", "anio": 2027},
+    )
+
+    assert copia.status_code == 201, copia.text
+    assert copia.json()["anio"] == 2027
+    copiado = await _contenido(client, headers, copia.json()["id"])
+    assert [uno["clave"] for uno in copiado["objetivos"]] == ["OBJ-7"]
+    assert [uno["clave"] for uno in copiado["estrategias"]] == ["7.1"]
+    assert [uno["clave"] for uno in copiado["indicadores"]] == ["7.1.1"]
+    assert [uno["clave"] for uno in copiado["actividades"]] == ["7.1.1.1"]
+
+
+@pytest.mark.asyncio
+async def test_editar_la_copia_no_toca_el_original(backend_client):
+    app, client = backend_client
+    headers = await _planeacion(app, client, uuid4().hex[:8])
+    origen = await crear_poa(client, headers, 2026)
+    await _llenar(client, headers, origen["id"])
+    copia = await client.post(
+        f"{API}/poa/catalogos-poa/{origen['id']}/duplicar",
+        headers=headers,
+        json={"nombre": f"POA 2027 {uuid4().hex[:6]}", "anio": 2027},
+    )
+    copia_id = copia.json()["id"]
+
+    corregida = await client.patch(
+        f"{CATALOGO}/estrategias/7.1",
+        headers=headers,
+        params={"catalogo_id": copia_id},
+        json={"objetivo_numero": 7, "denominacion": "Estrategia corregida para 2027"},
+    )
+
+    assert corregida.status_code == 200, corregida.text
+    del_origen = await _contenido(client, headers, origen["id"])
+    de_la_copia = await _contenido(client, headers, copia_id)
+    assert del_origen["estrategias"][0]["denominacion"] == "Estrategia que se copia"
+    assert de_la_copia["estrategias"][0]["denominacion"] == "Estrategia corregida para 2027"
+
+
+@pytest.mark.asyncio
+async def test_duplicar_conserva_lo_retirado_como_retirado(backend_client):
+    app, client = backend_client
+    headers = await _planeacion(app, client, uuid4().hex[:8])
+    origen = await crear_poa(client, headers, 2026)
+    await _llenar(client, headers, origen["id"])
+    await client.patch(
+        f"{CATALOGO}/actividades/7.1.1.1",
+        headers=headers,
+        params={"catalogo_id": origen["id"]},
+        json={
+            "estrategia_clave": "7.1",
+            "descripcion": "Actividad que se copia",
+            "activo": False,
+        },
+    )
+
+    copia = await client.post(
+        f"{API}/poa/catalogos-poa/{origen['id']}/duplicar",
+        headers=headers,
+        json={"nombre": f"POA 2027 {uuid4().hex[:6]}", "anio": 2027},
+    )
+
+    copiado = await _contenido(client, headers, copia.json()["id"])
+    assert copiado["actividades"][0]["activo"] is False
+
+
+@pytest.mark.asyncio
+async def test_duplicar_con_un_nombre_ya_ocupado_no_crea_nada(backend_client):
+    app, client = backend_client
+    headers = await _planeacion(app, client, uuid4().hex[:8])
+    origen = await crear_poa(client, headers, 2026)
+    otro = await crear_poa(client, headers, 2025)
+
+    choque = await client.post(
+        f"{API}/poa/catalogos-poa/{origen['id']}/duplicar",
+        headers=headers,
+        json={"nombre": otro["nombre"], "anio": 2027},
+    )
+
+    assert choque.status_code == 409, choque.text
+    listado = await client.get(f"{API}/poa/catalogos-poa", headers=headers)
+    assert len([p for p in listado.json() if p["nombre"] == otro["nombre"]]) == 1
+
+
+@pytest.mark.asyncio
+async def test_duplicar_un_poa_que_no_existe_lo_dice(backend_client):
+    app, client = backend_client
+    headers = await _planeacion(app, client, uuid4().hex[:8])
+
+    respuesta = await client.post(
+        f"{API}/poa/catalogos-poa/{POA_INEXISTENTE}/duplicar",
+        headers=headers,
+        json={"nombre": f"POA huérfano {uuid4().hex[:6]}", "anio": 2027},
+    )
+
+    assert respuesta.status_code == 404, respuesta.text
+
+
+@pytest.mark.asyncio
+async def test_quien_no_es_planeacion_no_duplica_un_poa(backend_client):
+    app, client = backend_client
+    headers = await _planeacion(app, client, uuid4().hex[:8])
+    origen = await crear_poa(client, headers, 2026)
+    ajenas = await _cuenta(app, client, Role.CAPTURISTA_POA, uuid4().hex[:8])
+
+    respuesta = await client.post(
+        f"{API}/poa/catalogos-poa/{origen['id']}/duplicar",
+        headers=ajenas,
+        json={"nombre": f"POA ajeno {uuid4().hex[:6]}", "anio": 2027},
+    )
+
+    assert respuesta.status_code == 403, respuesta.text

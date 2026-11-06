@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from app.modules.poa_planning.application.use_cases.manage_catalog import PoaCatalogAdmin
 from app.modules.poa_planning.application.use_cases.manage_poa_catalog import (
     CrearCatalogoPoa,
+    DuplicarCatalogoPoa,
     ListarCatalogosPoa,
 )
 from app.modules.poa_planning.domain.cedula_entities import (
@@ -404,3 +405,46 @@ async def test_un_creador_inexistente_no_se_hace_pasar_por_nombre_repetido(backe
         )
 
     assert "poa_catalogos_creado_por_fkey" in str(fallo.value)
+
+
+@pytest.mark.asyncio
+async def test_duplicar_un_poa_no_es_de_cualquiera():
+    repositorio = InMemoryPoaFormRepository()
+    origen = await CrearCatalogoPoa(repositorio).execute(
+        name="POA 2026", year=2026, origin=None, actor=PLANEACION
+    )
+
+    with pytest.raises(ForbiddenError):
+        await DuplicarCatalogoPoa(repositorio).execute(
+            origen_id=origen.id, name="POA 2027", year=2027, actor=AREA
+        )
+
+    assert [poa.name for poa in await repositorio.list_catalogs()] == ["POA 2026"]
+
+
+@pytest.mark.asyncio
+async def test_duplicar_exige_un_nombre_para_la_copia():
+    repositorio = InMemoryPoaFormRepository()
+    origen = await CrearCatalogoPoa(repositorio).execute(
+        name="POA 2026", year=2026, origin=None, actor=PLANEACION
+    )
+
+    with pytest.raises(ValidationError):
+        await DuplicarCatalogoPoa(repositorio).execute(
+            origen_id=origen.id, name="   ", year=2027, actor=PLANEACION
+        )
+
+
+@pytest.mark.asyncio
+async def test_la_copia_hereda_el_origen_del_poa_del_que_sale():
+    repositorio = InMemoryPoaFormRepository()
+    origen = await CrearCatalogoPoa(repositorio).execute(
+        name="POA 2026", year=2026, origin="capturado a mano", actor=PLANEACION
+    )
+
+    copia = await DuplicarCatalogoPoa(repositorio).execute(
+        origen_id=origen.id, name="POA 2027", year=2027, actor=PLANEACION
+    )
+
+    assert copia.origin == "capturado a mano"
+    assert copia.year == 2027

@@ -60,6 +60,11 @@ class CatalogoPoaRequest(PoaRequest):
     origen: str | None = None
 
 
+class DuplicarCatalogoPoaRequest(PoaRequest):
+    nombre: str = Field(min_length=1, max_length=120)
+    anio: int = Field(ge=2000, le=2200)
+
+
 class ObjetivoPoaCatalogoRespuesta(BaseModel):
     clave: str
     numero: int

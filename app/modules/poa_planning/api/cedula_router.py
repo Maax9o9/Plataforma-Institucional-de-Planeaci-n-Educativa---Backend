@@ -52,7 +52,11 @@ from ..application.use_cases.manage_cedula import (
     UpdatePoaFormActivity,
     UpdatePoaFormIndicator,
 )
-from ..application.use_cases.manage_poa_catalog import CrearCatalogoPoa, ListarCatalogosPoa
+from ..application.use_cases.manage_poa_catalog import (
+    CrearCatalogoPoa,
+    DuplicarCatalogoPoa,
+    ListarCatalogosPoa,
+)
 from ..application.use_cases.review_follow_up import (
     ENTITY as FOLLOW_UP_ENTITY,
 )
@@ -91,6 +95,7 @@ from .cedula_dependencies import (
     get_delete_form_activity_use_case,
     get_delete_form_indicator_use_case,
     get_delete_form_use_case,
+    get_duplicate_poa_catalog_use_case,
     get_issue_form_use_case,
     get_list_poa_catalogs_use_case,
     get_record_follow_up_use_case,
@@ -118,6 +123,7 @@ from .cedula_schemas import (
     CedulaPoaDetalleRespuesta,
     CedulaPoaRespuesta,
     CrearCedulaPoaRequest,
+    DuplicarCatalogoPoaRequest,
     EmisionCedulaPoaRespuesta,
     EmitirCedulaPoaRequest,
     EstrategiaPoaCatalogoRequest,
@@ -447,6 +453,32 @@ async def create_poa_catalog(
         )
     )
 
+
+@router.post(
+    "/catalogos-poa/{catalogo_id}/duplicar",
+    response_model=CatalogoPoaRespuesta,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_403_FORBIDDEN: {"model": ErrorResponse},
+        status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
+        status.HTTP_409_CONFLICT: {"model": ErrorResponse},
+    },
+    summary="Duplicar un POA con todo su catalogo",
+)
+async def duplicate_poa_catalog(
+    catalogo_id: int,
+    body: DuplicarCatalogoPoaRequest,
+    current_user=Depends(require_roles(*PLANNING_ROLES)),
+    use_case: DuplicarCatalogoPoa = Depends(get_duplicate_poa_catalog_use_case),
+):
+    return _catalogo_poa(
+        await use_case.execute(
+            origen_id=catalogo_id,
+            name=body.nombre,
+            year=body.anio,
+            actor=actor_from_user(current_user),
+        )
+    )
 
 @router.get(
     "/catalogos/objetivos",
