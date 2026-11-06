@@ -1083,6 +1083,143 @@ def test_el_arbol_del_pide_se_publica_aunque_el_ciclo_mensual_duerma():
     } == {
         f"{PIDE}/versiones": {"get"},
         f"{PIDE}/versiones/{{version_id}}/nodos": {"get", "post"},
+        f"{PIDE}/versiones/{{version_id}}/carga": {"post"},
         f"{PIDE}/nodos/{{nodo_id}}": {"patch"},
         f"{PIDE}/nodos/{{nodo_id}}/desactivar": {"post"},
     }
+
+
+def _libro_del_pide(filas, *, hoja_de_objetivos=True, nombre_de_la_hoja=None) -> bytes:
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = nombre_de_la_hoja or "Líneas, acciones e indicadores"
+    hoja.append(["Eje", "Línea estratégica", "Acción", "Indicador"])
+    for fila in filas:
+        hoja.append(list(fila))
+    if hoja_de_objetivos:
+        otra = libro.create_sheet("Ejes y objetivos")
+        otra.append(["Eje", "Objetivo general del eje", "Núm.", "Objetivos específicos"])
+        otra.append(
+            [
+                "Eje 1. Formación integral.",
+                "1.1 Objetivo General\n\nConsolidar la formación.",
+                "1.1.1.",
+                "Fortalecer las tutorías.",
+            ]
+        )
+    cuerpo = BytesIO()
+    libro.save(cuerpo)
+    return cuerpo.getvalue()
+
+
+UNA_FILA_DEL_PIDE = (
+    "Eje 1. Formación integral.",
+    "1.1.1.1. Acompañamiento académico.",
+    "1.1.1.1.1. Actualizar el Programa Institucional de Tutorías.",
+    "Programa actualizado / Programa x 100",
+)
+
+
+async def _cargar(escenario: Escenario, contenido: bytes, **parametros):
+    return await escenario.client.post(
+        f"{PIDE}/versiones/{escenario.version}/carga",
+        headers=escenario.cabeceras,
+        files={
+            "archivo": (
+                "pide.xlsx",
+                contenido,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+        params=parametros,
+    )
+
+
+async def test_el_libro_carga_el_arbol_completo_de_la_version(escenario):
+    respuesta = await _cargar(escenario, _libro_del_pide([UNA_FILA_DEL_PIDE]))
+
+    assert respuesta.status_code == 200, respuesta.text
+    cuerpo = respuesta.json()
+    assert cuerpo["aplicada"] is True
+    assert cuerpo["cuantos"] == 5
+    assert cuerpo["por_nivel"]["accion"] == 1
+    claves = [nodo["clave"] for nodo in await _listar(escenario)]
+    assert claves == ["1", "1.1", "1.1.1", "1.1.1.1", "1.1.1.1.1"]
+
+
+async def test_lo_cargado_conserva_la_jerarquia_y_la_formula_del_indicador(escenario):
+    await _cargar(escenario, _libro_del_pide([UNA_FILA_DEL_PIDE]))
+
+    nodos = {nodo["clave"]: nodo for nodo in await _listar(escenario)}
+    assert nodos["1.1.1.1.1"]["padre_id"] == nodos["1.1.1.1"]["id"]
+    assert nodos["1.1.1.1.1"]["formula_indicador"] == "Programa actualizado / Programa x 100"
+    assert nodos["1.1"]["denominacion"] == "Consolidar la formación."
+
+
+async def test_revisar_el_libro_no_escribe_nada(escenario):
+    respuesta = await _cargar(escenario, _libro_del_pide([UNA_FILA_DEL_PIDE]), solo_revisar=True)
+
+    assert respuesta.status_code == 200, respuesta.text
+    assert respuesta.json()["aplicada"] is False
+    assert respuesta.json()["cuantos"] == 5
+    assert await _listar(escenario) == []
+
+
+async def test_una_version_que_ya_tiene_nodos_rechaza_la_carga(escenario):
+    await _crear(escenario, "YA")
+
+    respuesta = await _cargar(escenario, _libro_del_pide([UNA_FILA_DEL_PIDE]))
+
+    assert respuesta.status_code == 409, respuesta.text
+    assert respuesta.json()["code"] == "STRATEGIC_VERSION_NOT_EMPTY"
+
+
+async def test_revisar_sobre_una_version_con_nodos_avisa_antes_de_intentarlo(escenario):
+    await _crear(escenario, "YA")
+
+    respuesta = await _cargar(escenario, _libro_del_pide([UNA_FILA_DEL_PIDE]), solo_revisar=True)
+
+    assert respuesta.status_code == 200, respuesta.text
+    assert any("ya tiene" in aviso for aviso in respuesta.json()["avisos"])
+
+
+async def test_un_libro_sin_la_hoja_acordada_dice_que_hojas_trae(escenario):
+    contenido = _libro_del_pide([UNA_FILA_DEL_PIDE], nombre_de_la_hoja="Otra cosa")
+
+    respuesta = await _cargar(escenario, contenido)
+
+    assert respuesta.status_code == 422, respuesta.text
+    assert "Otra cosa" in respuesta.json()["message"]
+
+
+async def test_un_archivo_que_no_es_un_libro_se_rechaza_sin_romper(escenario):
+    respuesta = await _cargar(escenario, b"esto no es un xlsx")
+
+    assert respuesta.status_code == 415, respuesta.text
+
+
+async def test_una_fila_mal_formada_detiene_la_carga_y_no_deja_nada_a_medias(escenario):
+    rota = ("Eje 1. Formación integral.", "1.1.1.1. Acompañamiento.", "sin clave numérica", "x/y")
+
+    respuesta = await _cargar(escenario, _libro_del_pide([UNA_FILA_DEL_PIDE, rota]))
+
+    assert respuesta.status_code == 422, respuesta.text
+    assert await _listar(escenario) == []
+
+
+@pytest.mark.parametrize("rol", ROLES_QUE_SOLO_LEEN)
+async def test_quien_no_escribe_el_catalogo_no_puede_cargar_el_libro(backend_client, rol):
+    app, client = backend_client
+    cabeceras = await _cabeceras(app, client, rol)
+
+    respuesta = await client.post(
+        f"{PIDE}/versiones/1/carga",
+        headers=cabeceras,
+        files={"archivo": ("pide.xlsx", _libro_del_pide([UNA_FILA_DEL_PIDE]), "application/xlsx")},
+    )
+
+    assert respuesta.status_code == 403, respuesta.text

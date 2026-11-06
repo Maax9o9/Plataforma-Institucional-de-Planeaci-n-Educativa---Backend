@@ -3,18 +3,25 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Path, Query, Request, status
+from fastapi import APIRouter, Depends, File, Path, Query, Request, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from starlette.concurrency import run_in_threadpool
 
 from app.core.error_responses import los_errores_que_devuelve
 from app.core.security import get_current_user, require_roles
+from app.shared.domain.exceptions import PayloadTooLargeError
 
+from ..application.use_cases.load_strategic_tree import (
+    LoadStrategicTreeFromPlan,
+    VersionConNodosError,
+)
 from ..application.use_cases.manage_strategic_tree import (
     CreateStrategicNode,
     DeactivateStrategicNode,
     UpdateStrategicNode,
 )
 from ..domain.entities import InstrumentVersion
+from ..domain.pide_workbook import WorkbookShapeError, plan_de_carga
 from ..domain.strategic_tree_entities import (
     MAYOR_ENTERO_DE_LA_BASE,
     MENOR_ENTERO_DE_LA_BASE,
@@ -23,6 +30,7 @@ from ..domain.strategic_tree_entities import (
     RepeatedKeyError,
     StrategicNode,
 )
+from ..infrastructure.pide_workbook_reader import filas_del_libro
 
 router = APIRouter(prefix="/pide", tags=["Catalogo del PIDE"])
 
@@ -220,3 +228,62 @@ async def deactivate_node(
         request.app.state.strategic_tree_repository, request.app.state.event_bus
     ).execute(nodo_id, actor_id=usuario.id)
     return NodoRespuesta.from_domain(node)
+
+
+class CargaDelPideRespuesta(BaseModel):
+    version_id: int
+    aplicada: bool
+    cuantos: int
+    por_nivel: dict[str, int]
+    avisos: list[str]
+
+
+@router.post(
+    "/versiones/{version_id}/carga",
+    response_model=CargaDelPideRespuesta,
+    summary="Cargar el arbol de una version desde el libro de Excel acordado",
+    responses=los_errores_que_devuelve(WorkbookShapeError, VersionConNodosError),
+)
+async def load_tree_from_workbook(
+    version_id: IdEnLaRuta,
+    request: Request,
+    archivo: UploadFile = File(...),
+    solo_revisar: bool = Query(default=False),
+    usuario=Depends(requires_write_role),
+) -> CargaDelPideRespuesta:
+    limite = request.app.state.settings.upload_max_bytes
+    contenido = await archivo.read(limite + 1)
+    if len(contenido) > limite:
+        raise PayloadTooLargeError(details={"max_bytes": limite})
+
+    filas_de_acciones, filas_de_objetivos = await run_in_threadpool(filas_del_libro, contenido)
+    plan = await run_in_threadpool(plan_de_carga, filas_de_acciones, filas_de_objetivos)
+
+    repositorio = request.app.state.strategic_tree_repository
+    if solo_revisar:
+        ya_cargados = await repositorio.list_tree(version_id, include_inactive=True)
+        avisos = list(plan.avisos)
+        if ya_cargados:
+            avisos.insert(
+                0,
+                f"La versión ya tiene {len(ya_cargados)} nodos: la carga se rechazará hasta "
+                "que elija una versión vacía.",
+            )
+        return CargaDelPideRespuesta(
+            version_id=version_id,
+            aplicada=False,
+            cuantos=len(plan.nodos),
+            por_nivel=plan.cuantos_por_nivel(),
+            avisos=avisos,
+        )
+
+    resumen = await LoadStrategicTreeFromPlan(repositorio, request.app.state.event_bus).execute(
+        version_id=version_id, plan=plan, actor_id=usuario.id
+    )
+    return CargaDelPideRespuesta(
+        version_id=resumen.version_id,
+        aplicada=True,
+        cuantos=resumen.cuantos,
+        por_nivel=resumen.cuantos_por_nivel,
+        avisos=resumen.avisos,
+    )
