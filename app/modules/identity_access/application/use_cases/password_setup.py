@@ -65,6 +65,7 @@ class InviteUser:
             self.repository,
             command.actor_id,
             assigned_roles=set(assignment.roles) if assignment else roles,
+            area_id=area_id,
         )
         if await self.repository.get_by_email(command.email):
             raise ConflictError("Ya existe un usuario con ese correo electronico.")
@@ -87,6 +88,9 @@ class InviteUser:
             roles = set(assignment.roles)
             area_id = area.id
             area_name = area.name
+        await ensure_can_manage_user(
+            self.repository, command.actor_id, assigned_roles=roles, area_id=area_id
+        )
         user = User.register(
             email=command.email,
             full_name=command.full_name,

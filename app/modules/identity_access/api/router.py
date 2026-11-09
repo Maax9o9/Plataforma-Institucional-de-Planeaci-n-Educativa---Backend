@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.core.schemas import ErrorResponse
 from app.core.security import get_current_user, get_logout_claims, require_roles
-from app.shared.domain.exceptions import AuthenticationError, RateLimitError
+from app.shared.domain.exceptions import AuthenticationError, ForbiddenError, RateLimitError
 
 from ..application.dto import (
     ChangeUserStatusCommand,
@@ -202,7 +202,10 @@ async def current_user(user=Depends(get_current_user)) -> UsuarioResponse:
     response_model=UsuarioInvitadoResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Registrar usuario y asignar roles",
-    description="Solo Planeacion o Administracion del sistema puede crear usuarios.",
+    description=(
+        "Planeacion y Administracion del sistema crean cualquier cuenta. El responsable de "
+        "area da de alta a quien captura o consulta el programa de su propia area."
+    ),
     responses={
         403: {"model": ErrorResponse, "description": "Rol insuficiente."},
         409: {"model": ErrorResponse, "description": "El correo ya esta registrado."},
@@ -211,7 +214,11 @@ async def current_user(user=Depends(get_current_user)) -> UsuarioResponse:
 )
 async def create_user(
     body: UsuarioCreateRequest,
-    current_user=Depends(require_roles(Role.PLANEACION.value, Role.ADMIN_SISTEMA.value)),
+    current_user=Depends(
+        require_roles(
+            Role.PLANEACION.value, Role.ADMIN_SISTEMA.value, Role.RESPONSABLE_AREA.value
+        )
+    ),
     use_case: InviteUser = Depends(get_invite_user_use_case),
 ) -> UsuarioInvitadoResponse:
     user = await use_case.execute(
@@ -294,8 +301,13 @@ async def list_users(
     order: Literal["asc", "desc"] = Query(default="asc"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=10, ge=1, le=100),
-    _current_user=Depends(require_roles(Role.PLANEACION.value, Role.ADMIN_SISTEMA.value)),
+    current_user=Depends(
+        require_roles(
+            Role.PLANEACION.value, Role.ADMIN_SISTEMA.value, Role.RESPONSABLE_AREA.value
+        )
+    ),
 ) -> PaginaUsuariosResponse:
+    area_id = _el_area_que_puede_consultar(current_user, area_id)
     users = await request.app.state.user_repository.list()
     if q:
         normalized = q.strip().casefold()
@@ -339,7 +351,11 @@ async def list_users(
 async def update_user(
     user_id: int,
     body: ActualizarUsuarioRequest,
-    current_user=Depends(require_roles(Role.PLANEACION.value, Role.ADMIN_SISTEMA.value)),
+    current_user=Depends(
+        require_roles(
+            Role.PLANEACION.value, Role.ADMIN_SISTEMA.value, Role.RESPONSABLE_AREA.value
+        )
+    ),
     use_case: UpdateUser = Depends(get_update_user_use_case),
 ) -> UsuarioResponse:
     user = await use_case.execute(
@@ -370,7 +386,11 @@ async def update_user(
 )
 async def deactivate_user(
     user_id: int,
-    current_user=Depends(require_roles(Role.PLANEACION.value, Role.ADMIN_SISTEMA.value)),
+    current_user=Depends(
+        require_roles(
+            Role.PLANEACION.value, Role.ADMIN_SISTEMA.value, Role.RESPONSABLE_AREA.value
+        )
+    ),
     use_case: DeactivateUser = Depends(get_deactivate_user_use_case),
 ) -> UsuarioResponse:
     user = await use_case.execute(
@@ -399,3 +419,14 @@ async def reactivate_user(
         ChangeUserStatusCommand(user_id=user_id, actor_id=current_user.id)
     )
     return UsuarioResponse.from_domain(user)
+
+
+def _el_area_que_puede_consultar(current_user, area_id: int | None) -> int | None:
+    if current_user.has_any_role({Role.PLANEACION.value, Role.ADMIN_SISTEMA.value}):
+        return area_id
+    if current_user.area_id is None:
+        raise ForbiddenError(
+            "La función de responsable de área se ejerce desde un área, y esta cuenta no "
+            "tiene ninguna asignada."
+        )
+    return current_user.area_id

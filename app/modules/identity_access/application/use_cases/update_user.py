@@ -25,6 +25,7 @@ class UpdateUser:
             self.repository, command.actor_id,
             assigned_roles=command.roles if command.roles is not None else user.roles,
             target=user,
+            area_id=command.area_id if command.area_id is not None else user.area_id,
         )
         if command.email is not None:
             existing = await self.repository.get_by_email(command.email)
