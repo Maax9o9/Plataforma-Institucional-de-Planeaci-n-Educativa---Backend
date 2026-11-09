@@ -21,7 +21,11 @@ from ..application.use_cases.authenticate_user import AuthenticateUser
 from ..application.use_cases.change_password import ChangeAdminPassword
 from ..application.use_cases.change_user_status import DeactivateUser, ReactivateUser
 from ..application.use_cases.logout_user import LogoutUser
-from ..application.use_cases.password_setup import InviteUser, SetInitialPassword
+from ..application.use_cases.password_setup import (
+    InviteUser,
+    ResendInvitation,
+    SetInitialPassword,
+)
 from ..application.use_cases.refresh_session import RefreshSession
 from ..application.use_cases.update_user import UpdateUser
 from ..domain.value_objects import Role
@@ -34,6 +38,7 @@ from .dependencies import (
     get_logout_user_use_case,
     get_reactivate_user_use_case,
     get_refresh_session_use_case,
+    get_resend_invitation_use_case,
     get_set_initial_password_use_case,
     get_update_user_use_case,
 )
@@ -220,6 +225,30 @@ async def create_user(
         )
     )
     return UsuarioInvitadoResponse.from_domain(user)
+
+
+@router.post(
+    "/usuarios/{usuario_id}/reenviar-invitacion",
+    response_model=UsuarioInvitadoResponse,
+    summary="Reenviar la invitacion de una cuenta que no configuro su contrasena",
+    responses={
+        403: {"model": ErrorResponse, "description": "Rol insuficiente."},
+        404: {"model": ErrorResponse, "description": "El usuario no existe."},
+        409: {
+            "model": ErrorResponse,
+            "description": "La cuenta ya configuro su contrasena o esta desactivada.",
+        },
+    },
+    tags=[TAG],
+)
+async def resend_invitation(
+    usuario_id: int,
+    current_user=Depends(require_roles(Role.PLANEACION.value, Role.ADMIN_SISTEMA.value)),
+    use_case: ResendInvitation = Depends(get_resend_invitation_use_case),
+) -> UsuarioInvitadoResponse:
+    return UsuarioInvitadoResponse.from_domain(
+        await use_case.execute(usuario_id, actor_id=current_user.id)
+    )
 
 
 @router.post(

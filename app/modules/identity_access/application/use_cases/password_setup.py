@@ -147,6 +147,82 @@ class InviteUser:
         return user
 
 
+class ResendInvitation:
+    def __init__(
+        self,
+        repository: UserRepository,
+        token_store: PasswordSetupTokenStore,
+        email_sender: EmailSender,
+        event_bus: EventBus,
+        settings: Settings,
+        email_composer: EmailComposer,
+    ) -> None:
+        self.repository = repository
+        self.token_store = token_store
+        self.email_sender = email_sender
+        self.event_bus = event_bus
+        self.settings = settings
+        self.email_composer = email_composer
+
+    async def execute(self, user_id: int, *, actor_id: int | None) -> User:
+        user = await self.repository.get_by_id(user_id)
+        if user is None:
+            raise ResourceNotFoundError("El usuario no existe.")
+        await ensure_can_manage_user(self.repository, actor_id, target=user)
+        if not user.is_active:
+            raise ConflictError(
+                "La cuenta está desactivada: reactívela antes de volver a invitarla."
+            )
+        if not user.password_setup_required:
+            raise ConflictError(
+                "Esa persona ya configuró su contraseña, así que el enlace de invitación ya "
+                "no le sirve. Si perdió el acceso, lo que necesita es recuperar la contraseña."
+            )
+
+        raw_token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(UTC) + timedelta(hours=self.settings.password_setup_expire_hours)
+        link = f"{self.settings.frontend_url.rstrip('/')}/establecer-contrasena?token={raw_token}"
+        email = await self.email_composer.render(
+            "invitacion",
+            recipient_name=user.full_name,
+            detail=(
+                f"Tu enlace personal vence en {self.settings.password_setup_expire_hours} horas. "
+                "Sólo puede usarse una vez. No lo compartas con otras personas."
+            ),
+            action_url=link,
+        )
+        await self.token_store.issue(
+            user_id=user.id,
+            token_hash=sha256(raw_token.encode("utf-8")).hexdigest(),
+            expires_at=expires_at,
+        )
+
+        user.invitation_email_sent = True
+        try:
+            await self.email_sender.send(
+                user.email.value, email.subject, email.html, email.text
+            )
+        except EmailSendError:
+            logger.warning(
+                "No se pudo reenviar la invitacion por correo user_id=%s", user.id
+            )
+            user.invitation_email_sent = False
+
+        await self.event_bus.publish(
+            UserRegistered(
+                actor_id=actor_id,
+                aggregate_type="user",
+                aggregate_id=user.id,
+                action="invitation_resent",
+                data={
+                    "email": user.email.value,
+                    "correo_enviado": user.invitation_email_sent,
+                },
+            )
+        )
+        return user
+
+
 class SetInitialPassword:
     def __init__(
         self,
