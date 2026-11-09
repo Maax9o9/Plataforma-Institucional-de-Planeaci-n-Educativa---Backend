@@ -53,7 +53,7 @@ DOCE_METAS_QUE_SUMAN_24 = (
     Decimal(2),
 )
 
-ENDPOINTS = ("consultar", "abrir", "reabrir", "registrar", "corregir", "presentar")
+ENDPOINTS = ("consultar", "imprimir", "abrir", "reabrir", "registrar", "corregir", "presentar")
 
 #: Lo que escribe el area en su propio POA. Abrir y reabrir no estan aqui:
 #: desde el 1 de noviembre de 2026 son de Planeacion y el area no los llama.
@@ -247,6 +247,7 @@ def _peticion(nombre: str, escenario: Escenario) -> tuple[str, str, dict, dict |
     desde, hasta = _ventana_que_incluye_hoy()
     return {
         "consultar": ("GET", area, consulta, None),
+        "imprimir": ("GET", f"{area}/impresion", {**consulta, "anio": 2027}, None),
         "abrir": (
             "POST",
             f"{POA_INST}/abrir",
@@ -1120,3 +1121,45 @@ def test_el_poa_del_area_declara_su_contrato_en_el_openapi(app):
         assert operacion["security"] != [], nombre
         assert {"401", "403", "409", "422", "500", "503"} <= set(operacion["responses"]), nombre
         assert ("404" in operacion["responses"]) == (nombre != "abrir"), nombre
+
+
+class TestLaImpresionDelPoaDelArea:
+    async def test_devuelve_un_pdf_con_el_nombre_del_archivo(self, escenario):
+        await _actividad_completa(escenario)
+
+        respuesta = await _pedir(escenario, "imprimir", escenario.capturista)
+
+        assert respuesta.status_code == 200, respuesta.text
+        assert respuesta.headers["content-type"].startswith("application/pdf")
+        assert respuesta.content.startswith(b"%PDF")
+        assert f"poa-2027-area-{escenario.area_id}.pdf" in respuesta.headers[
+            "content-disposition"
+        ]
+
+    async def test_imprime_aunque_el_area_no_tenga_ninguna_actividad_completa(self, escenario):
+        respuesta = await _pedir(escenario, "imprimir", escenario.capturista)
+
+        assert respuesta.status_code == 200, respuesta.text
+        assert respuesta.content.startswith(b"%PDF")
+
+    async def test_un_ejercicio_sin_poa_abierto_para_el_area_contesta_404(self, escenario):
+        otro = await anio_libre(escenario.client, escenario.planeacion)
+        poa = await crear_poa(escenario.client, escenario.planeacion, otro)
+        ejercicio = await crear_ejercicio(escenario.client, escenario.planeacion, poa, otro)
+
+        respuesta = await escenario.client.get(
+            f"{POA_INST}/areas/{escenario.area_id}/impresion",
+            headers=escenario.capturista,
+            params={"ejercicio_id": ejercicio["id"], "anio": otro},
+        )
+
+        assert respuesta.status_code == 404, respuesta.text
+
+    async def test_el_anio_fuera_del_rango_no_llega_al_caso_de_uso(self, escenario):
+        respuesta = await escenario.client.get(
+            f"{POA_INST}/areas/{escenario.area_id}/impresion",
+            headers=escenario.capturista,
+            params={"ejercicio_id": escenario.ejercicio_id, "anio": 1800},
+        )
+
+        assert respuesta.status_code == 422, respuesta.text

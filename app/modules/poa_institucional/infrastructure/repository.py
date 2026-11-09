@@ -130,7 +130,10 @@ class InMemoryAreaLeadership:
         self.users = users
 
     async def has_person_in_charge(self, area_id: int) -> bool:
-        return any(
-            usuario.area_id == area_id and Role.RESPONSABLE_AREA in usuario.roles
-            for usuario in await self.users.list(active_only=True)
-        )
+        return await self.person_in_charge(area_id) is not None
+
+    async def person_in_charge(self, area_id: int) -> str | None:
+        for usuario in await self.users.list(active_only=True):
+            if usuario.area_id == area_id and Role.RESPONSABLE_AREA in usuario.roles:
+                return usuario.full_name
+        return None

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Request, status
+from fastapi.responses import StreamingResponse
 
 from app.core.authorization import (
     ROLES_QUE_LEEN_EL_POA_DE_CUALQUIER_AREA,
@@ -21,6 +22,11 @@ from app.shared.domain.exceptions import (
     ResourceNotFoundError,
 )
 
+from ..application.exporters import export_poa_del_area_pdf
+from ..application.use_cases.export_poa_area import (
+    ExportarPoaDelArea,
+    ExportarPoaDelAreaCommand,
+)
 from ..application.use_cases.manage_poa_area import (
     OpenInstitutionalPoa,
     OpenInstitutionalPoaCommand,
@@ -120,6 +126,45 @@ async def consultar_el_poa_del_area(
     )
     poa_area = await _el_poa_del_area_ya_abierto(request, ejercicio_id, area_id)
     return await _respuesta(request, poa_area, incluir_inactivas=incluir_inactivas)
+
+
+@router.get(
+    "/areas/{area_id}/impresion",
+    summary="Descargar el POA del area en el formato oficial",
+    response_class=StreamingResponse,
+    responses=SIN_SESION_NI_PERMISO_NI_POA_ABIERTO,
+)
+async def imprimir_el_poa_del_area(
+    area_id: IdEnLaRuta,
+    request: Request,
+    ejercicio_id: EjercicioEnLaConsulta,
+    anio: Annotated[int, Query(ge=2000, le=2100)],
+    usuario=Depends(requiere_consultar),
+) -> StreamingResponse:
+    """El entregable en papel: el formato oficial con lo capturado.
+
+    Se imprime el POA completo, no lo que los filtros de la pantalla dejen a
+    la vista: el documento se firma, y una lista recortada firmada como si
+    fuera el programa entero sería otra cosa.
+    """
+    ensure_area_or_institutional_reader(
+        usuario, area_id, lectores=ROLES_QUE_LEEN_EL_POA_DE_CUALQUIER_AREA
+    )
+    impreso = await ExportarPoaDelArea(
+        request.app.state.poa_area_repository,
+        request.app.state.area_repository,
+        request.app.state.strategic_tree_repository,
+        request.app.state.unit_of_measure_repository,
+        request.app.state.area_leadership,
+    ).execute(
+        ExportarPoaDelAreaCommand(exercise_id=ejercicio_id, area_id=area_id, year=anio)
+    )
+    nombre = f"poa-{anio}-area-{area_id}.pdf"
+    return StreamingResponse(
+        export_poa_del_area_pdf(impreso),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
+    )
 
 
 @router.post(

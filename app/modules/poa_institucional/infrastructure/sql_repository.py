@@ -407,17 +407,20 @@ class SqlAlchemyAreaLeadership:
         self.session_factory = session_factory
 
     async def has_person_in_charge(self, area_id: int) -> bool:
+        return await self.person_in_charge(area_id) is not None
+
+    async def person_in_charge(self, area_id: int) -> str | None:
         if not cabe_en_el_entero_de_la_base(area_id):
-            return False
+            return None
         async with session_scope(self.session_factory) as session:
-            responsable = await session.scalar(
-                select(UserModel.id)
+            return await session.scalar(
+                select(UserModel.nombre)
                 .join(UserRoleModel, UserRoleModel.usuario_id == UserModel.id)
                 .where(
                     UserModel.area_id == area_id,
                     UserModel.activo.is_(True),
                     UserRoleModel.rol == Role.RESPONSABLE_AREA.value,
                 )
+                .order_by(UserModel.id)
                 .limit(1)
             )
-        return responsable is not None
