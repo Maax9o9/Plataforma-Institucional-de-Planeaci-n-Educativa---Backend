@@ -1065,3 +1065,84 @@ async def test_la_entrega_del_aviso_de_la_apertura_no_apunta_a_ningun_comunicado
 
     assert [uno["aviso_id"] for uno in recibidos] == [None]
     assert [uno["adjuntos"] for uno in recibidos] == [[]]
+
+
+# ── El documento del comunicado se abre ──────────────────────────────────────
+
+
+UNA_IMAGEN = b"\x89PNG\r\n\x1a\n" + b"0" * 64
+
+
+async def _abrir(client, cabeceras, ruta: str):
+    return await client.get(f"{ARCHIVOS}/{ruta}", headers=cabeceras)
+
+
+async def test_el_area_abre_la_imagen_del_comunicado_que_recibio(
+    backend_client, planeacion_headers, nueva_area, cuenta_con_rol
+):
+    _, client = backend_client
+    area = await nueva_area()
+    quien_captura = await cuenta_con_rol(Role.CAPTURISTA_POA, area_id=area)
+    cargada = await _cargar(client, planeacion_headers, "convocatoria.png", UNA_IMAGEN)
+    await _redactar(
+        client,
+        planeacion_headers,
+        areas=[area],
+        adjuntos=[{"nombre": "Convocatoria.png", "ruta": cargada["ruta"]}],
+    )
+
+    abierta = await _abrir(client, quien_captura, cargada["ruta"])
+
+    assert abierta.status_code == 200, abierta.text
+    assert abierta.content == UNA_IMAGEN
+
+
+async def test_planeacion_abre_el_adjunto_del_comunicado_que_redacto(
+    backend_client, planeacion_headers, nueva_area, cuenta_con_rol
+):
+    _, client = backend_client
+    area = await nueva_area()
+    await cuenta_con_rol(Role.CAPTURISTA_POA, area_id=area)
+    cargada = await _cargar(client, planeacion_headers, "convocatoria.png", UNA_IMAGEN)
+    await _redactar(
+        client,
+        planeacion_headers,
+        areas=[area],
+        adjuntos=[{"nombre": "Convocatoria.png", "ruta": cargada["ruta"]}],
+    )
+
+    abierta = await _abrir(client, planeacion_headers, cargada["ruta"])
+
+    assert abierta.status_code == 200, abierta.text
+
+
+async def test_quien_no_recibio_el_comunicado_no_abre_su_adjunto(
+    backend_client, planeacion_headers, nueva_area, cuenta_con_rol
+):
+    _, client = backend_client
+    area = await nueva_area()
+    otra = await nueva_area()
+    await cuenta_con_rol(Role.CAPTURISTA_POA, area_id=area)
+    ajena = await cuenta_con_rol(Role.CAPTURISTA_POA, area_id=otra)
+    cargada = await _cargar(client, planeacion_headers, "convocatoria.png", UNA_IMAGEN)
+    await _redactar(
+        client,
+        planeacion_headers,
+        areas=[area],
+        adjuntos=[{"nombre": "Convocatoria.png", "ruta": cargada["ruta"]}],
+    )
+
+    negada = await _abrir(client, ajena, cargada["ruta"])
+
+    assert negada.status_code == 404, negada.text
+
+
+async def test_un_archivo_que_no_cuelga_de_ningun_comunicado_no_se_abre(
+    backend_client, planeacion_headers
+):
+    _, client = backend_client
+    cargada = await _cargar(client, planeacion_headers, "suelta.png", UNA_IMAGEN)
+
+    negada = await _abrir(client, planeacion_headers, cargada["ruta"])
+
+    assert negada.status_code == 404, negada.text

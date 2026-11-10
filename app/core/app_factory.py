@@ -32,6 +32,9 @@ from app.modules.identity_access.infrastructure.security import (
     Argon2PasswordHasher,
     JwtTokenService,
 )
+from app.modules.notifications.application.adjuntos_de_los_avisos import (
+    LosAdjuntosDeLosAvisos,
+)
 from app.modules.notifications.application.area_notices import AreaNotices
 from app.modules.notifications.application.avisos_consultados import (
     ElBuzon,
@@ -119,6 +122,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         resources.uploaded_files,
     )
     app.state.el_buzon = ElBuzon(resources.notification_repository, resources.aviso_repository)
+    app.state.los_adjuntos_de_los_avisos = LosAdjuntosDeLosAvisos(
+        resources.aviso_repository,
+        resources.notification_repository,
+    )
     app.state.las_cifras_de_lectura = LasCifrasDeLectura(
         resources.aviso_repository,
         resources.notification_repository,

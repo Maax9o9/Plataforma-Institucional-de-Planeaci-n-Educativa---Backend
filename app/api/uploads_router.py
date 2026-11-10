@@ -142,13 +142,21 @@ async def download_file(
     if not SAFE_FILE_NAME.fullmatch(file_name):
         raise ResourceNotFoundError("El archivo no existe.")
     evidence_id = await request.app.state.evidence_repository.find_evidence_id_by_path(file_name)
-    if evidence_id is None:
-        raise ResourceNotFoundError("El archivo no esta vinculado a una evidencia.")
-    await get_evidence_access_control(request).ensure_can_view(
-        evidence_id, actor_from_user(current_user)
-    )
+    if evidence_id is not None:
+        await get_evidence_access_control(request).ensure_can_view(
+            evidence_id, actor_from_user(current_user)
+        )
+    elif not await _lo_lleva_un_comunicado_suyo(request, file_name, current_user):
+        raise ResourceNotFoundError("El archivo no esta disponible.")
     storage = Path(request.app.state.settings.upload_directory).resolve()
     source = (storage / file_name).resolve()
     if not source.is_relative_to(storage) or not source.is_file():
         raise ResourceNotFoundError("El archivo no existe.")
     return FileResponse(source, media_type=MIME_POR_EXTENSION[source.suffix], filename=file_name)
+
+
+async def _lo_lleva_un_comunicado_suyo(request: Request, file_name: str, current_user) -> bool:
+    actor = actor_from_user(current_user)
+    return await request.app.state.los_adjuntos_de_los_avisos.puede_abrirlo(
+        file_name, usuario_id=actor.id, redacta_avisos=actor.is_planning
+    )
