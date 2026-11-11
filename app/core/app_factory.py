@@ -40,6 +40,7 @@ from app.modules.notifications.application.avisos_consultados import (
     ElBuzon,
     LasCifrasDeLectura,
 )
+from app.shared.infrastructure.db.turno_exclusivo import el_turno_de_los_recordatorios
 from app.shared.infrastructure.email.factory import create_email_sender
 from app.shared.infrastructure.events.in_memory_event_bus import InMemoryEventBus
 
@@ -120,6 +121,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         resources.area_repository,
         resources.aviso_repository,
         resources.uploaded_files,
+    )
+    app.state.turno_de_los_recordatorios = el_turno_de_los_recordatorios(
+        app.state.db_session_factory
     )
     app.state.el_buzon = ElBuzon(resources.notification_repository, resources.aviso_repository)
     app.state.los_adjuntos_de_los_avisos = LosAdjuntosDeLosAvisos(
