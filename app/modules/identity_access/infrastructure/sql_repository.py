@@ -103,6 +103,15 @@ class SqlAlchemyUserRepository:
         user.created_at = now
         user.updated_at = now
 
+    async def record_access(self, user_id: int, occurred_at: datetime) -> None:
+        async with session_scope(self.session_factory) as session:
+            await session.execute(
+                update(UserModel)
+                .where(UserModel.id == user_id)
+                .values(ultimo_acceso=occurred_at)
+            )
+            await commit_or_flush(session)
+
     async def update(self, user: User) -> None:
         async with session_scope(self.session_factory) as session:
             try:

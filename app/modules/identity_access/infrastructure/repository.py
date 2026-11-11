@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from itertools import count
 
 from app.shared.domain.exceptions import ConflictError
@@ -43,6 +44,12 @@ class InMemoryUserRepository:
                 return
             user.version += 1
             self._users[user.id] = user
+
+    async def record_access(self, user_id: int, occurred_at: datetime) -> None:
+        async with self._lock:
+            usuario = self._users.get(user_id)
+            if usuario is not None:
+                usuario.last_access_at = occurred_at
 
     async def all(self) -> list[User]:
         return list(self._users.values())

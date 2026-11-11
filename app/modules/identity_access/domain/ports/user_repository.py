@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from ..entities import User
@@ -19,6 +20,8 @@ class UserWriter(Protocol):
     async def add(self, user: User) -> None: ...
 
     async def update(self, user: User) -> None: ...
+
+    async def record_access(self, user_id: int, occurred_at: datetime) -> None: ...
 
 
 class UserRepository(UserReader, UserWriter, Protocol):
