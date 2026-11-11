@@ -1,14 +1,46 @@
+#
+# La plataforma completa en local, con un solo mando:
+#
+#     docker compose up -d --build
+#
+# Deja la aplicación en http://localhost:8080 —el sitio y la API detrás del
+# mismo servidor, como en el despliegue— y PostgreSQL en el 5433 por si se
+# quiere entrar con psql. Las migraciones se aplican solas antes de que la API
+# arranque.
+#
+# Las claves de este archivo son de desarrollo y no sirven en ningún otro
+# lado: `environment: development` las admite, staging y producción no.
+#
+x-logging: &registro
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-api: &api-comun
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: planeacion-api:local
+  environment:
+    ENVIRONMENT: development
+    DATABASE_URL: postgresql+asyncpg://planeacion:planeacion_dev@postgres:5432/planeacion
+    SECRET_KEY: clave-de-desarrollo-no-usar-fuera-de-la-maquina
+    UPLOAD_DIRECTORY: /app/var/uploads
+    EMAIL_PROVIDER: console
+    FRONTEND_URL: http://localhost:8080
+    CORS_ORIGINS: '["http://localhost:8080","http://localhost:5173"]'
+  volumes:
+    - planeacion_uploads:/app/var/uploads
+  logging: *registro
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: planeacion-postgres
     restart: unless-stopped
     stop_grace_period: 60s
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "3"
+    logging: *registro
     environment:
       POSTGRES_DB: planeacion
       POSTGRES_USER: planeacion
@@ -24,5 +56,67 @@ services:
       retries: 10
       start_period: 30s
 
+  migraciones:
+    <<: *api-comun
+    container_name: planeacion-migraciones
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *api-comun
+    container_name: planeacion-api
+    restart: unless-stopped
+    init: true
+    expose:
+      - "8000"
+    depends_on:
+      migraciones:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  web:
+    build:
+      context: ../planeacion-frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api/v1
+    image: planeacion-web:local
+    container_name: planeacion-web
+    restart: unless-stopped
+    expose:
+      - "80"
+    logging: *registro
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: planeacion-nginx
+    restart: unless-stopped
+    logging: *registro
+    ports:
+      - "8080:80"
+    volumes:
+      - type: bind
+        source: ./deploy/nginx/local.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started
+
 volumes:
   planeacion_postgres_data:
+  planeacion_uploads:

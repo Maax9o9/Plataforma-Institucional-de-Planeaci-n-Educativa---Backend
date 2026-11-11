@@ -22,4 +22,12 @@ USER app
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Cuántos procesos atienden las peticiones. Uno solo tiene por techo un núcleo
+# —Python no reparte un proceso entre varios— y el ingreso al sistema lo
+# bloquea durante los 100 ms que cuesta verificar la contraseña. Dos procesos
+# por vCPU es el punto donde deja de haber cola sin desperdiciar memoria.
+# El programador de recordatorios no se duplica: lo toma un solo proceso con
+# un candado de PostgreSQL (app/shared/infrastructure/db/turno_exclusivo.py).
+ENV WEB_CONCURRENCY=2
+
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${WEB_CONCURRENCY} --proxy-headers --forwarded-allow-ips '*'"]

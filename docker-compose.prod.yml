@@ -36,6 +36,9 @@ services:
     logging: *default-logging
     environment:
       UPLOAD_DIRECTORY: /app/var/uploads
+      # Dos procesos por vCPU: uno solo tiene por techo un núcleo y el ingreso
+      # al sistema lo bloquea mientras verifica la contraseña.
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
     expose:
       - "8000"
     volumes:
@@ -54,6 +57,22 @@ services:
       retries: 12
       start_period: 20s
 
+  web:
+    build:
+      context: ../planeacion-frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api/v1
+    restart: unless-stopped
+    logging: *default-logging
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/sitio-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -65,6 +84,8 @@ services:
       retries: 3
     depends_on:
       api:
+        condition: service_healthy
+      web:
         condition: service_healthy
     ports:
       - "${HTTP_PORT:-80}:80"
