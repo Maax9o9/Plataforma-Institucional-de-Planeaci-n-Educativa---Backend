@@ -9,7 +9,11 @@ from ..application.use_cases.change_password import ChangeAdminPassword
 from ..application.use_cases.change_user_status import DeactivateUser, ReactivateUser
 from ..application.use_cases.create_user import CreateUser
 from ..application.use_cases.logout_user import LogoutUser
-from ..application.use_cases.password_setup import InviteUser, SetInitialPassword
+from ..application.use_cases.password_setup import (
+    InviteUser,
+    ResendInvitation,
+    SetInitialPassword,
+)
 from ..application.use_cases.refresh_session import RefreshSession
 from ..application.use_cases.update_user import UpdateUser
 
@@ -90,6 +94,17 @@ def get_invite_user_use_case(request: Request) -> InviteUser:
         request.app.state.settings,
         request.app.state.area_repository,
         request.app.state.institutional_directory,
+        request.app.state.email_template_service,
+    )
+
+
+def get_resend_invitation_use_case(request: Request) -> ResendInvitation:
+    return ResendInvitation(
+        request.app.state.user_repository,
+        request.app.state.password_setup_token_store,
+        request.app.state.email_sender,
+        request.app.state.event_bus,
+        request.app.state.settings,
         request.app.state.email_template_service,
     )
 

@@ -53,7 +53,7 @@ class GenerateReminders:
             notification_type = f"recordatorio_{days_left}d"
             message = (
                 f"El periodo {period.name} vence el {period.ends_on.isoformat()}. "
-                "Revisa tus pendientes."
+                "Consulte los pendientes del área."
             )
             for responsible_id in await self._responsible_ids(period):
                 event_id = uuid5(

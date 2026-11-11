@@ -51,9 +51,10 @@ class NotificationService:
                         user_id=user_id,
                         notification_type="poa_actividad_asignada",
                         message=(
-                            f"Se asignó a tu área la actividad {event.data.get('activity_key')} "
-                            f"de la cédula {event.data.get('form_id')}. "
-                            "Revisa sus fechas y captura el seguimiento con evidencia."
+                            "La Dirección de Planeación asignó al área la actividad "
+                            f"{event.data.get('activity_key')} de la cédula "
+                            f"{event.data.get('form_id')}. Revise sus fechas y registre el "
+                            "seguimiento con su evidencia."
                         ),
                         entity="poa_form_activity",
                         entity_id=event.aggregate_id,
@@ -82,6 +83,8 @@ class NotificationService:
         entity: str | None,
         entity_id: int | None,
         source_event_id,
+        title: str | None = None,
+        aviso_id: int | None = None,
     ) -> Notification:
         """Persiste y entrega una notificacion sin duplicar correos idempotentes."""
 
@@ -89,10 +92,12 @@ class NotificationService:
             Notification(
                 user_id=user_id,
                 notification_type=notification_type,
+                title=title,
                 message=message,
                 entity=entity,
                 entity_id=entity_id,
                 source_event_id=source_event_id,
+                aviso_id=aviso_id,
             )
         )
         user = await self.user_repository.get_by_id(user_id)
@@ -188,9 +193,9 @@ class NotificationService:
     def _message(event: DomainEvent) -> str:
         if event.action == "rejected":
             return (
-                "Tu registro fue rechazado. Revisa el comentario y realiza "
-                "las correcciones necesarias."
+                "El registro fue devuelto. Consulte el comentario de la revisión y "
+                "atienda las correcciones señaladas."
             )
         if event.action == "opened":
             return "Se abrio un nuevo periodo de captura."
-        return "Tu registro cambio de estado y requiere tu atencion."
+        return "El registro cambió de estado y requiere la atención del área."

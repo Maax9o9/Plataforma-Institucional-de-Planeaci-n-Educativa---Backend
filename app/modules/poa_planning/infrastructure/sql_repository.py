@@ -4,17 +4,23 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError
+from app.shared.infrastructure.db.constraints import viola_la_restriccion
 from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
 
-from ..domain.entities import PoaExercise
+from ..domain.entities import EL_EJERCICIO_POA_NO_EXISTE, PoaExercise
 from ..domain.value_objects import PoaExerciseStatus
 from .models import PoaExerciseModel
+
+#: La única del año del ejercicio: es el nombre que Postgres le dio al `UNIQUE`
+#: en línea de `poa_ejercicios.anio` en la migración 0007.
+_UNICA_DEL_ANIO = "poa_ejercicios_anio_key"
 
 
 def _to_entity(model: PoaExerciseModel) -> PoaExercise:
     return PoaExercise(
         id=model.id,
         year=model.anio,
+        catalog_id=model.catalogo_id,
         status=PoaExerciseStatus(model.estado),
         formulation_deadline=model.fecha_limite_formulacion,
         review_comment=model.comentario_revision,
@@ -31,6 +37,7 @@ class SqlAlchemyPoaRepository:
             try:
                 model = PoaExerciseModel(
                     anio=item.year,
+                    catalogo_id=item.catalog_id,
                     estado=item.status.value,
                     fecha_limite_formulacion=item.formulation_deadline,
                     comentario_revision=item.review_comment,
@@ -40,7 +47,13 @@ class SqlAlchemyPoaRepository:
                 await commit_or_flush(session)
             except IntegrityError as exc:
                 await session.rollback()
-                raise ConflictError("El ejercicio POA ya existe.") from exc
+                # Sólo la del año es un conflicto. Cualquier otra -la foránea al
+                # POA por un `catalogo_id` inexistente, por ejemplo- se levanta
+                # tal cual: decir «ya existe» cuando lo que falló fue otra cosa
+                # manda a buscar un duplicado que no está.
+                if viola_la_restriccion(exc, _UNICA_DEL_ANIO):
+                    raise ConflictError("El ejercicio POA ya existe.") from exc
+                raise
             item.id = model.id
 
     async def get_exercise(self, item_id: int) -> PoaExercise | None:
@@ -59,7 +72,7 @@ class SqlAlchemyPoaRepository:
         async with session_scope(self.session_factory) as session:
             model = await session.get(PoaExerciseModel, item.id)
             if model is None:
-                raise ResourceNotFoundError("El ejercicio POA no existe.")
+                raise ResourceNotFoundError(EL_EJERCICIO_POA_NO_EXISTE)
             model.estado = item.status.value
             model.fecha_limite_formulacion = item.formulation_deadline
             model.comentario_revision = item.review_comment

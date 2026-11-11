@@ -2,6 +2,7 @@
 
 from fastapi import Request
 
+from ..application.use_cases.manage_catalog import PoaCatalogAdmin
 from ..application.use_cases.manage_cedula import (
     AddPoaFormActivity,
     AddPoaFormIndicator,
@@ -17,6 +18,11 @@ from ..application.use_cases.manage_cedula import (
     UpdatePoaForm,
     UpdatePoaFormActivity,
     UpdatePoaFormIndicator,
+)
+from ..application.use_cases.manage_poa_catalog import (
+    CrearCatalogoPoa,
+    DuplicarCatalogoPoa,
+    ListarCatalogosPoa,
 )
 
 
@@ -148,3 +154,19 @@ def get_issue_form_use_case(request: Request) -> IssuePoaForm:
         request.app.state.evidence_repository,
         request.app.state.area_repository,
     )
+
+
+def get_catalog_admin_use_case(request: Request) -> PoaCatalogAdmin:
+    return PoaCatalogAdmin(request.app.state.poa_form_repository)
+
+
+def get_list_poa_catalogs_use_case(request: Request) -> ListarCatalogosPoa:
+    return ListarCatalogosPoa(request.app.state.poa_form_repository)
+
+
+def get_create_poa_catalog_use_case(request: Request) -> CrearCatalogoPoa:
+    return CrearCatalogoPoa(request.app.state.poa_form_repository)
+
+
+def get_duplicate_poa_catalog_use_case(request: Request) -> DuplicarCatalogoPoa:
+    return DuplicarCatalogoPoa(request.app.state.poa_form_repository)

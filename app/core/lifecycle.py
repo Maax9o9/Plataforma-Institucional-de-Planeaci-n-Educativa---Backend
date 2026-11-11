@@ -13,19 +13,27 @@ from app.modules.notifications.application.reminders import GenerateReminders
 logger = logging.getLogger(__name__)
 
 
+async def _una_vuelta_de_recordatorios(app: FastAPI) -> None:
+    async with app.state.turno_de_los_recordatorios.pedir() as me_toca:
+        if not me_toca:
+            logger.debug("Otro proceso tiene el turno de los recordatorios")
+            return
+        total = await GenerateReminders(
+            app.state.period_repository,
+            app.state.indicator_repository,
+            app.state.notification_repository,
+            app.state.poa_period_recipients,
+            app.state.notification_service,
+        ).execute()
+        if total:
+            logger.info("Recordatorios periodicos procesados: %s", total)
+        await app.state.notification_service.retry_pending()
+
+
 async def _run_reminder_scheduler(app: FastAPI) -> None:
     while True:
         try:
-            total = await GenerateReminders(
-                app.state.period_repository,
-                app.state.indicator_repository,
-                app.state.notification_repository,
-                app.state.poa_period_recipients,
-                app.state.notification_service,
-            ).execute()
-            if total:
-                logger.info("Recordatorios periodicos procesados: %s", total)
-            await app.state.notification_service.retry_pending()
+            await _una_vuelta_de_recordatorios(app)
         except asyncio.CancelledError:
             raise
         except Exception:

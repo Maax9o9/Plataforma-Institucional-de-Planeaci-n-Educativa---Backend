@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from itertools import count
 
-from ..domain.entities import Notification
+from ..domain.entities import Aviso, EntregaDelAviso, Notification
 
 
 class InMemoryNotificationRepository:
@@ -64,3 +66,36 @@ class InMemoryNotificationRepository:
 
     async def release_email(self, notification_id: int) -> None:
         self._email_leases.pop(notification_id, None)
+
+    async def deliveries_of(self, aviso_ids: Collection[int]) -> list[EntregaDelAviso]:
+        pedidos = set(aviso_ids)
+        return [
+            EntregaDelAviso(aviso_id=item.aviso_id, usuario_id=item.user_id, leida=item.read)
+            for item in self._items.values()
+            if item.aviso_id in pedidos
+        ]
+
+
+class InMemoryAvisoRepository:
+    def __init__(self) -> None:
+        self._items: dict[int, Aviso] = {}
+        self._next_id = count(1)
+
+    async def add(self, aviso: Aviso) -> Aviso:
+        aviso.id = next(self._next_id)
+        aviso.creado_en = aviso.creado_en or datetime.now(UTC)
+        aviso.adjuntos = tuple(
+            replace(adjunto, id=numero) for numero, adjunto in enumerate(aviso.adjuntos, start=1)
+        )
+        self._items[aviso.id] = aviso
+        return aviso
+
+    async def list(self) -> list[Aviso]:
+        return sorted(self._items.values(), key=lambda uno: uno.id, reverse=True)
+
+    async def get_many(self, aviso_ids: Collection[int]) -> dict[int, Aviso]:
+        return {
+            aviso_id: self._items[aviso_id]
+            for aviso_id in set(aviso_ids)
+            if aviso_id in self._items
+        }

@@ -37,7 +37,8 @@ class AuthenticateUser:
         user = await self.repository.get_by_email(email)
         if user is not None and user.password_setup_required:
             raise AuthenticationError(
-                "Debes configurar tu contrasena usando el enlace enviado por correo."
+                "La contraseña de la cuenta todavía no se ha establecido. Utilice el enlace que se "
+                "envió por correo electrónico para establecerla."
             )
         if (
             user is None
@@ -46,8 +47,9 @@ class AuthenticateUser:
         ):
             raise AuthenticationError("Correo o contrasena incorrectos.")
 
-        user.record_successful_login(datetime.now(UTC))
-        await self.repository.update(user)
+        entrada = datetime.now(UTC)
+        user.record_successful_login(entrada)
+        await self.repository.record_access(user.id, entrada)
 
         session_id = uuid4()
         refresh = self.token_service.issue_refresh(user, session_id)

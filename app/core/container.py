@@ -71,10 +71,18 @@ from app.modules.institutional_catalogs.infrastructure.reference_sql_repository 
 from app.modules.institutional_catalogs.infrastructure.repository import (
     InMemoryAreaRepository,
     InMemoryInstrumentRepository,
+    InMemoryInstrumentVersionRepository,
 )
 from app.modules.institutional_catalogs.infrastructure.sql_repository import (
     SqlAlchemyAreaRepository,
     SqlAlchemyInstrumentRepository,
+    SqlAlchemyInstrumentVersionRepository,
+)
+from app.modules.institutional_catalogs.infrastructure.strategic_tree_repository import (
+    InMemoryStrategicTreeRepository,
+)
+from app.modules.institutional_catalogs.infrastructure.strategic_tree_sql_repository import (
+    SqlAlchemyStrategicTreeRepository,
 )
 from app.modules.institutional_catalogs.infrastructure.unit_of_measure_repository import (
     InMemoryUnitOfMeasureRepository,
@@ -82,10 +90,24 @@ from app.modules.institutional_catalogs.infrastructure.unit_of_measure_repositor
 from app.modules.institutional_catalogs.infrastructure.unit_of_measure_sql_repository import (
     SqlAlchemyUnitOfMeasureRepository,
 )
-from app.modules.notifications.infrastructure.repository import InMemoryNotificationRepository
-from app.modules.notifications.infrastructure.sql_repository import SqlAlchemyNotificationRepository
+from app.modules.notifications.infrastructure.repository import (
+    InMemoryAvisoRepository,
+    InMemoryNotificationRepository,
+)
+from app.modules.notifications.infrastructure.sql_repository import (
+    SqlAlchemyAvisoRepository,
+    SqlAlchemyNotificationRepository,
+)
 from app.modules.periods.infrastructure.repository import InMemoryPeriodRepository
 from app.modules.periods.infrastructure.sql_repository import SqlAlchemyPeriodRepository
+from app.modules.poa_institucional.infrastructure.repository import (
+    InMemoryAreaLeadership,
+    InMemoryPoaAreaRepository,
+)
+from app.modules.poa_institucional.infrastructure.sql_repository import (
+    SqlAlchemyAreaLeadership,
+    SqlAlchemyPoaAreaRepository,
+)
 from app.modules.poa_planning.application.period_recipients import PoaPeriodRecipients
 from app.modules.poa_planning.infrastructure.cedula_repository import (
     InMemoryPoaFormRepository,
@@ -101,6 +123,7 @@ from app.shared.infrastructure.db.unit_of_work import (
     NoOpUnitOfWorkFactory,
     SqlAlchemyUnitOfWorkFactory,
 )
+from app.shared.infrastructure.files.uploaded_files import StoredUploadedFiles
 
 
 @dataclass
@@ -113,6 +136,7 @@ class Resources:
     revoked_token_store: object
     area_repository: object
     instrument_repository: object
+    instrument_version_repository: object
     period_repository: object
     audit_repository: object
     indicator_repository: object
@@ -121,9 +145,12 @@ class Resources:
     criteria_repository: object
     indicator_type_repository: object
     unit_of_measure_repository: object
+    strategic_tree_repository: object
     state_change_repository: object
     threshold_config_repository: object
     poa_repository: object
+    poa_area_repository: object
+    area_leadership: object
     poa_form_repository: object
     poa_report_service: object
     poa_period_recipients: object
@@ -131,6 +158,8 @@ class Resources:
     indicator_report_service: object
     report_log: object
     notification_repository: object
+    aviso_repository: object
+    uploaded_files: object
     password_setup_token_store: object
     institutional_directory: object
     email_template_repository: object
@@ -146,6 +175,7 @@ def create_resources(settings: Settings) -> Resources:
         revoked_token_store = InMemoryRevokedTokenStore()
         area_repository = InMemoryAreaRepository()
         instrument_repository = InMemoryInstrumentRepository()
+        instrument_version_repository = InMemoryInstrumentVersionRepository()
         period_repository = InMemoryPeriodRepository()
         audit_repository = InMemoryAuditRepository()
         indicator_repository = InMemoryIndicatorRepository()
@@ -154,9 +184,12 @@ def create_resources(settings: Settings) -> Resources:
         criteria_repository = InMemoryReferenceRepository()
         indicator_type_repository = InMemoryReferenceRepository()
         unit_of_measure_repository = InMemoryUnitOfMeasureRepository()
+        strategic_tree_repository = InMemoryStrategicTreeRepository()
         state_change_repository = InMemoryStateChangeRepository()
         threshold_config_repository = InMemoryThresholdConfigRepository()
         poa_repository = InMemoryPoaRepository()
+        poa_area_repository = InMemoryPoaAreaRepository()
+        area_leadership = InMemoryAreaLeadership(user_repository)
         poa_form_repository = InMemoryPoaFormRepository()
         poa_report_service = PoaReportService(
             poa_form_repository, evidence_repository, area_repository
@@ -174,6 +207,7 @@ def create_resources(settings: Settings) -> Resources:
         )
         report_log = InMemoryReportLog()
         notification_repository = InMemoryNotificationRepository()
+        aviso_repository = InMemoryAvisoRepository()
         password_setup_token_store = InMemoryPasswordSetupTokenStore()
     else:
         email_template_repository = SqlAlchemyTemplateRepository(db_session_factory)
@@ -183,6 +217,7 @@ def create_resources(settings: Settings) -> Resources:
         revoked_token_store = SqlAlchemyRevokedTokenStore(db_session_factory)
         area_repository = SqlAlchemyAreaRepository(db_session_factory)
         instrument_repository = SqlAlchemyInstrumentRepository(db_session_factory)
+        instrument_version_repository = SqlAlchemyInstrumentVersionRepository(db_session_factory)
         period_repository = SqlAlchemyPeriodRepository(db_session_factory)
         audit_repository = SqlAlchemyAuditRepository(db_session_factory)
         indicator_repository = SqlAlchemyIndicatorRepository(db_session_factory)
@@ -194,9 +229,12 @@ def create_resources(settings: Settings) -> Resources:
             IndicatorTypeModel,
         )
         unit_of_measure_repository = SqlAlchemyUnitOfMeasureRepository(db_session_factory)
+        strategic_tree_repository = SqlAlchemyStrategicTreeRepository(db_session_factory)
         state_change_repository = SqlAlchemyStateChangeRepository(db_session_factory)
         threshold_config_repository = SqlAlchemyThresholdConfigRepository(db_session_factory)
         poa_repository = SqlAlchemyPoaRepository(db_session_factory)
+        poa_area_repository = SqlAlchemyPoaAreaRepository(db_session_factory)
+        area_leadership = SqlAlchemyAreaLeadership(db_session_factory)
         poa_form_repository = SqlAlchemyPoaFormRepository(db_session_factory)
         poa_report_service = PoaReportService(
             poa_form_repository, evidence_repository, area_repository
@@ -205,6 +243,7 @@ def create_resources(settings: Settings) -> Resources:
         indicator_report_service = SqlAlchemyIndicatorReportService(db_session_factory)
         report_log = SqlAlchemyReportLog(db_session_factory)
         notification_repository = SqlAlchemyNotificationRepository(db_session_factory)
+        aviso_repository = SqlAlchemyAvisoRepository(db_session_factory)
         password_setup_token_store = SqlAlchemyPasswordSetupTokenStore(db_session_factory)
 
     return Resources(
@@ -217,6 +256,7 @@ def create_resources(settings: Settings) -> Resources:
         revoked_token_store=revoked_token_store,
         area_repository=area_repository,
         instrument_repository=instrument_repository,
+        instrument_version_repository=instrument_version_repository,
         period_repository=period_repository,
         audit_repository=audit_repository,
         indicator_repository=indicator_repository,
@@ -225,9 +265,12 @@ def create_resources(settings: Settings) -> Resources:
         criteria_repository=criteria_repository,
         indicator_type_repository=indicator_type_repository,
         unit_of_measure_repository=unit_of_measure_repository,
+        strategic_tree_repository=strategic_tree_repository,
         state_change_repository=state_change_repository,
         threshold_config_repository=threshold_config_repository,
         poa_repository=poa_repository,
+        poa_area_repository=poa_area_repository,
+        area_leadership=area_leadership,
         poa_form_repository=poa_form_repository,
         poa_report_service=poa_report_service,
         poa_period_recipients=PoaPeriodRecipients(
@@ -237,6 +280,8 @@ def create_resources(settings: Settings) -> Resources:
         indicator_report_service=indicator_report_service,
         report_log=report_log,
         notification_repository=notification_repository,
+        aviso_repository=aviso_repository,
+        uploaded_files=StoredUploadedFiles(settings),
         password_setup_token_store=password_setup_token_store,
         institutional_directory=INSTITUTIONAL_DIRECTORY,
     )

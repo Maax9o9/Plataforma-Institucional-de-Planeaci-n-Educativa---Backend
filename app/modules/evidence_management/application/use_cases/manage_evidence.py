@@ -61,6 +61,7 @@ class AttachEvidence:
             command.checksum_sha256,
         )
         evidence = Evidence.create(
+            criteria_seaes_ids=command.criteria_seaes_ids,
             name=command.name,
             description=command.description,
             evidence_date=command.evidence_date,

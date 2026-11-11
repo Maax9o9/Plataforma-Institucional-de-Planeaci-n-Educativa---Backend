@@ -23,6 +23,21 @@ class EvidenceModel(Base):
     )
     subida_por: Mapped[int] = mapped_column(Integer, nullable=False)
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    estado_revision: Mapped[str] = mapped_column(
+        Enum(
+            "pendiente",
+            "aprobada",
+            "rechazada",
+            name="estado_revision_evidencia",
+            native_enum=True,
+            create_type=False,
+        ),
+        nullable=False,
+        default="pendiente",
+    )
+    revisado_por: Mapped[int | None] = mapped_column(Integer)
+    revisado_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    comentario_revision: Mapped[str | None] = mapped_column(Text)
 
 
 class EvidenceLinkModel(Base):
@@ -57,3 +72,12 @@ class EvidenceVersionModel(Base):
     checksum_sha256: Mapped[str | None] = mapped_column(String(64))
     usuario_id: Mapped[int] = mapped_column(Integer, nullable=False)
     fecha: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EvidenceCriterionModel(Base):
+    """Criterios SEAES a los que responde una evidencia (migración 0034)."""
+
+    __tablename__ = "evidencia_criterios"
+
+    evidencia_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    criterio_seaes_id: Mapped[int] = mapped_column(Integer, primary_key=True)

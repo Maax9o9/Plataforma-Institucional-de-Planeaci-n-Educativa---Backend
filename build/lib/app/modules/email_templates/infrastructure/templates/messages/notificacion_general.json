@@ -1,0 +1,9 @@
+{
+  "etiqueta": "Notificación institucional",
+  "contenido": {
+    "asunto": "Tienes una notificación de Planeación",
+    "titulo": "Hay información para ti",
+    "cuerpo": "Revisa el siguiente aviso y consulta la plataforma para conocer su detalle.",
+    "texto_boton": "Abrir la plataforma"
+  }
+}

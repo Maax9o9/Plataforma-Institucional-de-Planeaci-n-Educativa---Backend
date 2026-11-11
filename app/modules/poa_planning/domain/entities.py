@@ -10,20 +10,37 @@ from app.shared.domain.exceptions import InvalidStateError, ValidationError
 
 from .value_objects import PoaExerciseStatus
 
+EL_EJERCICIO_POA_NO_EXISTE = "El ejercicio del Programa Operativo Anual no existe."
+
 
 @dataclass(kw_only=True)
 class PoaExercise(BaseEntity):
     year: int
+    #: El POA del que cuelga: de ahí salen las estrategias que el ejercicio
+    #: ofrece al formular y los nombres que sus cédulas muestran. Se elige al
+    #: crearlo y no cambia -un ejercicio con cédulas ya formuladas contra un POA
+    #: no puede pasarse a otro sin reescribir lo que dicen-.
+    catalog_id: int
     status: PoaExerciseStatus = PoaExerciseStatus.DRAFT
     formulation_deadline: date | None = None
     review_comment: str | None = None
     closed_at: datetime | None = None
 
     @classmethod
-    def create(cls, year: int, *, formulation_deadline: date | None = None) -> PoaExercise:
+    def create(
+        cls, year: int, *, catalog_id: int, formulation_deadline: date | None = None
+    ) -> PoaExercise:
         if not 2000 <= year <= 2200:
             raise ValidationError("El año del ejercicio POA no es válido.")
-        return cls(year=year, formulation_deadline=formulation_deadline)
+        # El esquema de entrada ya lo exige, pero la entidad no puede depender de
+        # que algo más la proteja: sin POA no hay de dónde leer las estrategias.
+        #
+        # Se rechaza `< 1` y no sólo `None`: los seriales de la base empiezan en
+        # 1, así que el cero y los negativos no son ids de POA. Mismo criterio
+        # que `IdDePoa` en el borde HTTP y que `PoaForm.create`.
+        if catalog_id is None or catalog_id < 1:
+            raise ValidationError("El POA del que cuelga el ejercicio no es válido.")
+        return cls(year=year, catalog_id=catalog_id, formulation_deadline=formulation_deadline)
 
     def ensure_editable(self, today: date) -> None:
         """Planeación sólo edita la estructura en borrador y antes de la fecha límite."""

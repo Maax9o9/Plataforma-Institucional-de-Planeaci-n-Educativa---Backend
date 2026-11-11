@@ -76,6 +76,7 @@ class SqlAlchemyDashboardService:
                 )
                 .outerjoin(CaptureModel, capture_join)
                 .group_by(IndicatorModel.id, IndicatorModel.clave)
+                .order_by(IndicatorModel.id)
             )
             if area_id is not None:
                 indicator_statement = indicator_statement.where(IndicatorModel.area_id == area_id)

@@ -4,7 +4,7 @@ from itertools import count
 
 from app.shared.domain.exceptions import ConflictError, ResourceNotFoundError
 
-from ..domain.entities import PoaExercise
+from ..domain.entities import EL_EJERCICIO_POA_NO_EXISTE, PoaExercise
 
 
 class InMemoryPoaRepository:
@@ -26,5 +26,5 @@ class InMemoryPoaRepository:
 
     async def update_exercise(self, item: PoaExercise) -> None:
         if item.id not in self.exercises:
-            raise ResourceNotFoundError("El ejercicio POA no existe.")
+            raise ResourceNotFoundError(EL_EJERCICIO_POA_NO_EXISTE)
         self.exercises[item.id] = item

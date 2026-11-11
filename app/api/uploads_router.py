@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import re
+import zipfile
 from hashlib import sha256
+from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
@@ -15,6 +16,11 @@ from starlette.concurrency import run_in_threadpool
 from app.core.authorization import actor_from_user
 from app.core.security import get_current_user, require_roles
 from app.modules.evidence_management.api.dependencies import get_evidence_access_control
+from app.shared.domain.archivos_cargados import (
+    DOCX_MIME,
+    MIME_POR_EXTENSION,
+    NOMBRE_DE_ARCHIVO_CARGADO,
+)
 from app.shared.domain.exceptions import (
     PayloadTooLargeError,
     ResourceNotFoundError,
@@ -23,12 +29,31 @@ from app.shared.domain.exceptions import (
 
 router = APIRouter(prefix="/archivos", tags=["Evidencias"])
 
+#: La lista de tipos que el sistema admite vive en
+#: `app/shared/domain/archivos_cargados.py` y no aquí: la validación de los
+#: adjuntos de un aviso comprueba el mismo nombre y el mismo tipo, y una
+#: segunda lista se habría quedado atrás en la primera extensión que se
+#: añadiera por un lado y no por el otro. Aquí quedan las firmas, que son lo
+#: propio de la carga: nadie más mira el contenido del archivo.
 SIGNATURES = (
-    (b"%PDF-", "application/pdf", ".pdf"),
-    (b"\x89PNG\r\n\x1a\n", "image/png", ".png"),
-    (b"\xff\xd8\xff", "image/jpeg", ".jpg"),
+    (b"%PDF-", MIME_POR_EXTENSION[".pdf"], ".pdf"),
+    (b"\x89PNG\r\n\x1a\n", MIME_POR_EXTENSION[".png"], ".png"),
+    (b"\xff\xd8\xff", MIME_POR_EXTENSION[".jpg"], ".jpg"),
 )
-SAFE_FILE_NAME = re.compile(r"^[0-9a-f]{32}\.(?:pdf|png|jpg)$")
+
+#: El formato institucional del informe cuatrimestral se entrega en Word, así
+#: que tiene que poder subirse: el área descarga la plantilla, la completa y la
+#: adjunta. Antes rebotaba con un 415 y el formato era inservible.
+#:
+#: Un `.docx` es un ZIP, y aceptar «cualquier cosa que empiece por PK» abriría
+#: la puerta a todo archivo comprimido —incluido un `.xlsm` con macros—. Por eso
+#: no basta la firma: se abre el contenedor y se comprueba que trae de verdad un
+#: documento de Word dentro.
+DOCX_SIGNATURE = b"PK\x03\x04"
+DOCX_PART = "word/document.xml"
+DOCX_CONTENT_TYPE = b"wordprocessingml.document"
+
+SAFE_FILE_NAME = NOMBRE_DE_ARCHIVO_CARGADO
 
 
 class ArchivoRespuesta(BaseModel):
@@ -43,7 +68,27 @@ def _detect_type(content: bytes) -> tuple[str, str]:
     for signature, mime_type, extension in SIGNATURES:
         if content.startswith(signature):
             return mime_type, extension
+    if content.startswith(DOCX_SIGNATURE) and _es_docx(content):
+        return DOCX_MIME, ".docx"
     raise UnsupportedMediaTypeError()
+
+
+def _es_docx(content: bytes) -> bool:
+    """Que el ZIP sea de verdad un documento de Word.
+
+    Se comprueba por dentro y no por el nombre del archivo: la extensión la
+    elige quien sube, y un `.xlsm` renombrado a `.docx` pasaría. Lo que no
+    engaña es que el contenedor traiga `word/document.xml` y que su manifiesto
+    declare el tipo de WordprocessingML.
+    """
+    try:
+        with zipfile.ZipFile(BytesIO(content)) as contenedor:
+            nombres = set(contenedor.namelist())
+            if DOCX_PART not in nombres or "[Content_Types].xml" not in nombres:
+                return False
+            return DOCX_CONTENT_TYPE in contenedor.read("[Content_Types].xml")
+    except (zipfile.BadZipFile, KeyError, OSError):
+        return False
 
 
 @router.post(
@@ -68,9 +113,7 @@ async def upload_file(
     settings = request.app.state.settings
     content = await archivo.read(settings.upload_max_bytes + 1)
     if len(content) > settings.upload_max_bytes:
-        raise PayloadTooLargeError(
-            details={"max_bytes": settings.upload_max_bytes}
-        )
+        raise PayloadTooLargeError(details={"max_bytes": settings.upload_max_bytes})
     mime_type, extension = _detect_type(content)
     file_id = uuid4().hex
     storage = Path(settings.upload_directory).resolve()
@@ -99,18 +142,21 @@ async def download_file(
     if not SAFE_FILE_NAME.fullmatch(file_name):
         raise ResourceNotFoundError("El archivo no existe.")
     evidence_id = await request.app.state.evidence_repository.find_evidence_id_by_path(file_name)
-    if evidence_id is None:
-        raise ResourceNotFoundError("El archivo no esta vinculado a una evidencia.")
-    await get_evidence_access_control(request).ensure_can_view(
-        evidence_id, actor_from_user(current_user)
-    )
+    if evidence_id is not None:
+        await get_evidence_access_control(request).ensure_can_view(
+            evidence_id, actor_from_user(current_user)
+        )
+    elif not await _lo_lleva_un_comunicado_suyo(request, file_name, current_user):
+        raise ResourceNotFoundError("El archivo no esta disponible.")
     storage = Path(request.app.state.settings.upload_directory).resolve()
     source = (storage / file_name).resolve()
     if not source.is_relative_to(storage) or not source.is_file():
         raise ResourceNotFoundError("El archivo no existe.")
-    media_type = {
-        ".pdf": "application/pdf",
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-    }[source.suffix]
-    return FileResponse(source, media_type=media_type, filename=file_name)
+    return FileResponse(source, media_type=MIME_POR_EXTENSION[source.suffix], filename=file_name)
+
+
+async def _lo_lleva_un_comunicado_suyo(request: Request, file_name: str, current_user) -> bool:
+    actor = actor_from_user(current_user)
+    return await request.app.state.los_adjuntos_de_los_avisos.puede_abrirlo(
+        file_name, usuario_id=actor.id, redacta_avisos=actor.is_planning
+    )

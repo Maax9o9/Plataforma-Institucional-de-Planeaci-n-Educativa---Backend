@@ -32,6 +32,15 @@ from app.modules.identity_access.infrastructure.security import (
     Argon2PasswordHasher,
     JwtTokenService,
 )
+from app.modules.notifications.application.adjuntos_de_los_avisos import (
+    LosAdjuntosDeLosAvisos,
+)
+from app.modules.notifications.application.area_notices import AreaNotices
+from app.modules.notifications.application.avisos_consultados import (
+    ElBuzon,
+    LasCifrasDeLectura,
+)
+from app.shared.infrastructure.db.turno_exclusivo import el_turno_de_los_recordatorios
 from app.shared.infrastructure.email.factory import create_email_sender
 from app.shared.infrastructure.events.in_memory_event_bus import InMemoryEventBus
 
@@ -106,6 +115,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.email_template_service,
         settings.frontend_url,
     )
+    app.state.area_notices = AreaNotices(
+        resources.poa_period_recipients,
+        app.state.notification_service,
+        resources.area_repository,
+        resources.aviso_repository,
+        resources.uploaded_files,
+    )
+    app.state.turno_de_los_recordatorios = el_turno_de_los_recordatorios(
+        app.state.db_session_factory
+    )
+    app.state.el_buzon = ElBuzon(resources.notification_repository, resources.aviso_repository)
+    app.state.los_adjuntos_de_los_avisos = LosAdjuntosDeLosAvisos(
+        resources.aviso_repository,
+        resources.notification_repository,
+    )
+    app.state.las_cifras_de_lectura = LasCifrasDeLectura(
+        resources.aviso_repository,
+        resources.notification_repository,
+        resources.user_repository,
+        resources.area_repository,
+    )
     app.add_middleware(RequestIdMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(CORSMiddleware, **build_cors_options(settings))
@@ -114,7 +144,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     include_api_routers(
         app,
         settings.api_v1_prefix,
-        incluir_indicadores=settings.indicators_module_enabled,
+        incluir_el_ciclo_mensual=settings.monthly_cycle_enabled,
     )
     app.openapi = lambda: custom_openapi(app)
     return app

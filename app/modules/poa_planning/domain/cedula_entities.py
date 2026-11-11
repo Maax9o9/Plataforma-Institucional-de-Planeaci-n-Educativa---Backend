@@ -64,8 +64,51 @@ def build_issue_name(objective_number: int, quarter: int, year: int) -> str:
     return f"Cédula Objetivo {objective_number} - {four_month_period_name(quarter)} {year}"
 
 
+@dataclass(kw_only=True)
+class PoaCatalogo(BaseEntity):
+    """El POA de un año: el marco del que cuelgan objetivos, estrategias,
+    indicadores y acciones.
+
+    Es una entidad propia y no una propiedad del ejercicio para que se pueda
+    subir y revisar *antes* de abrir el año —que es como llega en la realidad:
+    primero el documento, después el ejercicio—.
+    """
+
+    name: str
+    year: int
+    origin: str | None = None
+    created_by: int | None = None
+    created_at: datetime = field(default_factory=utc_now)
+    updated_at: datetime = field(default_factory=utc_now)
+
+    @classmethod
+    def create(
+        cls, *, name: str, year: int, origin: str | None, created_by: int | None
+    ) -> PoaCatalogo:
+        if not name.strip():
+            raise ValidationError("El POA necesita un nombre.")
+        if not 2000 <= year <= 2200:
+            raise ValidationError("El año del POA no es válido.")
+        ahora = utc_now()
+        return cls(
+            name=name.strip(),
+            year=year,
+            origin=origin.strip() if origin else None,
+            created_by=created_by,
+            created_at=ahora,
+            updated_at=ahora,
+        )
+
+    def touch_contents(self) -> None:
+        """Mueve la fecha de modificación. La llama quien cambia el CONTENIDO
+        del catálogo: lo que Planeación entiende por «última modificación» es
+        que alguien tocó una estrategia, no que alguien renombró el POA."""
+        self.updated_at = utc_now()
+
+
 @dataclass(frozen=True, kw_only=True)
 class PoaObjectiveCatalog:
+    catalog_id: int
     key: str
     number: int
     denomination: str
@@ -74,6 +117,7 @@ class PoaObjectiveCatalog:
 
 @dataclass(frozen=True, kw_only=True)
 class PoaStrategyCatalog:
+    catalog_id: int
     key: str
     objective_number: int
     denomination: str
@@ -82,6 +126,7 @@ class PoaStrategyCatalog:
 
 @dataclass(frozen=True, kw_only=True)
 class PoaIndicatorCatalog:
+    catalog_id: int
     key: str
     objective_number: int
     name: str
@@ -92,6 +137,7 @@ class PoaIndicatorCatalog:
 
 @dataclass(frozen=True, kw_only=True)
 class PoaActivityCatalog:
+    catalog_id: int
     key: str
     strategy_key: str
     description: str
@@ -100,6 +146,15 @@ class PoaActivityCatalog:
 
 @dataclass(kw_only=True)
 class PoaForm(BaseEntity):
+    #: El POA del que la cédula lee sus nombres: el mismo del que cuelga su
+    #: ejercicio, resuelto una sola vez al crearla.
+    #:
+    #: Es el mismo dato dos veces -el ejercicio ya lo tiene- y está así a
+    #: propósito: la spec lo pide guardado en la cédula para que la foránea
+    #: compuesta de la base pueda impedir que apunte al catálogo de otro año.
+    #: La entidad retrata esa tabla, y además ahorra volver al ejercicio a
+    #: quien ya tiene la cédula en la mano sólo para saber en qué POA buscar.
+    catalog_id: int
     exercise_id: int
     objective_number: int
     strategy_key: str
@@ -114,6 +169,7 @@ class PoaForm(BaseEntity):
     def create(
         cls,
         *,
+        catalog_id: int,
         exercise_id: int,
         objective_number: int,
         strategy_key: str,
@@ -124,11 +180,27 @@ class PoaForm(BaseEntity):
         signatories: tuple[PoaSignatory, ...] = (),
     ) -> PoaForm:
         validate_presentation(strategy_type, signatories)
-        if objective_number not in range(1, 7):
-            raise ValidationError("El objetivo del POA debe estar entre 1 y 6.")
+        # El caso de uso lo toma del ejercicio, pero la entidad no puede
+        # depender de que algo más la proteja: sin POA no hay de dónde leer la
+        # estrategia ni los indicadores que la cédula nombra.
+        #
+        # Se rechaza `< 1` y no sólo `None`: los seriales de la base empiezan en
+        # 1, así que el cero y los negativos no son ids de POA, y un `None` ya
+        # lo era por la anotación. Es el mismo criterio que `IdDePoa` aplica en
+        # el borde HTTP; aquí cierra el paso a quien no venga por ahí.
+        if catalog_id is None or catalog_id < 1:
+            raise ValidationError("El POA del que cuelga la cédula no es válido.")
+        # El PSE 2025-2030 trae seis objetivos, pero el catálogo es
+        # administrable: si la SEP agrega un objetivo, el formato no puede
+        # quedar atado a ese seis. Que el objetivo *exista* lo garantiza el
+        # caso de uso, que lo deduce de la estrategia elegida; aquí sólo queda
+        # descartar un número imposible.
+        if objective_number < 1:
+            raise ValidationError("El objetivo del POA no es válido.")
         if not strategy_key.strip():
             raise ValidationError("La estrategia de la cédula es obligatoria.")
         return cls(
+            catalog_id=catalog_id,
             exercise_id=exercise_id,
             objective_number=objective_number,
             strategy_key=strategy_key.strip(),
@@ -157,8 +229,8 @@ class PoaForm(BaseEntity):
         if signatories is not None:
             self.signatories = signatories
         if objective_number is not None:
-            if objective_number not in range(1, 7):
-                raise ValidationError("El objetivo del POA debe estar entre 1 y 6.")
+            if objective_number < 1:
+                raise ValidationError("El objetivo del POA no es válido.")
             self.objective_number = objective_number
         if strategy_key is not None:
             if not strategy_key.strip():
@@ -204,6 +276,12 @@ class PoaFormQuarter(BaseEntity):
 
 @dataclass(kw_only=True)
 class PoaFormIndicator(BaseEntity):
+    #: El POA de la cédula a la que pertenece. Lo lleva por el mismo motivo que
+    #: la cédula -la foránea compuesta con el catálogo lo exige- y porque los
+    #: sitios que resuelven el nombre del indicador tienen en la mano este
+    #: renglón y nada más: sin el campo, cada uno necesitaría una consulta
+    #: extra a la cédula padre sólo para saber de qué POA leerlo.
+    catalog_id: int
     form_id: int
     indicator_key: str
     institutional_goal: Decimal | None = None
@@ -216,7 +294,9 @@ class PoaFormIndicator(BaseEntity):
     achieved_percentage: Decimal | None = None
 
     @classmethod
-    def create(cls, *, form_id: int, indicator_key: str, **values) -> PoaFormIndicator:
+    def create(
+        cls, *, catalog_id: int, form_id: int, indicator_key: str, **values
+    ) -> PoaFormIndicator:
         for field_name, label in (
             ("institutional_goal", "La meta institucional"),
             ("baseline_value", "La línea base"),
@@ -231,7 +311,7 @@ class PoaFormIndicator(BaseEntity):
         baseline_year = values.get("baseline_year")
         if baseline_year is not None and not 2000 <= baseline_year <= 2200:
             raise ValidationError("El año de la línea base no es válido.")
-        return cls(form_id=form_id, indicator_key=indicator_key, **values)
+        return cls(catalog_id=catalog_id, form_id=form_id, indicator_key=indicator_key, **values)
 
     def update_details(self, **values) -> None:
         for field_name, label in (
@@ -269,6 +349,10 @@ class PoaFormIndicator(BaseEntity):
 
 @dataclass(kw_only=True)
 class PoaFormActivity(BaseEntity):
+    #: El POA de la cédula a la que pertenece, por lo mismo que en
+    #: `PoaFormIndicator`: la foránea compuesta con el catálogo de acciones, y
+    #: los sitios que resuelven la descripción con la actividad en la mano.
+    catalog_id: int
     form_id: int
     activity_key: str
     unit: str
@@ -287,6 +371,7 @@ class PoaFormActivity(BaseEntity):
     def create(
         cls,
         *,
+        catalog_id: int,
         form_id: int,
         activity_key: str,
         unit: str,
@@ -298,6 +383,7 @@ class PoaFormActivity(BaseEntity):
             raise ValidationError("La unidad de medida de la actividad es obligatoria.")
         _require_non_negative(annual_goal, "La meta anual")
         return cls(
+            catalog_id=catalog_id,
             form_id=form_id,
             activity_key=activity_key,
             unit=unit.strip(),
@@ -469,9 +555,18 @@ class PoaFollowUpCard:
     sin abrirlo. Es un modelo de lectura, no un agregado: no tiene reglas."""
 
     id: int
+    # El POA de la cédula de la que sale la tarjeta. El tablero resuelve la
+    # descripción de cada acción sin abrir su cédula: sin este campo tendría
+    # que pedirla por tarjeta nada más para saber en qué catálogo buscar.
+    catalog_id: int
     form_id: int
     activity_id: int
     activity_key: str
+    # Lo que Planeación le escribió al área para explicar, en concreto, qué
+    # significa esta acción —redactada en términos genéricos por la
+    # federación—. Viaja en la tarjeta porque quien la va a reportar es justo
+    # quien necesita leerla, y hasta ahora sólo se veía al armar la cédula.
+    upe_description: str | None
     unit: str
     annual_goal: Decimal
     executing_area_id: int | None

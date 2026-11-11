@@ -8,7 +8,11 @@ from app.modules.institutional_catalogs.domain.ports.repositories import AreaRep
 from app.shared.application.actor import ActorContext
 
 from ..domain.ports.cedula_repository import PoaFormRepository
-from .access_control import can_capture_activity, can_edit_structure
+from .access_control import (
+    can_be_told_the_area_poa_opened,
+    can_capture_activity,
+    can_edit_structure,
+)
 from .completeness import is_follow_up_complete
 
 
@@ -40,6 +44,13 @@ class PoaPeriodRecipients:
             for user in await self.users.list(active_only=True)
             if user.area_id == area_id
             and can_capture_activity(ActorContext.from_user(user), area_id)
+        }
+
+    async def for_area_notice(self, area_id: int) -> set[int]:
+        return {
+            user.id
+            for user in await self.users.list(active_only=True)
+            if can_be_told_the_area_poa_opened(ActorContext.from_user(user), area_id)
         }
 
     async def pending_for_period(self, period_id: int) -> list[PoaPendingCapture]:

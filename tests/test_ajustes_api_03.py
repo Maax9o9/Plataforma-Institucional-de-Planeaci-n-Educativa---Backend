@@ -53,7 +53,7 @@ def test_ambiente_compartido_exige_database_url(environment: str) -> None:
 
 def test_desarrollo_conserva_el_fallback_en_memoria() -> None:
     app = create_app(_settings(environment="testing",
-            indicators_module_enabled=True, database_url=None))
+            monthly_cycle_enabled=True, database_url=None))
     assert isinstance(app, FastAPI)
 
 

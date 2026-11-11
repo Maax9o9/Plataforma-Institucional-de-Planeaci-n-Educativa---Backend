@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -11,8 +12,13 @@ from app.modules.institutional_catalogs.domain.entities import Area
 from app.modules.institutional_catalogs.domain.ports.repositories import AreaRepository
 from app.shared.application.event_bus import EventBus
 from app.shared.application.ports.email_composer import EmailComposer
-from app.shared.application.ports.email_sender import EmailSender
-from app.shared.domain.exceptions import AuthenticationError, ResourceNotFoundError, ValidationError
+from app.shared.application.ports.email_sender import EmailSender, EmailSendError
+from app.shared.domain.exceptions import (
+    AuthenticationError,
+    ConflictError,
+    ResourceNotFoundError,
+    ValidationError,
+)
 
 from ...domain.directory import InstitutionalDirectory
 from ...domain.entities import User
@@ -23,6 +29,8 @@ from ...domain.ports.refresh_token_repository import RefreshTokenStore
 from ...domain.ports.user_repository import UserRepository
 from ..access_control import ensure_can_manage_user
 from ..dto import RegisterUserCommand
+
+logger = logging.getLogger(__name__)
 
 
 class InviteUser:
@@ -49,10 +57,6 @@ class InviteUser:
         self.email_composer = email_composer
 
     async def execute(self, command: RegisterUserCommand) -> User:
-        if await self.repository.get_by_email(command.email):
-            from app.shared.domain.exceptions import ConflictError
-
-            raise ConflictError("Ya existe un usuario con ese correo electronico.")
         roles = command.roles
         area_id = command.area_id
         area_name = None
@@ -61,7 +65,10 @@ class InviteUser:
             self.repository,
             command.actor_id,
             assigned_roles=set(assignment.roles) if assignment else roles,
+            area_id=area_id,
         )
+        if await self.repository.get_by_email(command.email):
+            raise ConflictError("Ya existe un usuario con ese correo electronico.")
         if assignment is not None:
             areas = await self.area_repository.list(active_only=False)
             area = next(
@@ -81,6 +88,9 @@ class InviteUser:
             roles = set(assignment.roles)
             area_id = area.id
             area_name = area.name
+        await ensure_can_manage_user(
+            self.repository, command.actor_id, assigned_roles=roles, area_id=area_id
+        )
         user = User.register(
             email=command.email,
             full_name=command.full_name,
@@ -109,7 +119,20 @@ class InviteUser:
             token_hash=token_hash,
             expires_at=expires_at,
         )
-        await self.email_sender.send(user.email.value, email.subject, email.html, email.text)
+        # La invitacion es la cuenta mas su enlace; el correo es la entrega. Si
+        # la entrega falla, la invitacion ya esta hecha: contestar que fallo
+        # deja a quien la creo creyendo que no existe, y al reintentar recibe
+        # que el correo ya esta registrado.
+        try:
+            await self.email_sender.send(
+                user.email.value, email.subject, email.html, email.text
+            )
+        except EmailSendError:
+            logger.warning(
+                "No se pudo entregar la invitacion por correo user_id=%s", user.id
+            )
+            user.invitation_email_sent = False
+
         await self.event_bus.publish(
             UserRegistered(
                 actor_id=command.actor_id,
@@ -121,6 +144,83 @@ class InviteUser:
                     "directory_assignment": assignment is not None,
                     "area_id": user.area_id,
                     "roles": sorted(role.value for role in user.roles),
+                    "correo_enviado": user.invitation_email_sent,
+                },
+            )
+        )
+        return user
+
+
+class ResendInvitation:
+    def __init__(
+        self,
+        repository: UserRepository,
+        token_store: PasswordSetupTokenStore,
+        email_sender: EmailSender,
+        event_bus: EventBus,
+        settings: Settings,
+        email_composer: EmailComposer,
+    ) -> None:
+        self.repository = repository
+        self.token_store = token_store
+        self.email_sender = email_sender
+        self.event_bus = event_bus
+        self.settings = settings
+        self.email_composer = email_composer
+
+    async def execute(self, user_id: int, *, actor_id: int | None) -> User:
+        user = await self.repository.get_by_id(user_id)
+        if user is None:
+            raise ResourceNotFoundError("El usuario no existe.")
+        await ensure_can_manage_user(self.repository, actor_id, target=user)
+        if not user.is_active:
+            raise ConflictError(
+                "La cuenta está desactivada: reactívela antes de volver a invitarla."
+            )
+        if not user.password_setup_required:
+            raise ConflictError(
+                "Esa persona ya configuró su contraseña, así que el enlace de invitación ya "
+                "no le sirve. Si perdió el acceso, lo que necesita es recuperar la contraseña."
+            )
+
+        raw_token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(UTC) + timedelta(hours=self.settings.password_setup_expire_hours)
+        link = f"{self.settings.frontend_url.rstrip('/')}/establecer-contrasena?token={raw_token}"
+        email = await self.email_composer.render(
+            "invitacion",
+            recipient_name=user.full_name,
+            detail=(
+                f"Tu enlace personal vence en {self.settings.password_setup_expire_hours} horas. "
+                "Sólo puede usarse una vez. No lo compartas con otras personas."
+            ),
+            action_url=link,
+        )
+        await self.token_store.issue(
+            user_id=user.id,
+            token_hash=sha256(raw_token.encode("utf-8")).hexdigest(),
+            expires_at=expires_at,
+        )
+
+        user.invitation_email_sent = True
+        try:
+            await self.email_sender.send(
+                user.email.value, email.subject, email.html, email.text
+            )
+        except EmailSendError:
+            logger.warning(
+                "No se pudo reenviar la invitacion por correo user_id=%s", user.id
+            )
+            user.invitation_email_sent = False
+
+        await self.event_bus.publish(
+            UserRegistered(
+                actor_id=actor_id,
+                aggregate_type="user",
+                aggregate_id=user.id,
+                action="invitation_resent",
+                data={
+                    "email": user.email.value,
+                    "correo_enviado": user.invitation_email_sent,
                 },
             )
         )

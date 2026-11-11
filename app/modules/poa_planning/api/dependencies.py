@@ -12,7 +12,11 @@ from ..application.use_cases.manage_exercise import (
 
 
 def get_create_exercise_use_case(request: Request) -> CreateExercise:
-    return CreateExercise(request.app.state.poa_repository, request.app.state.event_bus)
+    return CreateExercise(
+        request.app.state.poa_repository,
+        request.app.state.poa_form_repository,
+        request.app.state.event_bus,
+    )
 
 
 def get_send_exercise_use_case(request: Request) -> SendExercise:

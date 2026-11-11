@@ -24,6 +24,9 @@ class User(BaseEntity):
     password_setup_required: bool = False
     last_access_at: datetime | None = None
     area_name: str | None = None
+    # Si la invitacion llego por correo. Vive con el usuario sólo el tiempo
+    # de contestar quien la creo: no se guarda ni se vuelve a leer.
+    invitation_email_sent: bool = True
     version: int = 1
     password_version: int = 0
 

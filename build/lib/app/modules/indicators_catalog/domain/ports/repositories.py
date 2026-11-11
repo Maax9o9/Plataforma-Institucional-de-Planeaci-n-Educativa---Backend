@@ -1,0 +1,46 @@
+"""Puertos del modulo de indicadores, sin modelos ORM ajenos."""
+
+from __future__ import annotations
+
+from typing import Protocol
+
+from ..entities import Baseline, Goal, Indicator
+from ..value_objects import IndicatorPeriodicity
+
+
+class IndicatorRepository(Protocol):
+    async def add(self, indicator: Indicator) -> None: ...
+
+    async def get_by_id(self, indicator_id: int) -> Indicator | None: ...
+
+    async def get_by_key(self, key: str) -> Indicator | None: ...
+
+    async def list(self, *, active_only: bool = False) -> list[Indicator]: ...
+
+    async def list_page(
+        self,
+        *,
+        active_only: bool,
+        query: str | None,
+        area_id: int | None,
+        responsible_id: int | None,
+        instrument_id: int | None,
+        criterion_id: int | None,
+        periodicity: IndicatorPeriodicity | None,
+        sort: str,
+        descending: bool,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[Indicator], int]: ...
+
+    async def update(self, indicator: Indicator) -> None: ...
+
+    async def add_baseline(self, baseline: Baseline) -> None: ...
+
+    async def add_goal(self, goal: Goal) -> None: ...
+
+    async def get_goal(self, indicator_id: int, period_id: int) -> Goal | None: ...
+
+
+class ReferenceReader(Protocol):
+    async def get_by_id(self, item_id: int): ...

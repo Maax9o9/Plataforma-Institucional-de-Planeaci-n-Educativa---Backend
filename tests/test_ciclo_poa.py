@@ -29,12 +29,7 @@ from app.modules.poa_planning.domain.entities import PoaExercise
 from app.shared.application.actor import ActorContext
 from app.shared.domain.exceptions import ForbiddenError, InvalidStateError
 from app.shared.infrastructure.db.sql_loader import split_sql
-
-
-def _random_year() -> int:
-    # El anio es unico en poa_ejercicios y la base de pruebas persiste entre
-    # corridas: se genera al azar en vez de usar un valor fijo.
-    return 2000 + (uuid4().int % 200)
+from helpers import anio_libre, cuatrimestres, poa_inicial_id
 
 
 async def _account(app, client, role: Role, suffix: str, area_id: int | None = None):
@@ -59,16 +54,14 @@ async def _account(app, client, role: Role, suffix: str, area_id: int | None = N
 
 
 async def _new_exercise(client, headers, *, with_deadline: bool = False) -> dict:
-    for _ in range(8):
-        anio = _random_year()
-        body = {"anio": anio}
-        if with_deadline:
-            body["fecha_limite_formulacion"] = f"{anio}-02-20"
-        response = await client.post("/api/v1/poa/ejercicios", headers=headers, json=body)
-        if response.status_code == 201:
-            return response.json()
-        assert response.status_code == 409, response.text
-    raise AssertionError("No se encontro un anio libre para el ejercicio POA de prueba.")
+    catalogo_id = await poa_inicial_id(client, headers)
+    anio = await anio_libre(client, headers)
+    body = {"anio": anio, "catalogo_id": catalogo_id}
+    if with_deadline:
+        body["fecha_limite_formulacion"] = f"{anio}-02-20"
+    response = await client.post("/api/v1/poa/ejercicios", headers=headers, json=body)
+    assert response.status_code == 201, response.text
+    return response.json()
 
 
 async def _scenario(app, client) -> dict:
@@ -105,11 +98,7 @@ async def _add_cedula(client, escenario) -> None:
             "ejercicio_id": escenario["exercise_id"],
             "estrategia_clave": "6.1",
             "area_responsable_id": escenario["area_id"],
-            "cuatrimestres": [
-                {"numero": 1, "fecha_inicio": f"{anio}-01-01", "fecha_fin": f"{anio}-04-30"},
-                {"numero": 2, "fecha_inicio": f"{anio}-05-01", "fecha_fin": f"{anio}-08-31"},
-                {"numero": 3, "fecha_inicio": f"{anio}-09-01", "fecha_fin": f"{anio}-12-31"},
-            ],
+            "cuatrimestres": cuatrimestres(anio),
         },
     )
     assert form.status_code == 201, form.text
@@ -394,13 +383,14 @@ async def test_historial_queda_en_cambios_estado_con_entidad_poa_ejercicio(backe
 
 
 def test_ensure_editable_bloquea_fuera_de_borrador_o_tras_la_fecha_limite():
-    activo = PoaExercise.create(2199, formulation_deadline=date(2199, 2, 20))
+    # El POA del que cuelga no importa aquí, sólo el ciclo de estados.
+    activo = PoaExercise.create(2199, catalog_id=1, formulation_deadline=date(2199, 2, 20))
     activo.ensure_editable(date(2199, 2, 19))  # no debe lanzar: sigue en borrador y a tiempo
 
     with pytest.raises(InvalidStateError):
         activo.ensure_editable(date(2199, 2, 21))  # ya paso la fecha limite
 
-    enviado = PoaExercise.create(2198)
+    enviado = PoaExercise.create(2198, catalog_id=1)
     enviado.send(has_forms=True)
     with pytest.raises(InvalidStateError):
         enviado.ensure_editable(date(2198, 1, 1))  # ya no esta en borrador
@@ -437,11 +427,7 @@ async def _new_activity_scenario(app, client) -> dict:
             "ejercicio_id": ejercicio["id"],
             "estrategia_clave": "6.1",
             "area_responsable_id": area_id,
-            "cuatrimestres": [
-                {"numero": 1, "fecha_inicio": f"{anio}-01-01", "fecha_fin": f"{anio}-04-30"},
-                {"numero": 2, "fecha_inicio": f"{anio}-05-01", "fecha_fin": f"{anio}-08-31"},
-                {"numero": 3, "fecha_inicio": f"{anio}-09-01", "fecha_fin": f"{anio}-12-31"},
-            ],
+            "cuatrimestres": cuatrimestres(anio),
         },
     )
     assert form.status_code == 201, form.text

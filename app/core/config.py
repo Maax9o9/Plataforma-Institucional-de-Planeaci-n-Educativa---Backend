@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,11 +32,10 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:3000", "http://localhost:5173"]
     )
     cors_allow_all: bool = False
-    # El modulo de indicadores del PIDE queda dormido mientras el trabajo se
-    # concentra en el POA: sus routers no se registran y desaparecen del OpenAPI.
-    # Los modulos siguen en el arbol porque el POA importa de ellos (CaptureStatus,
-    # StateChange y los exportadores), asi que apagar la puerta no apaga el cuarto.
-    indicators_module_enabled: bool = False
+    monthly_cycle_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("monthly_cycle_enabled", "indicators_module_enabled"),
+    )
     database_url: str | None = None
     bootstrap_admin_email: str | None = None
     bootstrap_admin_password: str | None = None

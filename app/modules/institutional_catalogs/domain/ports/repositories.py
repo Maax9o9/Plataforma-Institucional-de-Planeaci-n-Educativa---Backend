@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ..entities import Area, Instrument
+from ..entities import Area, Instrument, InstrumentVersion
 from ..reference_entities import ReferenceItem
 from ..unit_of_measure_entities import UnitOfMeasure
 
@@ -27,6 +27,14 @@ class InstrumentRepository(Protocol):
     async def get_by_id(self, instrument_id: int) -> Instrument | None: ...
 
     async def update(self, instrument: Instrument) -> None: ...
+
+
+class InstrumentVersionRepository(Protocol):
+    async def add(self, version: InstrumentVersion) -> None: ...
+
+    async def get_by_label(self, instrument_id: int, label: str) -> InstrumentVersion | None: ...
+
+    async def list(self, *, instrument_id: int | None = None) -> list[InstrumentVersion]: ...
 
 
 class ReferenceRepository(Protocol):

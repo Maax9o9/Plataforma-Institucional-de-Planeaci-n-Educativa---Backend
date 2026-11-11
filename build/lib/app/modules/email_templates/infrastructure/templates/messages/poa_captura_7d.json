@@ -1,0 +1,9 @@
+{
+  "etiqueta": "Recordatorio POA",
+  "contenido": {
+    "asunto": "Tu captura POA sigue pendiente",
+    "titulo": "El cierre se acerca",
+    "cuerpo": "Estamos en la última semana del cuatrimestre. Aún hay información o evidencias pendientes en el seguimiento de tu área. Revisa el detalle y completa tu captura antes del cierre.",
+    "texto_boton": "Completar mi captura"
+  }
+}

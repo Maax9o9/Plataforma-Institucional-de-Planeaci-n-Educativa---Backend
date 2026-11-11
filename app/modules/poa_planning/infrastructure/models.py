@@ -11,6 +11,7 @@ from app.shared.infrastructure.db.base import Base
 class PoaExerciseModel(Base):
     __tablename__ = "poa_ejercicios"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    catalogo_id: Mapped[int] = mapped_column(Integer, nullable=False)
     anio: Mapped[int] = mapped_column(SmallInteger, nullable=False, unique=True)
     estado: Mapped[str] = mapped_column(
         Enum(

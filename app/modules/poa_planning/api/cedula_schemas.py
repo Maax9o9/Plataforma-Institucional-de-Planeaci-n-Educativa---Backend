@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -15,12 +15,54 @@ class PoaRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
+#: El id de un POA tal como entra por la API, sea en la query o en un cuerpo.
+#: Úsese sin valor por omisión: la «1.1» del 2026 y la del 2027 son dos filas
+#: distintas, y adivinar de cuál se habla es justo lo que hizo que editar un año
+#: cambiara los demás. Lo exige Pydantic: sin él, 422 con el parámetro que falta.
+#:
+#: Los límites son lo que un id de POA puede ser, y rechazarlos aquí evita un 500
+#: donde el contrato es 404:
+#:
+#: - El piso es 1: el id es serial, así que nunca es cero ni negativo. Cero y los
+#:   negativos hasta -2^31 PostgreSQL sí los acepta y los contestaría 404; el
+#:   piso los rechaza como lo que son, algo que no es un id.
+#: - El tope es el de la columna, un entero de 32 bits. Un id mayor no es un POA
+#:   que no existe sino un valor que PostgreSQL ni acepta como parámetro: llegaría
+#:   hasta allá y contestaría 500. Por debajo de -2^31 pasaba lo mismo, y el piso
+#:   también lo cierra.
+IdDePoa = Annotated[int, Field(ge=1, le=2_147_483_647)]
+
+
 StrategyType = Literal["Eficiencia", "Eficacia", "Pertinencia", "Vinculación", "Equidad de Género"]
 
 
 class FirmantePoaSchema(PoaRequest):
     nombre: str = Field(min_length=1, max_length=200)
     cargo: str = Field(min_length=1, max_length=200)
+
+
+class CatalogoPoaRespuesta(BaseModel):
+    id: int
+    nombre: str
+    anio: int
+    origen: str | None
+    creado_en: datetime
+    actualizado_en: datetime
+
+
+class CatalogoPoaRequest(PoaRequest):
+    #: El tope es el de la columna (VARCHAR(120)): sin él, PostgreSQL contestaría
+    #: 500 a un nombre largo en vez de pedirle al usuario que lo acorte.
+    nombre: str = Field(min_length=1, max_length=120)
+    anio: int = Field(ge=2000, le=2200)
+    #: De dónde salió: «capturado a mano», «copiado del POA 2026»... Es lo que
+    #: deja saber qué se está mirando al elegirlo.
+    origen: str | None = None
+
+
+class DuplicarCatalogoPoaRequest(PoaRequest):
+    nombre: str = Field(min_length=1, max_length=120)
+    anio: int = Field(ge=2000, le=2200)
 
 
 class ObjetivoPoaCatalogoRespuesta(BaseModel):
@@ -51,6 +93,34 @@ class ActividadPoaCatalogoRespuesta(BaseModel):
     estrategia_clave: str
     descripcion: str
     activo: bool
+
+
+class ObjetivoPoaCatalogoRequest(PoaRequest):
+    clave: str = Field(min_length=1, max_length=20)
+    denominacion: str = Field(min_length=1)
+    #: Si se puede elegir al formular. Deshabilitarlo no afecta a las cédulas
+    #: que ya lo usan: el catálogo gobierna lo que se elige, no lo elegido.
+    activo: bool = True
+
+
+class EstrategiaPoaCatalogoRequest(PoaRequest):
+    objetivo_numero: int = Field(ge=1)
+    denominacion: str = Field(min_length=1)
+    activo: bool = True
+
+
+class IndicadorPoaCatalogoRequest(PoaRequest):
+    objetivo_numero: int = Field(ge=1)
+    nombre: str = Field(min_length=1)
+    formula: str = Field(min_length=1)
+    unidad_medida: str = Field(min_length=1, max_length=100)
+    activo: bool = True
+
+
+class ActividadPoaCatalogoRequest(PoaRequest):
+    estrategia_clave: str = Field(min_length=1, max_length=20)
+    descripcion: str = Field(min_length=1)
+    activo: bool = True
 
 
 class CuatrimestreCedulaRequest(PoaRequest):
@@ -328,6 +398,8 @@ class ActividadTarjetaRespuesta(BaseModel):
     id: int
     clave: str
     descripcion: str
+    #: Lo que Planeación le explicó al área sobre esta acción, en concreto.
+    actividad_upe: str | None = None
     unidad_medida: str
     meta_anual: Decimal
 
@@ -348,6 +420,12 @@ class SeguimientoTarjetaRespuesta(BaseModel):
     estado: str
     comentario_revision: str | None
     evidencias: int
+    #: Cuántas de esas evidencias siguen esperando dictamen de Planeación.
+    #:
+    #: Un conteo total no distingue el informe con tres archivos ya mirados del
+    #: que tiene tres sin mirar, y es esa diferencia la que decide por dónde
+    #: entrar a revisar.
+    evidencias_sin_revisar: int = 0
     actualizado_en: datetime
 
 

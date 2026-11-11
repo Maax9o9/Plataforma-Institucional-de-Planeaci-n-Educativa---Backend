@@ -55,6 +55,53 @@ La documentacion queda disponible en:
 - ReDoc: `http://127.0.0.1:8000/redoc`
 - Health check: `http://127.0.0.1:8000/health`
 
+## Todo en Docker
+
+La plataforma completa —base de datos, API, sitio y el servidor que los pone
+detrás de una sola dirección— se levanta con un mando, desde `planeacion-backend`
+y con `planeacion-frontend` clonado al lado:
+
+```bash
+docker compose up -d --build
+```
+
+Queda en `http://localhost:8080`: el sitio en la raíz, la API bajo `/api/v1`,
+la documentación en `/docs` y PostgreSQL publicado en el 5433 por si se quiere
+entrar con `psql`. Las migraciones se aplican solas antes de que la API
+arranque —el servicio `migraciones` corre `alembic upgrade head` y la API
+espera a que termine—.
+
+| Mando | Para qué |
+|---|---|
+| `docker compose logs -f api` | Ver lo que hace la API |
+| `docker compose exec api python -m app.scripts.create_admin --correo … --nombre …` | Crear la cuenta administradora |
+| `docker compose down` | Apagarlo todo (los datos se quedan en el volumen) |
+| `docker compose down -v` | Apagarlo y **borrar** la base |
+
+La imagen del sitio compila con Node y se entrega con nginx; la dirección de
+la API se cocina al compilar (`VITE_API_URL=/api/v1`), de modo que el sitio
+habla con el mismo servidor que lo entregó y no hace falta configurar CORS.
+Compilar el sitio pide alrededor de 1 GB de memoria: si el demonio de
+contenedores tiene menos, el build muere con el código 137 y hay que darle más
+memoria a la máquina virtual (`colima start --memory 4`, o los ajustes de
+Docker Desktop).
+
+Para el despliegue se usa `docker-compose.prod.yml`, que es lo mismo más TLS y
+el `.env` real.
+
+### Cuántos procesos atiende la API
+
+`WEB_CONCURRENCY` fija cuántos procesos levanta uvicorn; por omisión **2**. Un
+solo proceso tiene por techo un núcleo, y el ingreso al sistema lo bloquea
+durante los ~100 ms que cuesta verificar una contraseña con Argon2: con 70
+personas entrando a la misma hora eso es una cola de veintitantos segundos.
+La regla práctica es **dos procesos por vCPU** del servidor.
+
+El programador de recordatorios **no se duplica** al subir los procesos: cada
+vuelta pide el turno a PostgreSQL con un candado de aviso y lo toma uno solo
+(`app/shared/infrastructure/db/turno_exclusivo.py`). Sin eso, cuatro procesos
+mandarían cuatro veces el mismo recordatorio.
+
 ## PostgreSQL y migraciones
 
 Con Docker Desktop iniciado, desde `backend`:

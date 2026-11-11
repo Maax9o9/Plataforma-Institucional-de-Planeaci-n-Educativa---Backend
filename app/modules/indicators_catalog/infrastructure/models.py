@@ -36,6 +36,7 @@ class IndicatorModel(Base):
     fuente_informacion: Mapped[str | None] = mapped_column(String(300))
     observaciones_metodologicas: Mapped[str | None] = mapped_column(Text)
     tipo_indicador_id: Mapped[int | None] = mapped_column(Integer)
+    nodo_id: Mapped[int | None] = mapped_column(Integer)
     area_id: Mapped[int] = mapped_column(Integer, nullable=False)
     responsable_id: Mapped[int] = mapped_column(Integer, nullable=False)
     periodicidad: Mapped[str] = mapped_column(
