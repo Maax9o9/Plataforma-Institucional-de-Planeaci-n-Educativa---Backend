@@ -29,6 +29,11 @@ REVISION = "0040_poa_inst_del_area"
 # verdad hacen lo mismo.
 REVISION_DE_ARRIBA = "0041_apertura_del_poa_inst"
 
+# La 0044 le anade `monto_solicitado` a `poa_inst_actividades`. Para volver a
+# levantar la 0040 a solas hay que bajarla antes y subirla despues: si no, la
+# tabla recien creada no tendria esa columna y el esquema ya no seria el mismo.
+REVISION_DEL_MONTO = "0044_monto_de_la_actividad"
+
 TABLAS = ("poa_inst_areas", "poa_inst_actividades", "poa_inst_programacion_mensual")
 
 COLUMNAS = {
@@ -48,6 +53,7 @@ COLUMNAS = {
         "unidad_medida_id": ("integer", True, None),
         "metodo_evaluacion": ("text", True, None),
         "meta_anual": ("numeric(18,4)", True, None),
+        "monto_solicitado": ("numeric(16,2)", True, None),
         "version": ("integer", False, "1"),
         "activo": ("boolean", False, "true"),
     },
@@ -90,6 +96,7 @@ RESTRICCIONES = {
     "fk_poa_inst_actividad_nodo": "f",
     "fk_poa_inst_actividad_unidad_medida": "f",
     "chk_poa_inst_actividad_meta_anual_no_negativa": "c",
+    "ck_poa_inst_actividad_monto_no_negativo": "c",
     "poa_inst_programacion_mensual_pkey": "p",
     "fk_poa_inst_programacion_actividad": "f",
     "uq_poa_inst_programacion_actividad_mes": "u",
@@ -354,6 +361,16 @@ async def _bajar_la_0040(conexion: AsyncConnection) -> None:
     def correr(sincrona) -> None:
         with Operations.context(MigrationContext.configure(sincrona)):
             modulo.downgrade()
+
+    await conexion.run_sync(correr)
+
+
+async def _correr(conexion: AsyncConnection, revision: str, paso: str) -> None:
+    modulo = _modulo(revision)
+
+    def correr(sincrona) -> None:
+        with Operations.context(MigrationContext.configure(sincrona)):
+            getattr(modulo, paso)()
 
     await conexion.run_sync(correr)
 
@@ -713,12 +730,14 @@ async def test_la_0040_no_se_baja_llevandose_lo_que_cuelga_de_sus_tablas(conexio
 async def test_la_0040_se_sube_otra_vez_tras_bajarla_y_deja_el_mismo_esquema(conexion):
     columnas = await _esquema(conexion)
     restricciones = await _restricciones(conexion)
+    await _correr(conexion, REVISION_DEL_MONTO, "downgrade")
     await _bajar_la_de_arriba(conexion)
     await _bajar_la_0040(conexion)
     assert await _esquema(conexion) == {}
     assert await _restricciones(conexion) == {}
 
     await _subir_la_0040(conexion)
+    await _correr(conexion, REVISION_DEL_MONTO, "upgrade")
 
     assert await _esquema(conexion) == columnas == COLUMNAS
     assert await _restricciones(conexion) == restricciones

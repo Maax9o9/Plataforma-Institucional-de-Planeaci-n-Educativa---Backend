@@ -6,7 +6,10 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
-from app.core.types import NonNegativeInstitutionalDecimal
+from app.core.types import (
+    NonNegativeInstitutionalAmount,
+    NonNegativeInstitutionalDecimal,
+)
 from app.modules.institutional_catalogs.domain.strategic_tree_entities import (
     MAYOR_ENTERO_DE_LA_BASE,
 )
@@ -36,6 +39,7 @@ ATRIBUTO_DEL_DOMINIO = {
     "unidad_medida_id": "unit_id",
     "metodo_evaluacion": "evaluation_method",
     "meta_anual": "annual_target",
+    "monto_solicitado": "requested_amount",
     "programacion": "monthly",
     "activa": "is_active",
 }
@@ -77,6 +81,7 @@ class ActividadRequest(BaseModel):
     unidad_medida_id: IdDeLaBase | None = None
     metodo_evaluacion: str | None = None
     meta_anual: NonNegativeInstitutionalDecimal | None = None
+    monto_solicitado: NonNegativeInstitutionalAmount | None = None
     programacion: list[MesProgramadoRequest] | None = _que_el_esquema_tampoco_admita_nulo()
     activa: bool | None = _que_el_esquema_tampoco_admita_nulo()
 
@@ -201,6 +206,7 @@ class ActividadRespuesta(BaseModel):
     unidad_medida_id: int | None
     metodo_evaluacion: str | None
     meta_anual: Decimal | None
+    monto_solicitado: Decimal | None
     programacion: list[MesProgramadoRespuesta]
     activa: bool
     falta_para_presentar: list[str]
@@ -208,6 +214,10 @@ class ActividadRespuesta(BaseModel):
     @field_serializer("meta_anual")
     def dicha_sin_la_escala_de_la_base(self, meta: Decimal | None) -> str | None:
         return None if meta is None else sin_la_escala_de_la_base(meta)
+
+    @field_serializer("monto_solicitado")
+    def dicho_con_sus_centavos(self, monto: Decimal | None) -> str | None:
+        return None if monto is None else f"{monto:.2f}"
 
     @classmethod
     def from_domain(cls, activity: Activity) -> ActividadRespuesta:
@@ -220,6 +230,7 @@ class ActividadRespuesta(BaseModel):
             unidad_medida_id=activity.unit_id,
             metodo_evaluacion=activity.evaluation_method,
             meta_anual=activity.annual_target,
+            monto_solicitado=activity.requested_amount,
             programacion=[MesProgramadoRespuesta.from_domain(mes) for mes in activity.months()],
             activa=activity.is_active,
         )

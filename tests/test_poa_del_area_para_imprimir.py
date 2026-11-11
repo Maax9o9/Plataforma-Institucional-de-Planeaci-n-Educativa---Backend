@@ -55,6 +55,7 @@ def actividad(
     unidad: int | None = 2,
     meses: dict[int, str] | None = None,
     activa: bool = True,
+    monto: str | None = None,
 ):
     puestos = meses if meses is not None else {1: "1", 7: "2"}
     return Activity(
@@ -65,6 +66,7 @@ def actividad(
         unit_id=unidad,
         evaluation_method="Constancias",
         annual_target=Decimal(3),
+        requested_amount=None if monto is None else Decimal(monto),
         monthly=[
             MonthlyTarget(
                 month=mes,
@@ -212,3 +214,34 @@ class TestElCalendarioYLasMetas:
         impreso = armar([actividad(1, meses={2: "1.5000"})])
 
         assert impreso.bloques[0].actividades[0].meses[2] == "1.5"
+
+
+class TestElMontoSolicitado:
+    def test_cada_actividad_lleva_el_monto_que_pidio(self):
+        impreso = armar([actividad(1, monto="1250.5")])
+
+        assert impreso.bloques[0].actividades[0].monto == "$1,250.50"
+
+    def test_una_actividad_sin_monto_capturado_sale_en_cero(self):
+        impreso = armar([actividad(1)])
+
+        assert impreso.bloques[0].actividades[0].monto == "$0.00"
+
+    def test_el_total_suma_lo_de_todas_las_actividades(self):
+        impreso = armar([
+            actividad(1, monto="1250.5"),
+            actividad(2, monto="749.5"),
+            actividad(3),
+        ])
+
+        assert impreso.total == "$2,000.00"
+
+    def test_lo_retirado_no_suma_en_el_total(self):
+        impreso = armar([actividad(1, monto="1000"), actividad(2, monto="500", activa=False)])
+
+        assert impreso.total == "$1,000.00"
+
+    def test_un_poa_sin_actividades_tiene_total_en_cero(self):
+        impreso = armar([])
+
+        assert impreso.total == "$0.00"

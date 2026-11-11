@@ -38,6 +38,7 @@ class RenglonDeActividad:
     meses: dict[int, str]
     unidad: str
     programado: str
+    monto: str
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,7 @@ class PoaParaImprimir:
     elaborado_el: date
     nota: str
     bloques: list[BloqueDeLaAccion]
+    total: str
 
     @property
     def cuantas_actividades(self) -> int:
@@ -90,6 +92,9 @@ def armar_el_poa_para_imprimir(
         elaborado_el=elaborado_el,
         nota=NOTA_DE_LO_PRESENTADO if presentado else NOTA_DEL_BORRADOR,
         bloques=bloques,
+        total=dicho_el_monto(
+            sum((una.requested_amount or Decimal(0) for una in vigentes), start=Decimal(0))
+        ),
     )
 
 
@@ -123,7 +128,12 @@ def _renglon(
         meses={mes.month: sin_la_escala_de_la_base(mes.target) for mes in incluidos},
         unidad=_dicha_la_unidad(actividad.unit_id, programado, unidades),
         programado=sin_la_escala_de_la_base(programado),
+        monto=dicho_el_monto(actividad.requested_amount or Decimal(0)),
     )
+
+
+def dicho_el_monto(monto: Decimal) -> str:
+    return f"${monto:,.2f}"
 
 
 def _dicha_la_unidad(

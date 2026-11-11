@@ -18,9 +18,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.shared.infrastructure.db.base import Base
 
-from ..domain.entities import DECIMALES_DE_LA_META, ENTEROS_DE_LA_META
+from ..domain.entities import (
+    DECIMALES_DE_LA_META,
+    DECIMALES_DEL_MONTO,
+    ENTEROS_DE_LA_META,
+    ENTEROS_DEL_MONTO,
+)
 
 PRECISION_DE_LA_META = Numeric(ENTEROS_DE_LA_META + DECIMALES_DE_LA_META, DECIMALES_DE_LA_META)
+PRECISION_DEL_MONTO = Numeric(ENTEROS_DEL_MONTO + DECIMALES_DEL_MONTO, DECIMALES_DEL_MONTO)
 
 
 class PoaAreaModel(Base):
@@ -61,6 +67,7 @@ class PoaActivityModel(Base):
     unidad_medida_id: Mapped[int | None] = mapped_column(Integer)
     metodo_evaluacion: Mapped[str | None] = mapped_column(Text)
     meta_anual: Mapped[Decimal | None] = mapped_column(PRECISION_DE_LA_META)
+    monto_solicitado: Mapped[Decimal | None] = mapped_column(PRECISION_DEL_MONTO)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 

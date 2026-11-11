@@ -29,8 +29,6 @@ AL_PIE = (
 
 INICIALES_DE_LOS_MESES = ("e", "f", "m", "a", "m", "j", "j", "a", "s", "o", "n", "d")
 
-SIN_MONTO = "$0.00"
-
 MESES_EN_LETRA = (
     "enero",
     "febrero",
@@ -245,7 +243,7 @@ def _la_tabla(documento, impreso: PoaParaImprimir, estilos):
         estilo.append(("SPAN", (0, renglon), (16, renglon)))
         renglon += 1
 
-    datos.append([*([""] * 15), "Total:", SIN_MONTO])
+    datos.append([*([""] * 15), "Total:", impreso.total])
     estilo.append(("SPAN", (0, renglon), (14, renglon)))
     estilo.append(("ALIGN", (15, renglon), (16, renglon), "CENTER"))
     estilo.append(("FONTNAME", (15, renglon), (16, renglon), "Helvetica-Bold"))
@@ -276,7 +274,7 @@ def _el_renglon_de_la_actividad(actividad, estilos) -> list:
         *[actividad.meses.get(mes, "") for mes in MESES_DEL_EJERCICIO],
         Paragraph(escape(actividad.unidad), estilos["unidad"]),
         actividad.programado,
-        SIN_MONTO,
+        actividad.monto,
     ]
 
 

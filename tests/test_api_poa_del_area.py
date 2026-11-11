@@ -1163,3 +1163,99 @@ class TestLaImpresionDelPoaDelArea:
         )
 
         assert respuesta.status_code == 422, respuesta.text
+
+
+class TestElMontoSolicitadoDeLaActividad:
+    async def test_se_guarda_con_sus_centavos_y_se_lee_igual(self, escenario):
+        registrada = await _actividad_completa(escenario, monto_solicitado="1250.5")
+
+        assert registrada["monto_solicitado"] == "1250.50"
+        assert (await _releida(escenario, registrada["id"]))["monto_solicitado"] == "1250.50"
+
+    async def test_la_actividad_que_no_lo_declara_lo_devuelve_nulo(self, escenario):
+        registrada = await _actividad_completa(escenario)
+
+        assert registrada["monto_solicitado"] is None
+
+    async def test_una_actividad_que_no_pide_dinero_se_guarda_en_cero(self, escenario):
+        registrada = await _actividad_completa(escenario, monto_solicitado="0")
+
+        assert registrada["monto_solicitado"] == "0.00"
+
+    async def test_se_corrige_sin_tocar_lo_demas(self, escenario):
+        registrada = await _actividad_completa(escenario, monto_solicitado="1000")
+
+        corregida = await _corregir(
+            escenario,
+            registrada["id"],
+            {"version": registrada["version"], "monto_solicitado": "2500.75"},
+        )
+
+        assert corregida.status_code == 200, corregida.text
+        assert corregida.json()["monto_solicitado"] == "2500.75"
+        assert corregida.json()["meta_anual"] == "24"
+        releida = await _releida(escenario, registrada["id"])
+        assert releida["monto_solicitado"] == "2500.75"
+
+    async def test_se_puede_dejar_otra_vez_sin_capturar(self, escenario):
+        registrada = await _actividad_completa(escenario, monto_solicitado="1000")
+
+        corregida = await _corregir(
+            escenario,
+            registrada["id"],
+            {"version": registrada["version"], "monto_solicitado": None},
+        )
+
+        assert corregida.status_code == 200, corregida.text
+        assert corregida.json()["monto_solicitado"] is None
+
+    async def test_un_monto_negativo_se_rechaza(self, escenario):
+        rechazada = await _registrar(
+            escenario,
+            {"denominacion": "Con monto negativo", "monto_solicitado": "-1"},
+        )
+
+        assert rechazada.status_code == 422, rechazada.text
+
+    async def test_un_monto_con_mas_de_dos_decimales_se_rechaza(self, escenario):
+        rechazada = await _registrar(
+            escenario,
+            {"denominacion": "Con fracciones de centavo", "monto_solicitado": "10.005"},
+        )
+
+        assert rechazada.status_code == 422, rechazada.text
+
+    async def test_un_monto_negativo_tampoco_pasa_por_el_dominio(self):
+        from decimal import Decimal
+
+        from app.modules.poa_institucional.domain.entities import Activity
+        from app.shared.domain.exceptions import ValidationError
+
+        actividad = Activity(
+            poa_area_id=1,
+            name="Equipar el laboratorio de biomecánica",
+            requested_amount=Decimal("-1"),
+        )
+
+        with pytest.raises(ValidationError, match="no puede ser negativo"):
+            actividad.validate()
+
+    async def test_un_monto_con_fracciones_de_centavo_tampoco_pasa_por_el_dominio(self):
+        from decimal import Decimal
+
+        from app.modules.poa_institucional.domain.entities import Activity
+        from app.shared.domain.exceptions import ValidationError
+
+        actividad = Activity(
+            poa_area_id=1,
+            name="Equipar el laboratorio de biomecánica",
+            requested_amount=Decimal("10.005"),
+        )
+
+        with pytest.raises(ValidationError, match="decimales"):
+            actividad.validate()
+
+    async def test_el_monto_no_es_requisito_para_presentar(self, escenario):
+        registrada = await _actividad_completa(escenario)
+
+        assert "el monto solicitado" not in registrada["falta_para_presentar"]

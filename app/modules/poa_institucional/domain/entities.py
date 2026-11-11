@@ -18,8 +18,13 @@ MESES_DEL_EJERCICIO = tuple(range(1, 13))
 
 DECIMALES_DE_LA_META = 4
 ENTEROS_DE_LA_META = 14
+DECIMALES_DEL_MONTO = 2
+ENTEROS_DEL_MONTO = 14
 META_MAS_ALTA_QUE_CABE = Decimal(10) ** ENTEROS_DE_LA_META - Decimal(1).scaleb(
     -DECIMALES_DE_LA_META
+)
+MONTO_MAS_ALTO_QUE_CABE = Decimal(10) ** ENTEROS_DEL_MONTO - Decimal(1).scaleb(
+    -DECIMALES_DEL_MONTO
 )
 
 NIVEL_DE_LA_ACTIVIDAD = NodeKind.ACCION
@@ -205,6 +210,7 @@ class Activity:
     unit_id: int | None = None
     evaluation_method: str | None = None
     annual_target: Decimal | None = None
+    requested_amount: Decimal | None = None
     monthly: list[MonthlyTarget] = field(default_factory=list)
     version: int = 1
     is_active: bool = True
@@ -231,6 +237,10 @@ class Activity:
         if self.annual_target is not None:
             _exigir_meta_que_la_base_guarda_sin_redondear(
                 self.annual_target, f"La meta anual de «{self.name}»"
+            )
+        if self.requested_amount is not None:
+            _exigir_monto_que_la_base_guarda_sin_redondear(
+                self.requested_amount, f"El monto solicitado de «{self.name}»"
             )
         self._validar_programacion()
 
@@ -282,6 +292,24 @@ def _exigir_meta_que_la_base_guarda_sin_redondear(meta: Decimal, de_quien: str) 
         raise ValidationError(
             f"{de_quien} trae más de {DECIMALES_DE_LA_META} decimales y la base la redondearía "
             f"sin avisar: {dicha}."
+        )
+
+
+def _exigir_monto_que_la_base_guarda_sin_redondear(monto: Decimal, de_quien: str) -> None:
+    dicho = sin_la_escala_de_la_base(monto)
+    if not monto.is_finite():
+        raise ValidationError(f"{de_quien} no es un número finito: {dicho}.")
+    if monto < 0:
+        raise ValidationError(f"{de_quien} no puede ser negativo: {dicho}.")
+    if monto > MONTO_MAS_ALTO_QUE_CABE:
+        raise ValidationError(
+            f"{de_quien} no cabe en la columna de la base, que admite hasta "
+            f"{sin_la_escala_de_la_base(MONTO_MAS_ALTO_QUE_CABE)}: {dicho}."
+        )
+    if -monto.as_tuple().exponent > DECIMALES_DEL_MONTO:
+        raise ValidationError(
+            f"{de_quien} trae más de {DECIMALES_DEL_MONTO} decimales, que es lo que la base "
+            f"guarda de un importe: {dicho}."
         )
 
 

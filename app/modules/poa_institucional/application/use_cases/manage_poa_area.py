@@ -49,6 +49,7 @@ CAMPOS_QUE_EL_GUARDADO_PARCIAL_PUEDE_OMITIR = (
     "unit_id",
     "evaluation_method",
     "annual_target",
+    "requested_amount",
     "monthly",
     "is_active",
 )
@@ -130,6 +131,7 @@ class SaveActivityCommand:
     unit_id: int | None | LoQueNoSeMando = SIN_CAMBIO
     evaluation_method: str | None | LoQueNoSeMando = SIN_CAMBIO
     annual_target: Decimal | None | LoQueNoSeMando = SIN_CAMBIO
+    requested_amount: Decimal | None | LoQueNoSeMando = SIN_CAMBIO
     monthly: list[MonthlyTarget] | LoQueNoSeMando = SIN_CAMBIO
     is_active: bool | LoQueNoSeMando = SIN_CAMBIO
 

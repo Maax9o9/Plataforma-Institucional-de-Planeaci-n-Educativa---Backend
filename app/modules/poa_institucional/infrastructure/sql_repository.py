@@ -81,6 +81,7 @@ def _actividad_a_dominio(
         unit_id=model.unidad_medida_id,
         evaluation_method=model.metodo_evaluacion,
         annual_target=model.meta_anual,
+        requested_amount=model.monto_solicitado,
         monthly=[
             MonthlyTarget(month=mes.mes, target=mes.meta, included=mes.incluido)
             for mes in sorted(programacion, key=lambda fila: fila.mes)
@@ -300,6 +301,7 @@ class SqlAlchemyPoaAreaRepository:
                 unidad_medida_id=activity.unit_id,
                 metodo_evaluacion=activity.evaluation_method,
                 meta_anual=activity.annual_target,
+                monto_solicitado=activity.requested_amount,
                 version=1,
                 activo=activity.is_active,
             )
@@ -334,6 +336,7 @@ class SqlAlchemyPoaAreaRepository:
                             unidad_medida_id=activity.unit_id,
                             metodo_evaluacion=activity.evaluation_method,
                             meta_anual=activity.annual_target,
+                            monto_solicitado=activity.requested_amount,
                             version=activity.version + 1,
                             activo=activity.is_active,
                         )
