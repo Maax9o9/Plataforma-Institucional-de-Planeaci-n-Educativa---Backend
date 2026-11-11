@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from importlib import resources
+from pathlib import Path
 
 from app.modules.institutional_catalogs.domain.ports.repositories import AreaRepository
 from app.modules.poa_planning.application.access_control import can_edit_structure
@@ -23,8 +23,14 @@ from .sep_format import (
 
 #: La plantilla oficial, en blanco. Se versiona con el código porque es el
 #: entregable: sin ella no hay forma de producir el formato que pide la SEP.
-PAQUETE_PLANTILLA = "app.modules.poa_reports.resources"
+#: La plantilla se busca por la ruta del módulo y no con `importlib.resources`:
+#: `app.modules.poa_reports.resources` es un paquete de espacio de nombres —no
+#: lleva `__init__.py`, como todo el proyecto— y, cuando el paquete se instala
+#: en modo editable, su buscador no sabe decir en qué carpeta vive y revienta
+#: con «MultiplexedPath only supports directories». Así es como ya se resuelve
+#: el logotipo del formato impreso.
 ARCHIVO_PLANTILLA = "formato-poa-sep.xlsm"
+RUTA_DE_LA_PLANTILLA = Path(__file__).resolve().parents[1] / "resources" / ARCHIVO_PLANTILLA
 
 MEDIA_TYPE = "application/vnd.ms-excel.sheet.macroEnabled.12"
 
@@ -33,7 +39,7 @@ MEDIA_TYPE = "application/vnd.ms-excel.sheet.macroEnabled.12"
 def plantilla() -> bytes:
     """Son 4,6 MiB que no cambian durante la vida del proceso: leerlos del
     disco en cada descarga sería un viaje de ida y vuelta por nada."""
-    return resources.files(PAQUETE_PLANTILLA).joinpath(ARCHIVO_PLANTILLA).read_bytes()
+    return RUTA_DE_LA_PLANTILLA.read_bytes()
 
 
 class ExportarFormatoSep:

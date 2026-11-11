@@ -54,6 +54,10 @@ where = ["."]
 include = ["app*"]
 
 [tool.setuptools.package-data]
+# La plantilla del formato de la SEP se lee por ruta de archivo, así que tiene
+# que viajar junto al código también cuando el paquete se instala de verdad.
+"app.modules.poa_reports.resources" = ["*.xlsm"]
+"app.assets" = ["marca/*.png"]
 "app.modules.email_templates.infrastructure" = [
     "templates/*.html",
     "templates/messages/*.json",

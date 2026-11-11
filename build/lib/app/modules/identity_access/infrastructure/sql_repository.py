@@ -1,0 +1,312 @@
+"""Adaptadores PostgreSQL de identity_access."""
+
+from __future__ import annotations
+
+import asyncio
+from datetime import UTC, datetime
+from hashlib import sha256
+from uuid import UUID, uuid4
+
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.modules.institutional_catalogs.infrastructure.models import AreaModel
+from app.shared.domain.exceptions import ConflictError
+from app.shared.domain.value_objects import Email
+from app.shared.infrastructure.db.unit_of_work import commit_or_flush, session_scope
+
+from ..domain.entities import User
+from ..domain.ports.refresh_token_repository import RefreshTokenRecord
+from ..domain.value_objects import Role
+from .models import RefreshTokenModel, UserModel, UserRoleModel
+
+
+class SqlAlchemyUserRepository:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self.session_factory = session_factory
+
+    async def _to_domain(self, session: AsyncSession, model: UserModel) -> User:
+        roles = await session.scalars(
+            select(UserRoleModel.rol).where(UserRoleModel.usuario_id == model.id)
+        )
+        area_name = (
+            await session.scalar(select(AreaModel.nombre).where(AreaModel.id == model.area_id))
+            if model.area_id is not None
+            else None
+        )
+        return User(
+            id=model.id,
+            email=Email(model.correo),
+            full_name=model.nombre,
+            password_hash=model.hash_password,
+            roles=frozenset(Role.from_value(role) for role in roles),
+            area_id=model.area_id,
+            is_active=model.activo,
+            notify_email=model.notificar_correo,
+            password_setup_required=model.requiere_configurar_contrasena,
+            created_at=model.creado_en,
+            updated_at=model.actualizado_en,
+            last_access_at=model.ultimo_acceso,
+            area_name=area_name,
+            version=model.version,
+            password_version=model.password_version,
+        )
+
+    async def get_by_id(self, user_id: int) -> User | None:
+        async with session_scope(self.session_factory) as session:
+            model = await session.get(UserModel, user_id)
+            return await self._to_domain(session, model) if model else None
+
+    async def get_by_email(self, email: str) -> User | None:
+        async with session_scope(self.session_factory) as session:
+            result = await session.execute(
+                select(UserModel).where(func.lower(UserModel.correo) == email.strip().lower())
+            )
+            model = result.scalar_one_or_none()
+            return await self._to_domain(session, model) if model else None
+
+    async def list(self, *, active_only: bool = False) -> list[User]:
+        async with self.session_factory() as session:
+            statement = select(UserModel).order_by(UserModel.id)
+            if active_only:
+                statement = statement.where(UserModel.activo.is_(True))
+            models = (await session.scalars(statement)).all()
+            return [await self._to_domain(session, model) for model in models]
+
+    async def add(self, user: User) -> None:
+        now = datetime.now(UTC)
+        model = UserModel(
+            nombre=user.full_name,
+            correo=user.email.value,
+            hash_password=user.password_hash,
+            password_version=user.password_version,
+            area_id=user.area_id,
+            activo=user.is_active,
+            notificar_correo=user.notify_email,
+            requiere_configurar_contrasena=user.password_setup_required,
+            creado_en=now,
+            actualizado_en=now,
+        )
+        async with session_scope(self.session_factory) as session:
+            try:
+                session.add(model)
+                await session.flush()
+                session.add_all(
+                    UserRoleModel(usuario_id=model.id, rol=role.value) for role in user.roles
+                )
+                await commit_or_flush(session)
+            except IntegrityError as exc:
+                await session.rollback()
+                raise ConflictError("Ya existe un usuario con ese correo electronico.") from exc
+        user.id = model.id
+        user.created_at = now
+        user.updated_at = now
+
+    async def record_access(self, user_id: int, occurred_at: datetime) -> None:
+        async with session_scope(self.session_factory) as session:
+            await session.execute(
+                update(UserModel)
+                .where(UserModel.id == user_id)
+                .values(ultimo_acceso=occurred_at)
+            )
+            await commit_or_flush(session)
+
+    async def update(self, user: User) -> None:
+        async with session_scope(self.session_factory) as session:
+            try:
+                model = await session.get(UserModel, user.id)
+                if model is None:
+                    return
+                result = await session.execute(
+                    update(UserModel)
+                    .where(UserModel.id == user.id, UserModel.version == user.version)
+                    .values(
+                        correo=user.email.value,
+                        nombre=user.full_name,
+                        hash_password=user.password_hash,
+                        password_version=user.password_version,
+                        area_id=user.area_id,
+                        activo=user.is_active,
+                        notificar_correo=user.notify_email,
+                        requiere_configurar_contrasena=user.password_setup_required,
+                        ultimo_acceso=user.last_access_at,
+                        actualizado_en=user.updated_at,
+                        version=user.version + 1,
+                    )
+                )
+                if not result.rowcount:
+                    await session.rollback()
+                    current = await self.get_by_id(user.id)
+                    raise ConflictError(
+                        "El usuario fue modificado por otra solicitud.",
+                        details={"version_actual": current.version if current else None},
+                    )
+                await session.execute(
+                    delete(UserRoleModel).where(UserRoleModel.usuario_id == user.id)
+                )
+                session.add_all(
+                    UserRoleModel(usuario_id=user.id, rol=role.value) for role in user.roles
+                )
+                await commit_or_flush(session)
+                user.version += 1
+            except IntegrityError as exc:
+                await session.rollback()
+                raise ConflictError("Ya existe un usuario con ese correo electronico.") from exc
+
+
+class SqlAlchemyRefreshTokenStore:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self.session_factory = session_factory
+        self._lock = asyncio.Lock()
+
+    @staticmethod
+    def _hash(token: str) -> str:
+        return sha256(token.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _record(model: RefreshTokenModel, *, active: bool) -> RefreshTokenRecord:
+        return RefreshTokenRecord(
+            token_id=model.jti,
+            user_id=model.usuario_id,
+            session_id=model.session_id or model.jti,
+            expires_at=model.expira_en,
+            active=active,
+        )
+
+    async def save(
+        self,
+        *,
+        token: str,
+        token_id: UUID,
+        user_id: int,
+        session_id: UUID,
+        expires_at: datetime,
+    ) -> None:
+        async with self.session_factory() as session:
+            session.add(
+                RefreshTokenModel(
+                    id=uuid4(),
+                    usuario_id=user_id,
+                    jti=token_id,
+                    hash_token=self._hash(token),
+                    session_id=session_id,
+                    emitido_en=datetime.now(UTC),
+                    expira_en=expires_at,
+                )
+            )
+            await session.commit()
+
+    async def consume(self, *, token: str, token_id: UUID) -> RefreshTokenRecord | None:
+        async with self._lock:
+            async with self.session_factory() as session:
+                result = await session.execute(
+                    select(RefreshTokenModel)
+                    .where(RefreshTokenModel.jti == token_id)
+                    .with_for_update()
+                )
+                model = result.scalar_one_or_none()
+                if model is None or model.hash_token != self._hash(token):
+                    return None
+
+                now = datetime.now(UTC)
+                active = model.revocado_en is None and model.expira_en > now
+                record = self._record(model, active=active)
+                if active:
+                    model.revocado_en = now
+                    await session.commit()
+                return record
+
+    async def rotate(
+        self,
+        *,
+        current_token: str,
+        current_token_id: UUID,
+        new_token: str,
+        new_token_id: UUID,
+        user_id: int,
+        session_id: UUID,
+        expires_at: datetime,
+    ) -> RefreshTokenRecord | None:
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(RefreshTokenModel)
+                .where(RefreshTokenModel.jti == current_token_id)
+                .with_for_update()
+            )
+            model = result.scalar_one_or_none()
+            if model is None or model.hash_token != self._hash(current_token):
+                await session.rollback()
+                return None
+
+            now = datetime.now(UTC)
+            active = model.revocado_en is None and model.expira_en > now
+            record = self._record(model, active=active)
+            if not active:
+                await session.execute(
+                    update(RefreshTokenModel)
+                    .where(
+                        RefreshTokenModel.session_id == record.session_id,
+                        RefreshTokenModel.revocado_en.is_(None),
+                    )
+                    .values(revocado_en=now)
+                )
+                await session.commit()
+                return record
+
+            successor_id = uuid4()
+            session.add(
+                RefreshTokenModel(
+                    id=successor_id,
+                    usuario_id=user_id,
+                    jti=new_token_id,
+                    hash_token=self._hash(new_token),
+                    session_id=session_id,
+                    emitido_en=now,
+                    expira_en=expires_at,
+                )
+            )
+            # La FK autorreferenciada exige que el sucesor exista antes de enlazarlo.
+            # Todo permanece dentro de la misma transaccion y con R0 bloqueado.
+            await session.flush()
+            model.revocado_en = now
+            model.reemplazado_por = successor_id
+            await session.commit()
+            return record
+
+    async def revoke(self, token_id: UUID) -> None:
+        async with self.session_factory() as session:
+            model = (
+                await session.execute(
+                    select(RefreshTokenModel).where(RefreshTokenModel.jti == token_id)
+                )
+            ).scalar_one_or_none()
+            if model and model.revocado_en is None:
+                model.revocado_en = datetime.now(UTC)
+                await session.commit()
+
+    async def revoke_session(self, session_id: UUID) -> None:
+        async with self.session_factory() as session:
+            models = await session.scalars(
+                select(RefreshTokenModel).where(
+                    RefreshTokenModel.session_id == session_id,
+                    RefreshTokenModel.revocado_en.is_(None),
+                )
+            )
+            now = datetime.now(UTC)
+            for model in models:
+                model.revocado_en = now
+            await session.commit()
+
+    async def revoke_user(self, user_id: int) -> None:
+        async with session_scope(self.session_factory) as session:
+            models = await session.scalars(
+                select(RefreshTokenModel).where(
+                    RefreshTokenModel.usuario_id == user_id,
+                    RefreshTokenModel.revocado_en.is_(None),
+                )
+            )
+            now = datetime.now(UTC)
+            for model in models:
+                model.revocado_en = now
+            await commit_or_flush(session)
